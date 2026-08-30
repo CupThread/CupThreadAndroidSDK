@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">Wyślij opinię</string>
+    <string name="cupthread_feedback_short_summary">Krótkie podsumowanie</string>
+    <string name="cupthread_feedback_title_label">Tytuł</string>
+    <string name="cupthread_feedback_desc_label">Opis</string>
+    <string name="cupthread_feedback_desc_placeholder">Co się wydarzyło i czego oczekiwano?</string>
+    <string name="cupthread_feedback_desc_hint">Daj nam znać, co działa dobrze, co sprawia problemy i jakie funkcje chcesz zobaczyć.</string>
+    <string name="cupthread_feedback_name_label">Imię i nazwisko (opcjonalnie)</string>
+    <string name="cupthread_feedback_email_label">E-mail (opcjonalnie)</string>
+    <string name="cupthread_feedback_contact_hint">Użyjemy tych danych tylko w celu odpowiedzi na Twoją opinię.</string>
+    <string name="cupthread_feedback_send_button">Wyślij opinię</string>
+    <string name="cupthread_feedback_sending_button">Wysyłanie…</string>
+    <string name="cupthread_feedback_thanks_title">Dziękujemy!</string>
+    <string name="cupthread_feedback_thanks_subtitle">Twoja opinia została przesłana do zespołu.</string>
+    <string name="cupthread_feedback_send_more">Wyślij kolejną opinię</string>
+    <string name="cupthread_feedback_generic_error">Wystąpił błąd</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">Propozycje funkcji</string>
+    <string name="cupthread_features_search_placeholder">Szukaj propozycji funkcji</string>
+    <string name="cupthread_features_all_versions">Wszystkie wersje</string>
+    <string name="cupthread_features_filter_by_version">Filtruj według wersji</string>
+    <string name="cupthread_features_request_feature">Zaproponuj funkcję</string>
+    <string name="cupthread_features_empty_title">Brak propozycji</string>
+    <string name="cupthread_features_empty_body">Pomysły od użytkowników takich jak Ty pojawią się tutaj.</string>
+    <string name="cupthread_features_empty_search_title">Brak wyników</string>
+    <string name="cupthread_features_empty_search_body">Brak wyników dla „%1$s”.</string>
+    <string name="cupthread_features_submitted_banner">Propozycja przesłana — pojawi się po zatwierdzeniu przez zespół.</string>
+    <string name="cupthread_features_pending_review">Oczekuje na weryfikację</string>
+    <string name="cupthread_features_anonymous">Anonimowy</string>
+    <string name="cupthread_features_your_name_optional">Twoje imię i nazwisko (opcjonalnie)</string>
+    <string name="cupthread_features_compose_title">Zaproponuj funkcję</string>
+    <string name="cupthread_features_compose_submit">Prześlij</string>
+    <string name="cupthread_features_compose_sending">Wysyłanie…</string>
+    <string name="cupthread_features_load_failed">Nie udało się załadować propozycji</string>
+    <string name="cupthread_features_submit_failed">Nie udało się przesłać</string>
+    <string name="cupthread_features_vote_desc">Głosuj, %1$d</string>
+    <string name="cupthread_features_remove_vote_desc">Usuń głos, %1$d</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">Plan rozwoju</string>
+    <string name="cupthread_roadmap_search_placeholder">Szukaj w planie rozwoju</string>
+    <string name="cupthread_roadmap_column_other">Inne</string>
+    <string name="cupthread_roadmap_empty_title">Brak planu rozwoju</string>
+    <string name="cupthread_roadmap_empty_body">Zespół nie opublikował jeszcze żadnych kolumn planu rozwoju.</string>
+    <string name="cupthread_roadmap_empty_column">Nic tu jeszcze nie ma.</string>
+    <string name="cupthread_roadmap_load_failed">Nie udało się załadować planu rozwoju</string>
+    <string name="cupthread_roadmap_votes_format">%1$d głosów</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">Nowości</string>
+    <string name="cupthread_whatsnew_subscribe">Subskrybuj</string>
+    <string name="cupthread_whatsnew_empty_title">Brak aktualizacji</string>
+    <string name="cupthread_whatsnew_empty_body">Informacje o wydaniach pojawią się tutaj wraz z publikacją nowych wersji.</string>
+    <string name="cupthread_whatsnew_get_update_emails">Otrzymuj aktualizacje na e-mail</string>
+    <string name="cupthread_whatsnew_be_notified">Otrzymuj powiadomienia o nowych wydaniach.</string>
+    <string name="cupthread_whatsnew_updates_by_email">Aktualizacje przez e-mail</string>
+    <string name="cupthread_whatsnew_email_label">imie@przyklad.pl</string>
+    <string name="cupthread_whatsnew_email_hint">Będziemy wysyłać wiadomości tylko po publikacji nowych aktualizacji.</string>
+    <string name="cupthread_whatsnew_already_subscribed">Już subskrybujesz</string>
+    <string name="cupthread_whatsnew_subscribed">Zasubskrybowano</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Powiadomienia będą wysyłane na adres %1$s.</string>
+    <string name="cupthread_whatsnew_unsubscribed">Anulowano subskrypcję</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">Nie będziesz już otrzymywać powiadomień na adres %1$s.</string>
+    <string name="cupthread_whatsnew_subscribing">Zapisywanie…</string>
+    <string name="cupthread_whatsnew_unsubscribing">Wypisywanie…</string>
+    <string name="cupthread_whatsnew_unsubscribe">Anuluj subskrypcję</string>
+    <string name="cupthread_whatsnew_done">Gotowe</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">Nie udało się załadować</string>
+    <string name="cupthread_common_retry">Spróbuj ponownie</string>
+</resources>

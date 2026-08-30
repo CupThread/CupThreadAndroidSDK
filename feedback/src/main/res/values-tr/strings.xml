@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">Geri Bildirim Gönder</string>
+    <string name="cupthread_feedback_short_summary">Kısa özet</string>
+    <string name="cupthread_feedback_title_label">Başlık</string>
+    <string name="cupthread_feedback_desc_label">Açıklama</string>
+    <string name="cupthread_feedback_desc_placeholder">Ne oldu ve ne bekliyordunuz?</string>
+    <string name="cupthread_feedback_desc_hint">Neyin iyi çalıştığını, neyin çalışmadığını ve neleri görmek istediğinizi bize bildirin.</string>
+    <string name="cupthread_feedback_name_label">Ad (isteğe bağlı)</string>
+    <string name="cupthread_feedback_email_label">E-posta (isteğe bağlı)</string>
+    <string name="cupthread_feedback_contact_hint">İletişim bilgilerini yalnızca geri bildiriminiz hakkında sizinle iletişim kurmak için kullanacağız.</string>
+    <string name="cupthread_feedback_send_button">Geri Bildirim Gönder</string>
+    <string name="cupthread_feedback_sending_button">Gönderiliyor…</string>
+    <string name="cupthread_feedback_thanks_title">Teşekkürler!</string>
+    <string name="cupthread_feedback_thanks_subtitle">Geri bildiriminiz ekibe iletildi.</string>
+    <string name="cupthread_feedback_send_more">Daha Fazla Geri Bildirim Gönder</string>
+    <string name="cupthread_feedback_generic_error">Bir şeyler ters gitti</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">Özellik Talepleri</string>
+    <string name="cupthread_features_search_placeholder">Özellik taleplerinde ara</string>
+    <string name="cupthread_features_all_versions">Tüm Sürümler</string>
+    <string name="cupthread_features_filter_by_version">Sürüme göre filtrele</string>
+    <string name="cupthread_features_request_feature">Özellik Öner</string>
+    <string name="cupthread_features_empty_title">Özellik Talebi Yok</string>
+    <string name="cupthread_features_empty_body">Kullanıcılardan gelen öneriler burada görünecektir.</string>
+    <string name="cupthread_features_empty_search_title">Sonuç bulunamadı</string>
+    <string name="cupthread_features_empty_search_body">“%1$s” için sonuç bulunamadı.</string>
+    <string name="cupthread_features_submitted_banner">Talep gönderildi — ekip onayladıktan sonra görünecektir.</string>
+    <string name="cupthread_features_pending_review">İnceleme bekliyor</string>
+    <string name="cupthread_features_anonymous">Anonim</string>
+    <string name="cupthread_features_your_name_optional">Adınız (isteğe bağlı)</string>
+    <string name="cupthread_features_compose_title">Özellik Öner</string>
+    <string name="cupthread_features_compose_submit">Gönder</string>
+    <string name="cupthread_features_compose_sending">Gönderiliyor…</string>
+    <string name="cupthread_features_load_failed">Özellik talepleri yüklenemedi</string>
+    <string name="cupthread_features_submit_failed">Gönderilemedi</string>
+    <string name="cupthread_features_vote_desc">Oy ver, %1$d</string>
+    <string name="cupthread_features_remove_vote_desc">Oyu kaldır, %1$d</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">Yol Haritası</string>
+    <string name="cupthread_roadmap_search_placeholder">Yol haritasında ara</string>
+    <string name="cupthread_roadmap_column_other">Diğer</string>
+    <string name="cupthread_roadmap_empty_title">Henüz Yol Haritası Yok</string>
+    <string name="cupthread_roadmap_empty_body">Ekip henüz herhangi bir yol haritası sütunu yayınlamadı.</string>
+    <string name="cupthread_roadmap_empty_column">Burada henüz bir şey yok.</string>
+    <string name="cupthread_roadmap_load_failed">Yol haritası yüklenemedi</string>
+    <string name="cupthread_roadmap_votes_format">%1$d oy</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">Yenilikler</string>
+    <string name="cupthread_whatsnew_subscribe">Abone Ol</string>
+    <string name="cupthread_whatsnew_empty_title">Henüz Güncelleme Yok</string>
+    <string name="cupthread_whatsnew_empty_body">Yeni sürümler çıktıkça sürüm notları burada görünecektir.</string>
+    <string name="cupthread_whatsnew_get_update_emails">Güncelleme E-postaları Al</string>
+    <string name="cupthread_whatsnew_be_notified">Yeni bir sürüm yayınlandığında bildirim alın.</string>
+    <string name="cupthread_whatsnew_updates_by_email">E-posta ile Güncellemeler</string>
+    <string name="cupthread_whatsnew_email_label">ad@ornek.com</string>
+    <string name="cupthread_whatsnew_email_hint">Yalnızca bu uygulama yeni güncellemeler yayınladığında e-posta göndereceğiz.</string>
+    <string name="cupthread_whatsnew_already_subscribed">Zaten Abonesiniz</string>
+    <string name="cupthread_whatsnew_subscribed">Abone Oldunuz</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Güncelleme e-postaları %1$s adresine gönderilecektir.</string>
+    <string name="cupthread_whatsnew_unsubscribed">Abonelikten Çıkıldı</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">Artık %1$s adresine güncelleme e-postaları almayacaksınız.</string>
+    <string name="cupthread_whatsnew_subscribing">Abone olunuyor…</string>
+    <string name="cupthread_whatsnew_unsubscribing">Abonelikten çıkılıyor…</string>
+    <string name="cupthread_whatsnew_unsubscribe">Abonelikten Çık</string>
+    <string name="cupthread_whatsnew_done">Tamam</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">Yüklenemedi</string>
+    <string name="cupthread_common_retry">Yeniden Dene</string>
+</resources>

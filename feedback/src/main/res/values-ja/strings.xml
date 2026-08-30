@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">フィードバックを送信</string>
+    <string name="cupthread_feedback_short_summary">要約</string>
+    <string name="cupthread_feedback_title_label">タイトル</string>
+    <string name="cupthread_feedback_desc_label">詳細説明</string>
+    <string name="cupthread_feedback_desc_placeholder">何が起きたか、どのような動作を期待していたかを入力してください</string>
+    <string name="cupthread_feedback_desc_hint">良かった点、問題点、改善のアイデアなどをお聞かせください。</string>
+    <string name="cupthread_feedback_name_label">お名前（任意）</string>
+    <string name="cupthread_feedback_email_label">メールアドレス（任意）</string>
+    <string name="cupthread_feedback_contact_hint">任意 — フィードバックの確認・返信にのみ使用されます。</string>
+    <string name="cupthread_feedback_send_button">フィードバックを送信</string>
+    <string name="cupthread_feedback_sending_button">送信中…</string>
+    <string name="cupthread_feedback_thanks_title">ありがとうございます！</string>
+    <string name="cupthread_feedback_thanks_subtitle">フィードバックがチームに送信されました。</string>
+    <string name="cupthread_feedback_send_more">さらにフィードバックを送信</string>
+    <string name="cupthread_feedback_generic_error">エラーが発生しました</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">機能リクエスト</string>
+    <string name="cupthread_features_search_placeholder">機能リクエストを検索</string>
+    <string name="cupthread_features_all_versions">すべてのバージョン</string>
+    <string name="cupthread_features_filter_by_version">バージョンでフィルター</string>
+    <string name="cupthread_features_request_feature">機能をリクエスト</string>
+    <string name="cupthread_features_empty_title">機能リクエストがありません</string>
+    <string name="cupthread_features_empty_body">ユーザーからのアイデアや提案がここに表示されます。</string>
+    <string name="cupthread_features_empty_search_title">見つかりませんでした</string>
+    <string name="cupthread_features_empty_search_body">「%1$s」に一致する結果は見つかりませんでした。</string>
+    <string name="cupthread_features_submitted_banner">リクエストを送信しました — チームの承認後に公開されます。</string>
+    <string name="cupthread_features_pending_review">レビュー待ち</string>
+    <string name="cupthread_features_anonymous">匿名ユーザー</string>
+    <string name="cupthread_features_your_name_optional">お名前（任意）</string>
+    <string name="cupthread_features_compose_title">機能をリクエスト</string>
+    <string name="cupthread_features_compose_submit">送信</string>
+    <string name="cupthread_features_compose_sending">送信中…</string>
+    <string name="cupthread_features_load_failed">機能リクエストの読み込みに失敗しました</string>
+    <string name="cupthread_features_submit_failed">送信できませんでした</string>
+    <string name="cupthread_features_vote_desc">投票する、現在 %1$d 票</string>
+    <string name="cupthread_features_remove_vote_desc">投票を取り消す、現在 %1$d 票</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">ロードマップ</string>
+    <string name="cupthread_roadmap_search_placeholder">ロードマップを検索</string>
+    <string name="cupthread_roadmap_column_other">その他</string>
+    <string name="cupthread_roadmap_empty_title">ロードマップはまだありません</string>
+    <string name="cupthread_roadmap_empty_body">チームによって公開されたロードマップカラムはまだありません。</string>
+    <string name="cupthread_roadmap_empty_column">項目はまだありません。</string>
+    <string name="cupthread_roadmap_load_failed">ロードマップの読み込みに失敗しました</string>
+    <string name="cupthread_roadmap_votes_format">%1$d 票</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">最新情報</string>
+    <string name="cupthread_whatsnew_subscribe">購読</string>
+    <string name="cupthread_whatsnew_empty_title">更新情報はまだありません</string>
+    <string name="cupthread_whatsnew_empty_body">新しいバージョンがリリースされると、ここに更新履歴が表示されます。</string>
+    <string name="cupthread_whatsnew_get_update_emails">最新情報を受け取る</string>
+    <string name="cupthread_whatsnew_be_notified">新バージョンリリース時に通知を受け取ります。</string>
+    <string name="cupthread_whatsnew_updates_by_email">メールで更新を受け取る</string>
+    <string name="cupthread_whatsnew_email_label">you@example.com</string>
+    <string name="cupthread_whatsnew_email_hint">このアプリの新しいアップデート公開時のみメールを送信します。</string>
+    <string name="cupthread_whatsnew_already_subscribed">すでに購読済みです</string>
+    <string name="cupthread_whatsnew_subscribed">購読が完了しました</string>
+    <string name="cupthread_whatsnew_subscribed_sub">更新情報は %1$s 宛に送信されます。</string>
+    <string name="cupthread_whatsnew_unsubscribed">購読を解除しました</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">%1$s への更新情報メール送信を停止しました。</string>
+    <string name="cupthread_whatsnew_subscribing">購読処理中…</string>
+    <string name="cupthread_whatsnew_unsubscribing">解除処理中…</string>
+    <string name="cupthread_whatsnew_unsubscribe">購読解除</string>
+    <string name="cupthread_whatsnew_done">完了</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">読み込めませんでした</string>
+    <string name="cupthread_common_retry">再試行</string>
+</resources>

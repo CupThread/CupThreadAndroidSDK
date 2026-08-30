@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">Send Feedback</string>
+    <string name="cupthread_feedback_short_summary">Short summary</string>
+    <string name="cupthread_feedback_title_label">Title</string>
+    <string name="cupthread_feedback_desc_label">Description</string>
+    <string name="cupthread_feedback_desc_placeholder">What happened, and what did you expect?</string>
+    <string name="cupthread_feedback_desc_hint">Tell us what worked, what didn\'t, and what you\'d like to see next.</string>
+    <string name="cupthread_feedback_name_label">Name (optional)</string>
+    <string name="cupthread_feedback_email_label">Email (optional)</string>
+    <string name="cupthread_feedback_contact_hint">We\'ll only use contact details to follow up on your feedback.</string>
+    <string name="cupthread_feedback_send_button">Send Feedback</string>
+    <string name="cupthread_feedback_sending_button">Sending…</string>
+    <string name="cupthread_feedback_thanks_title">Thanks!</string>
+    <string name="cupthread_feedback_thanks_subtitle">Your feedback was sent to the team.</string>
+    <string name="cupthread_feedback_send_more">Send More Feedback</string>
+    <string name="cupthread_feedback_generic_error">Something went wrong</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">Feature Requests</string>
+    <string name="cupthread_features_search_placeholder">Search feature requests</string>
+    <string name="cupthread_features_all_versions">All Versions</string>
+    <string name="cupthread_features_filter_by_version">Filter by version</string>
+    <string name="cupthread_features_request_feature">Request a Feature</string>
+    <string name="cupthread_features_empty_title">No Feature Requests</string>
+    <string name="cupthread_features_empty_body">Ideas from users like you will appear here.</string>
+    <string name="cupthread_features_empty_search_title">No results</string>
+    <string name="cupthread_features_empty_search_body">No results for “%1$s”.</string>
+    <string name="cupthread_features_submitted_banner">Request submitted — it\'ll show once the team approves it.</string>
+    <string name="cupthread_features_pending_review">Pending review</string>
+    <string name="cupthread_features_anonymous">Anonymous</string>
+    <string name="cupthread_features_your_name_optional">Your name (optional)</string>
+    <string name="cupthread_features_compose_title">Request a Feature</string>
+    <string name="cupthread_features_compose_submit">Submit</string>
+    <string name="cupthread_features_compose_sending">Sending…</string>
+    <string name="cupthread_features_load_failed">Failed to load feature requests</string>
+    <string name="cupthread_features_submit_failed">Couldn\'t submit</string>
+    <string name="cupthread_features_vote_desc">Vote, %1$d</string>
+    <string name="cupthread_features_remove_vote_desc">Remove vote, %1$d</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">Roadmap</string>
+    <string name="cupthread_roadmap_search_placeholder">Search the roadmap</string>
+    <string name="cupthread_roadmap_column_other">Other</string>
+    <string name="cupthread_roadmap_empty_title">No Roadmap Yet</string>
+    <string name="cupthread_roadmap_empty_body">The team hasn\'t published any roadmap columns.</string>
+    <string name="cupthread_roadmap_empty_column">Nothing here yet.</string>
+    <string name="cupthread_roadmap_load_failed">Failed to load the roadmap</string>
+    <string name="cupthread_roadmap_votes_format">%1$d votes</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">What\'s New</string>
+    <string name="cupthread_whatsnew_subscribe">Subscribe</string>
+    <string name="cupthread_whatsnew_empty_title">No Updates Yet</string>
+    <string name="cupthread_whatsnew_empty_body">Release notes will appear here as new versions ship.</string>
+    <string name="cupthread_whatsnew_get_update_emails">Get Update Emails</string>
+    <string name="cupthread_whatsnew_be_notified">Be notified when a new version ships.</string>
+    <string name="cupthread_whatsnew_updates_by_email">Updates by Email</string>
+    <string name="cupthread_whatsnew_email_label">you@example.com</string>
+    <string name="cupthread_whatsnew_email_hint">We\'ll only email you when this app publishes new updates.</string>
+    <string name="cupthread_whatsnew_already_subscribed">You\'re Already Subscribed</string>
+    <string name="cupthread_whatsnew_subscribed">You\'re Subscribed</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Update emails will go to %1$s.</string>
+    <string name="cupthread_whatsnew_unsubscribed">Unsubscribed</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">You\'ll no longer receive update emails at %1$s.</string>
+    <string name="cupthread_whatsnew_subscribing">Subscribing…</string>
+    <string name="cupthread_whatsnew_unsubscribing">Unsubscribing…</string>
+    <string name="cupthread_whatsnew_unsubscribe">Unsubscribe</string>
+    <string name="cupthread_whatsnew_done">Done</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">Couldn\'t load</string>
+    <string name="cupthread_common_retry">Retry</string>
+</resources>

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">Send feedback</string>
+    <string name="cupthread_feedback_short_summary">Kort resumé</string>
+    <string name="cupthread_feedback_title_label">Titel</string>
+    <string name="cupthread_feedback_desc_label">Beskrivelse</string>
+    <string name="cupthread_feedback_desc_placeholder">Hvad skete der, og hvad forventede du?</string>
+    <string name="cupthread_feedback_desc_hint">Fortæl os, hvad der fungerede, hvad der ikke gjorde, og hvad du gerne vil se næste gang.</string>
+    <string name="cupthread_feedback_name_label">Navn (valgfrit)</string>
+    <string name="cupthread_feedback_email_label">E-mail (valgfrit)</string>
+    <string name="cupthread_feedback_contact_hint">Vi bruger kun kontaktoplysninger til at følge op på din feedback.</string>
+    <string name="cupthread_feedback_send_button">Send feedback</string>
+    <string name="cupthread_feedback_sending_button">Sender…</string>
+    <string name="cupthread_feedback_thanks_title">Mange tak!</string>
+    <string name="cupthread_feedback_thanks_subtitle">Din feedback er sendt til teamet.</string>
+    <string name="cupthread_feedback_send_more">Send mere feedback</string>
+    <string name="cupthread_feedback_generic_error">Noget gik galt</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">Funktionsønsker</string>
+    <string name="cupthread_features_search_placeholder">Søg i funktionsønsker</string>
+    <string name="cupthread_features_all_versions">Alle versioner</string>
+    <string name="cupthread_features_filter_by_version">Filtrer efter version</string>
+    <string name="cupthread_features_request_feature">Foreslå funktion</string>
+    <string name="cupthread_features_empty_title">Ingen funktionsønsker</string>
+    <string name="cupthread_features_empty_body">Forslag fra brugere som dig vises her.</string>
+    <string name="cupthread_features_empty_search_title">Ingen resultater</string>
+    <string name="cupthread_features_empty_search_body">Ingen resultater for "%1$s".</string>
+    <string name="cupthread_features_submitted_banner">Ønske indsendt — det vises, så snart teamet har godkendt det.</string>
+    <string name="cupthread_features_pending_review">Afventer vurdering</string>
+    <string name="cupthread_features_anonymous">Anonym</string>
+    <string name="cupthread_features_your_name_optional">Dit navn (valgfrit)</string>
+    <string name="cupthread_features_compose_title">Foreslå funktion</string>
+    <string name="cupthread_features_compose_submit">Indsend</string>
+    <string name="cupthread_features_compose_sending">Sender…</string>
+    <string name="cupthread_features_load_failed">Kunne ikke indlæse funktionsønsker</string>
+    <string name="cupthread_features_submit_failed">Kunne ikke indsende</string>
+    <string name="cupthread_features_vote_desc">Stem, %1$d</string>
+    <string name="cupthread_features_remove_vote_desc">Fjern stemme, %1$d</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">Køreplan</string>
+    <string name="cupthread_roadmap_search_placeholder">Søg i køreplan</string>
+    <string name="cupthread_roadmap_column_other">Andet</string>
+    <string name="cupthread_roadmap_empty_title">Ingen køreplan endnu</string>
+    <string name="cupthread_roadmap_empty_body">Teamet har endnu ikke offentliggjort nogen kolonner i køreplanen.</string>
+    <string name="cupthread_roadmap_empty_column">Her er ingenting endnu.</string>
+    <string name="cupthread_roadmap_load_failed">Kunne ikke indlæse køreplanen</string>
+    <string name="cupthread_roadmap_votes_format">%1$d stemmer</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">Nyheder</string>
+    <string name="cupthread_whatsnew_subscribe">Abonner</string>
+    <string name="cupthread_whatsnew_empty_title">Ingen opdateringer endnu</string>
+    <string name="cupthread_whatsnew_empty_body">Udgivelsesnoter vises her, når nye versioner udgives.</string>
+    <string name="cupthread_whatsnew_get_update_emails">Modtag opdateringer via e-mail</string>
+    <string name="cupthread_whatsnew_be_notified">Få besked, når en ny version udgives.</string>
+    <string name="cupthread_whatsnew_updates_by_email">Opdateringer via e-mail</string>
+    <string name="cupthread_whatsnew_email_label">navn@eksempel.dk</string>
+    <string name="cupthread_whatsnew_email_hint">Vi sender dig kun e-mails, når denne app udgiver nye opdateringer.</string>
+    <string name="cupthread_whatsnew_already_subscribed">Du abonnerer allerede</string>
+    <string name="cupthread_whatsnew_subscribed">Abonneret</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Opdaterings-e-mails sendes til %1$s.</string>
+    <string name="cupthread_whatsnew_unsubscribed">Afmeldt</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">Du modtager ikke længere opdaterings-e-mails på %1$s.</string>
+    <string name="cupthread_whatsnew_subscribing">Abonnerer…</string>
+    <string name="cupthread_whatsnew_unsubscribing">Afmelder…</string>
+    <string name="cupthread_whatsnew_unsubscribe">Afmeld abonnement</string>
+    <string name="cupthread_whatsnew_done">Færdig</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">Kunne ikke indlæse</string>
+    <string name="cupthread_common_retry">Prøv igen</string>
+</resources>

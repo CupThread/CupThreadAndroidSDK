@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">发送反馈</string>
+    <string name="cupthread_feedback_short_summary">简要概述</string>
+    <string name="cupthread_feedback_title_label">标题</string>
+    <string name="cupthread_feedback_desc_label">详细描述</string>
+    <string name="cupthread_feedback_desc_placeholder">发生了什么？您的预期是什么？</string>
+    <string name="cupthread_feedback_desc_hint">告诉我们哪些体验良好、遇到了什么问题，以及期待的改进。</string>
+    <string name="cupthread_feedback_name_label">姓名（选填）</string>
+    <string name="cupthread_feedback_email_label">邮箱（选填）</string>
+    <string name="cupthread_feedback_contact_hint">选填 — 仅用于后续跟进反馈处理进展。</string>
+    <string name="cupthread_feedback_send_button">发送反馈</string>
+    <string name="cupthread_feedback_sending_button">发送中…</string>
+    <string name="cupthread_feedback_thanks_title">感谢反馈！</string>
+    <string name="cupthread_feedback_thanks_subtitle">您的反馈已成功送达团队。</string>
+    <string name="cupthread_feedback_send_more">发送更多反馈</string>
+    <string name="cupthread_feedback_generic_error">发生错误，请稍后重试</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">需求建议</string>
+    <string name="cupthread_features_search_placeholder">搜索需求建议</string>
+    <string name="cupthread_features_all_versions">所有版本</string>
+    <string name="cupthread_features_filter_by_version">按版本筛选</string>
+    <string name="cupthread_features_request_feature">提出新需求</string>
+    <string name="cupthread_features_empty_title">暂无需求建议</string>
+    <string name="cupthread_features_empty_body">其他用户的建议与想法将显示在此处。</string>
+    <string name="cupthread_features_empty_search_title">未找到结果</string>
+    <string name="cupthread_features_empty_search_body">未找到与“%1$s”相关的结果。</string>
+    <string name="cupthread_features_submitted_banner">建议已提交 — 团队审核通过后将公开显示。</string>
+    <string name="cupthread_features_pending_review">等待审核</string>
+    <string name="cupthread_features_anonymous">匿名用户</string>
+    <string name="cupthread_features_your_name_optional">您的姓名（选填）</string>
+    <string name="cupthread_features_compose_title">提出新需求</string>
+    <string name="cupthread_features_compose_submit">提交</string>
+    <string name="cupthread_features_compose_sending">提交中…</string>
+    <string name="cupthread_features_load_failed">加载需求建议失败</string>
+    <string name="cupthread_features_submit_failed">提交失败</string>
+    <string name="cupthread_features_vote_desc">投票，当前 %1$d 票</string>
+    <string name="cupthread_features_remove_vote_desc">取消投票，当前 %1$d 票</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">路线图</string>
+    <string name="cupthread_roadmap_search_placeholder">搜索路线图</string>
+    <string name="cupthread_roadmap_column_other">其他</string>
+    <string name="cupthread_roadmap_empty_title">暂无路线图</string>
+    <string name="cupthread_roadmap_empty_body">团队尚未发布任何路线图分栏。</string>
+    <string name="cupthread_roadmap_empty_column">暂无内容。</string>
+    <string name="cupthread_roadmap_load_failed">加载路线图失败</string>
+    <string name="cupthread_roadmap_votes_format">%1$d 票</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">最新动态</string>
+    <string name="cupthread_whatsnew_subscribe">订阅</string>
+    <string name="cupthread_whatsnew_empty_title">暂无更新</string>
+    <string name="cupthread_whatsnew_empty_body">新版本发布后，更新日志将在此呈现。</string>
+    <string name="cupthread_whatsnew_get_update_emails">获取更新通知</string>
+    <string name="cupthread_whatsnew_be_notified">在新版本发布时第一时间获得通知。</string>
+    <string name="cupthread_whatsnew_updates_by_email">邮件订阅更新</string>
+    <string name="cupthread_whatsnew_email_label">you@example.com</string>
+    <string name="cupthread_whatsnew_email_hint">我们仅会在发布新版本更新时向您发送邮件。</string>
+    <string name="cupthread_whatsnew_already_subscribed">您已订阅过更新</string>
+    <string name="cupthread_whatsnew_subscribed">已成功订阅</string>
+    <string name="cupthread_whatsnew_subscribed_sub">更新邮件将发送至 %1$s。</string>
+    <string name="cupthread_whatsnew_unsubscribed">已退订</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">您将不再接收发送至 %1$s 的更新邮件。</string>
+    <string name="cupthread_whatsnew_subscribing">订阅中…</string>
+    <string name="cupthread_whatsnew_unsubscribing">退订中…</string>
+    <string name="cupthread_whatsnew_unsubscribe">退订</string>
+    <string name="cupthread_whatsnew_done">完成</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">加载失败</string>
+    <string name="cupthread_common_retry">重试</string>
+</resources>
