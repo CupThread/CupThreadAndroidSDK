@@ -9,6 +9,9 @@
 - **Android SDK**: [`CupThread/CupThreadAndroidSDK`](https://github.com/CupThread/CupThreadAndroidSDK) (Kotlin + Jetpack Compose)
 - **Agentic Coding & CLI**: [`CupThread/CupThreadAgenticCoding`](https://github.com/CupThread/CupThreadAgenticCoding) (AI Skills, CLI tools)
 
+## Agentic Coding Friendly
+This repository is optimized for autonomous agents and LLM pair programmers. AI Skills, CLI integrations, and agent workflows for working across CupThread repositories are available at [`CupThread/CupThreadAgenticCoding`](https://github.com/CupThread/CupThreadAgenticCoding).
+
 ## Architecture & API Contract
 - Public endpoints live under `/api/v1/public/*` and `/api/v1/*` on `https://api.cupthread.com`:
   - `GET /api/v1/public/config/:appKey` — App configuration, theme, allowed platforms, changelog copy.
