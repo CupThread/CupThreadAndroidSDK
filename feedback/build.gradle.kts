@@ -14,6 +14,13 @@ version = findProperty("cupthreadVersion") ?: "0.1.0"
 dokka {
     moduleName.set("cupthread-android-sdk")
     dokkaSourceSets.configureEach {
+        // Module/package overview rendered on the docs landing page.
+        includes.from("overview.md")
+        sourceLink {
+            localDirectory.set(file("src/main/java"))
+            remoteUrl("https://github.com/CupThread/CupThreadAndroidSDK/blob/main/feedback/src/main/java")
+            remoteLineSuffix.set("#L")
+        }
         externalDocumentationLinks {
             create("android") {
                 url.set(uri("https://developer.android.com/reference/kotlin/"))

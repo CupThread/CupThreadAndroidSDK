@@ -45,10 +45,25 @@ import kotlinx.coroutines.launch
  * Feedback form screen: title, description, optional reporter name and email,
  * and a send button.
  *
- * When no [initialDraft] is supplied, the draft is pre-filled with the host
- * app's version name and code from the package manager, so end users never
- * type them. After a successful send the composer swaps to a confirmation
- * state; use [onSubmit] for custom handling, such as closing the screen.
+ * Behavior details:
+ * - The send button stays disabled until the title has at least 3 characters
+ *   and the description at least 5.
+ * - When no [initialDraft] is supplied, the draft is pre-filled with the host
+ *   app's version name and code from the package manager, so end users never
+ *   type them.
+ * - After a successful send the composer swaps to a confirmation state; use
+ *   [onSubmit] for custom handling, such as closing the screen.
+ *
+ * The screen applies the console-configured theme itself — no explicit
+ * [CupThreadTheme] wrapper is required:
+ *
+ * ```kotlin
+ * FeedbackComposer(
+ *     client = client,
+ *     userToken = userToken,
+ *     onSubmit = { result -> navController.popBackStack() },
+ * )
+ * ```
  *
  * @param client Shared API client.
  * @param userToken Optional stable anonymous token from

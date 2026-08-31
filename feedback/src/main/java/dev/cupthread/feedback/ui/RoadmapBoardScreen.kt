@@ -72,9 +72,18 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
  * Roadmap kanban board: horizontally paged columns with chip navigation,
  * free-text search, and pull-to-refresh.
  *
- * Columns and their order come from the console; requests are grouped into
- * [RoadmapGroup]s per column. The screen applies the console-configured
- * theme itself.
+ * Behavior details:
+ * - Columns and their order come from the console; requests without a
+ *   column are collected in a synthetic "Other" page.
+ * - Search is debounced (~350 ms); while searching, empty columns are
+ *   hidden so matches surface immediately.
+ * - Pull to refresh reloads both columns and requests.
+ *
+ * The screen applies the console-configured theme itself:
+ *
+ * ```kotlin
+ * RoadmapBoardScreen(client = client, userToken = userToken)
+ * ```
  *
  * @param client Shared API client.
  * @param userToken Stable anonymous token from

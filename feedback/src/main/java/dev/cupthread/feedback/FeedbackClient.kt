@@ -38,7 +38,33 @@ import org.json.JSONObject
  * as [FeedbackException] subclasses, so catching that type is enough to
  * handle API errors uniformly.
  *
- * Create one client per app process and reuse it across surfaces.
+ * Requests use a 15-second connection timeout and a 20-second read timeout.
+ * The client holds no mutable state, so a single instance can be shared by
+ * concurrent coroutines — create one per app process and pass it around.
+ *
+ * Typical programmatic usage (for ready-made UI, see the screens in
+ * [dev.cupthread.feedback.ui]):
+ *
+ * ```kotlin
+ * val client = FeedbackClient(
+ *     FeedbackClientConfig(
+ *         baseUrl = "https://api.cupthread.com",
+ *         appKey = "app_live_yourAppKey", // from the CupThread console
+ *     )
+ * )
+ * val userToken = UserTokenStore.create(context).token
+ *
+ * scope.launch {
+ *     val submission = client.submit(
+ *         FeedbackDraft(
+ *             title = "Keyboard covers the send button",
+ *             description = "On the login screen the keyboard hides the button.",
+ *         ),
+ *         userToken = userToken,
+ *     )
+ *     Log.d("Feedback", "Submitted as ${submission.submissionId}")
+ * }
+ * ```
  *
  * @param config Immutable client configuration; see [FeedbackClientConfig].
  * @param transport HTTP transport used for every request. Defaults to a
@@ -69,6 +95,18 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.UnexpectedStatus on any other rejected status.
      * @throws FeedbackException.InvalidResponse if the request fails at the
      *   transport level or the response cannot be parsed.
+     *
+     * Example:
+     * ```kotlin
+     * val draft = FeedbackDraft.autofilled(
+     *     versionName = "1.2.0",
+     *     versionCode = "42",
+     * ).copy(
+     *     title = "Crash when syncing offline queue",
+     *     description = "App crashes right after the network reconnects.",
+     * )
+     * val result = client.submit(draft, userToken)
+     * ```
      */
     suspend fun submit(draft: FeedbackDraft, userToken: String? = null): FeedbackSubmissionResult {
         val payload = JSONObject().apply {
@@ -125,6 +163,17 @@ class FeedbackClient internal constructor(
      *   succeeded but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus on rejected uploads, for
      *   example payloads above the app's `maxAttachmentBytes` limit.
+     *
+     * Example — upload a screenshot, then attach it to a draft:
+     * ```kotlin
+     * val screenshot = client.uploadAttachment(
+     *     data = bitmapBytes,
+     *     filename = "screenshot.png",
+     *     mimeType = "image/png",
+     * )
+     * val draft = baseDraft.copy(attachments = baseDraft.attachments + screenshot)
+     * client.submit(draft, userToken)
+     * ```
      */
     suspend fun uploadAttachment(
         data: ByteArray,
@@ -291,6 +340,10 @@ class FeedbackClient internal constructor(
      * Loads console-configured overlay copy and the newest published entries
      * for [dev.cupthread.feedback.ui.ChangelogOverlay] and
      * [dev.cupthread.feedback.ui.presentLatestChangelog].
+     *
+     * The number of returned entries follows the console's
+     * `changelogOverlay.entryCount` setting, clamped to 1–10 (see
+     * [ChangelogOverlayConfig.clampedEntryCount]).
      *
      * @return Entries plus the appearance to render them with, or `null` when
      *   the changelog feature is hidden in the console or nothing has shipped.

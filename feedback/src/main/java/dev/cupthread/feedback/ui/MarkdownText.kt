@@ -18,6 +18,19 @@ import androidx.compose.ui.text.withStyle
 /**
  * Inline-only Markdown (bold, italic, code, links). Block syntax is flattened
  * so parent line-clamps still work, matching the Apple SDK / web previews.
+ *
+ * This is the renderer used for [dev.cupthread.feedback.ChangelogEntry.body]
+ * and [dev.cupthread.feedback.FeatureRequestItem.description]; reuse it to
+ * display those fields in custom surfaces:
+ *
+ * ```kotlin
+ * MarkdownText(entry.body, maxLines = 3)
+ * ```
+ *
+ * @param content Markdown source; unrecognized syntax is rendered as-is.
+ * @param style Typography for the rendered text.
+ * @param color Text color; links are drawn in `MaterialTheme.colorScheme.primary`.
+ * @param maxLines Maximum lines before ellipsizing.
  */
 @Composable
 fun MarkdownText(

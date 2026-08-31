@@ -40,7 +40,15 @@ import kotlin.coroutines.resume
  * Fetches console-configured overlay copy and presents the What's-New bottom
  * sheet over [activity], styled with the console theme.
  *
- * Suspends until the user dismisses the sheet.
+ * Suspends until the user dismisses the sheet, so launch it from a scope
+ * that survives as long as the UI does — e.g. `lifecycleScope`:
+ *
+ * ```kotlin
+ * lifecycleScope.launch {
+ *     val shown = client.presentLatestChangelog(this@MainActivity)
+ *     if (shown) analytics.track("whats_new_viewed")
+ * }
+ * ```
  *
  * @return `false` when the changelog feature is disabled in the console or
  *   there are no published entries (nothing was shown); `true` once the
@@ -77,12 +85,27 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
 
 /**
  * Compose-native What's-New overlay. Loads the newest published entries when
- * [visible] becomes `true` and shows them in a modal bottom sheet styled
- * with the console theme.
+ * [visible] becomes `true` and shows them in a modal bottom sheet.
  *
  * Dismisses itself by calling [onDismiss] when the changelog feature is
- * disabled in the console or nothing has shipped. For Activity-based entry
- * points prefer the awaitable [FeedbackClient.presentLatestChangelog].
+ * disabled in the console or nothing has shipped, so it is safe to keep the
+ * overlay mounted on app start.
+ *
+ * The sheet inherits the ambient [MaterialTheme]; wrap it in [CupThreadTheme]
+ * for the console-configured styling. For Activity-based entry points prefer
+ * the awaitable [FeedbackClient.presentLatestChangelog], which applies the
+ * theme itself.
+ *
+ * ```kotlin
+ * CupThreadTheme(client) {
+ *     var showWhatsNew by remember { mutableStateOf(true) }
+ *     ChangelogOverlay(
+ *         client = client,
+ *         visible = showWhatsNew,
+ *         onDismiss = { showWhatsNew = false },
+ *     )
+ * }
+ * ```
  *
  * @param client Shared API client.
  * @param visible Whether the overlay should be shown.

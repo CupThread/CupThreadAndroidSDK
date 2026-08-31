@@ -57,8 +57,20 @@ import kotlinx.coroutines.launch
  * Feature-request list with free-text search, version filter, optimistic
  * voting, and a bottom sheet for submitting new requests.
  *
+ * Behavior details:
+ * - Search is debounced (~350 ms) and matches titles and descriptions.
+ * - Voting is optimistic: the vote pill updates immediately and reverts if
+ *   the server rejects the toggle. Own requests cannot be voted on.
+ * - Pull to refresh reloads the current view; new requests appear in the
+ *   list only after moderation approval
+ *   ([dev.cupthread.feedback.FeatureRequestSubmissionResult.pending]).
+ *
  * The screen applies the console-configured theme itself and shows its own
- * top app bar and compose button.
+ * top app bar and compose button:
+ *
+ * ```kotlin
+ * FeatureRequestsScreen(client = client, userToken = userToken)
+ * ```
  *
  * @param client Shared API client.
  * @param userToken Stable anonymous token from

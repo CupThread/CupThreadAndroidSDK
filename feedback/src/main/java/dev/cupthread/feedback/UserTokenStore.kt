@@ -9,7 +9,13 @@ import java.util.UUID
  * Used to track vote state and own pending requests without requiring sign-in.
  *
  * Create one per app process via [create] and pass [token] wherever the SDK
- * asks for a `userToken`.
+ * asks for a `userToken`. Reading [token] on the very first call writes to
+ * `SharedPreferences`; from then on it returns the cached value.
+ *
+ * ```kotlin
+ * val userToken = UserTokenStore.create(context).token
+ * FeatureRequestsScreen(client = client, userToken = userToken)
+ * ```
  */
 class UserTokenStore internal constructor(private val prefs: SharedPreferences) {
     /**

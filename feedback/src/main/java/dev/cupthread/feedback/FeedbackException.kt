@@ -5,6 +5,18 @@ package dev.cupthread.feedback
  *
  * Every client method throws one of these subclasses; catch
  * [FeedbackException] to handle all API failures uniformly.
+ *
+ * Example — blanket handling with a special case for rejected requests:
+ *
+ * ```kotlin
+ * try {
+ *     client.submit(draft, userToken)
+ * } catch (error: FeedbackException.UnexpectedStatus) {
+ *     showSnackbar("Server rejected the request (HTTP ${error.code})")
+ * } catch (error: FeedbackException) {
+ *     showSnackbar("Network error — please try again")
+ * }
+ * ```
  */
 sealed class FeedbackException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     /**

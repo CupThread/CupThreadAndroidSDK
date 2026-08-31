@@ -49,8 +49,16 @@ import kotlinx.coroutines.launch
  * Full-screen changelog list ("What's New") with pull-to-refresh and an
  * email subscribe sheet.
  *
+ * Entries are sorted newest first; the mail icon in the top app bar (and the
+ * footer card) opens a sheet where users subscribe to update emails with an
+ * address — or unsubscribe again from the same sheet.
+ *
  * The screen applies the console-configured theme itself and shows its own
- * top app bar; embed it anywhere in your Compose hierarchy.
+ * top app bar; embed it anywhere in your Compose hierarchy:
+ *
+ * ```kotlin
+ * WhatsNewScreen(client = client, userToken = userToken)
+ * ```
  *
  * @param client Shared API client.
  * @param userToken Stable anonymous token from

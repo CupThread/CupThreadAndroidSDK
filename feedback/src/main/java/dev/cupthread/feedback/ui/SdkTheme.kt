@@ -66,6 +66,15 @@ internal fun sdkColorScheme(theme: SdkTheme, systemDark: Boolean) =
  * [SdkSurface] or [CupThreadTheme] when present, otherwise fetched from
  * [FeedbackClient.fetchAppConfig], falling back to [SdkAppearance.defaults]
  * on failure.
+ *
+ * Use it to branch your own UI on console settings:
+ *
+ * ```kotlin
+ * val appearance = rememberSdkAppearance(client)
+ * if (appearance.features.isEnabled(SdkFeature.CHANGELOG)) {
+ *     WhatsNewButton(onClick = onOpenWhatsNew)
+ * }
+ * ```
  */
 @Composable
 fun rememberSdkAppearance(client: FeedbackClient): SdkAppearance {
@@ -82,8 +91,16 @@ fun rememberSdkAppearance(client: FeedbackClient): SdkAppearance {
 /**
  * Material theme carrying the console-configured [SdkAppearance]. Wraps
  * [content] with the console-selected [SdkTheme] color scheme; use it when
- * hosting SDK UI without [SdkSurface], for example around
- * [FeedbackClient.presentLatestChangelog] content.
+ * hosting SDK composables outside the ready-made screens, for example
+ * [ChangelogOverlay]:
+ *
+ * ```kotlin
+ * setContent {
+ *     CupThreadTheme(client) {
+ *         ChangelogOverlay(client = client, visible = true, onDismiss = {})
+ *     }
+ * }
+ * ```
  */
 @Composable
 fun CupThreadTheme(
@@ -100,7 +117,15 @@ fun CupThreadTheme(
 /**
  * Host for an SDK surface: applies the console-configured theme and renders
  * [content] only when [feature] is enabled in the console — otherwise shows
- * an "unavailable" placeholder. All ready-made screens use this internally.
+ * an "unavailable" placeholder. All ready-made screens use this internally;
+ * it is also the gate for custom surfaces so they follow the console's
+ * feature switches:
+ *
+ * ```kotlin
+ * SdkSurface(client, SdkFeature.FEEDBACK) {
+ *     MyCustomFeedbackPanel(client = client, userToken = userToken)
+ * }
+ * ```
  *
  * @param client Shared API client.
  * @param feature The surface being hosted, checked against the console's
