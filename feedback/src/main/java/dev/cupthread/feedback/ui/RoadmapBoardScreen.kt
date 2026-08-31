@@ -43,6 +43,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+/**
+ * One roadmap board column with its requests, as rendered by
+ * [RoadmapBoardScreen].
+ *
+ * @property column The backing kanban column, or `null` for the synthetic
+ *   "Other" group that collects requests without a column.
+ * @property requests Requests currently in [column].
+ */
 data class RoadmapGroup(
     val column: BoardColumn?,
     val requests: List<FeatureRequestItem>
@@ -60,6 +68,19 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
     return if (uncategorized.isEmpty()) groups else groups + RoadmapGroup(null, uncategorized)
 }
 
+/**
+ * Roadmap kanban board: horizontally paged columns with chip navigation,
+ * free-text search, and pull-to-refresh.
+ *
+ * Columns and their order come from the console; requests are grouped into
+ * [RoadmapGroup]s per column. The screen applies the console-configured
+ * theme itself.
+ *
+ * @param client Shared API client.
+ * @param userToken Stable anonymous token from
+ *   [dev.cupthread.feedback.UserTokenStore] used to load requests.
+ * @param modifier Modifier applied to the root [Scaffold].
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun RoadmapBoardScreen(

@@ -53,6 +53,20 @@ val userToken = UserTokenStore.create(context).token
 
 ---
 
+## API Reference
+
+The full KDoc-generated API reference is published automatically on every push to `main`:
+
+**[https://cupthread.github.io/CupThreadAndroidSDK/](https://cupthread.github.io/CupThreadAndroidSDK/)**
+
+To generate the docs locally (output in `feedback/build/dokka/html`):
+
+```sh
+./gradlew :feedback:dokkaGenerateHtml
+```
+
+---
+
 ## Ready-Made Compose Screens
 
 Wrap your UI tree in `CupThreadTheme(client)` so console skin settings apply:

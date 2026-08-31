@@ -29,12 +29,47 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * Entry point for the CupThread public API: feedback, feature requests,
+ * roadmap, and changelog.
+ *
+ * Every method is a [suspend] function that performs its network call on
+ * `Dispatchers.IO`; call it from a coroutine scope. All failures are raised
+ * as [FeedbackException] subclasses, so catching that type is enough to
+ * handle API errors uniformly.
+ *
+ * Create one client per app process and reuse it across surfaces.
+ *
+ * @param config Immutable client configuration; see [FeedbackClientConfig].
+ * @param transport HTTP transport used for every request. Defaults to a
+ *   `java.net.HttpURLConnection`-based transport; inject a fake in unit tests.
+ */
 class FeedbackClient internal constructor(
     val config: FeedbackClientConfig,
     internal val transport: HttpTransport
 ) {
     constructor(config: FeedbackClientConfig) : this(config, UrlConnectionTransport())
 
+    /**
+     * Submits a feedback draft to `POST /api/v1/feedback`.
+     *
+     * Title and description are trimmed and blank optional fields are omitted.
+     * The SDK appends `sdk`, `platform`, and `submittedAt` entries to
+     * [FeedbackDraft.metadata] before sending. Attachments referenced by the
+     * draft must already be uploaded with [uploadAttachment].
+     *
+     * @param draft Feedback content, reporter info, and uploaded attachments.
+     * @param userToken Stable anonymous token from [UserTokenStore], sent as
+     *   the `X-User-Token` header. Optional when the app allows anonymous
+     *   feedback.
+     * @return Server-assigned submission id and GitHub discussion link, when
+     *   the platform mirrored the feedback to GitHub.
+     * @throws FeedbackException.AuthenticationRequired if the app requires a
+     *   user token (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on any other rejected status.
+     * @throws FeedbackException.InvalidResponse if the request fails at the
+     *   transport level or the response cannot be parsed.
+     */
     suspend fun submit(draft: FeedbackDraft, userToken: String? = null): FeedbackSubmissionResult {
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
@@ -72,6 +107,25 @@ class FeedbackClient internal constructor(
         )
     }
 
+    /**
+     * Uploads a binary attachment and returns the descriptor to attach to a
+     * [FeedbackDraft].
+     *
+     * Image MIME types upload to `POST /api/v1/uploads/images`; everything
+     * else goes to `POST /api/v1/uploads/r2` object storage.
+     *
+     * @param data Raw file contents.
+     * @param filename Original file name, echoed back on the result.
+     * @param mimeType MIME type such as `image/png`; also decides the upload
+     *   route unless [preferredKind] is given.
+     * @param preferredKind Forces a storage backend, overriding the
+     *   MIME-type-based choice.
+     * @return Attachment descriptor (kind, storage key, URL, size).
+     * @throws FeedbackException.UnreadableUploadResponse if the upload
+     *   succeeded but the response could not be parsed.
+     * @throws FeedbackException.UnexpectedStatus on rejected uploads, for
+     *   example payloads above the app's `maxAttachmentBytes` limit.
+     */
     suspend fun uploadAttachment(
         data: ByteArray,
         filename: String,
@@ -106,9 +160,19 @@ class FeedbackClient internal constructor(
         }
     }
 
+    /**
+     * Fetches the public app configuration from
+     * `GET /api/v1/public/config/{appKey}`: display metadata, anonymous-access
+     * switches, attachment size limit, and the console-configured
+     * [PublicAppConfig.sdk] appearance.
+     */
     suspend fun fetchAppConfig(): PublicAppConfig =
         parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
 
+    /**
+     * Fetches the roadmap kanban columns for the app from
+     * `GET /api/v1/public/columns/{appKey}`, sorted by display position.
+     */
     suspend fun fetchColumns(): List<BoardColumn> {
         val json = get("/api/v1/public/columns/${config.appKey}")
         val array = json.optJSONArray("columns") ?: JSONArray()
@@ -117,6 +181,11 @@ class FeedbackClient internal constructor(
         }.sortedBy { it.position }
     }
 
+    /**
+     * Fetches the app's release versions from
+     * `GET /api/v1/public/versions/{appKey}`, sorted by display position.
+     * Version ids from this list can be used to filter [fetchFeatureRequests].
+     */
     suspend fun fetchVersions(): List<AppVersion> {
         val json = get("/api/v1/public/versions/${config.appKey}")
         val array = json.optJSONArray("versions") ?: JSONArray()
@@ -125,6 +194,19 @@ class FeedbackClient internal constructor(
         }.sortedBy { it.position }
     }
 
+    /**
+     * Fetches a page of feature requests from `GET /api/v1/feature-requests`.
+     *
+     * Each item carries the caller's vote state (`hasVoted`) and ownership
+     * flag (`isOwnRequest`), both derived from [userToken].
+     *
+     * @param userToken Stable anonymous token from [UserTokenStore].
+     * @param limit Page size; the server caps and defaults this (50).
+     * @param offset Number of requests to skip, for pagination.
+     * @param versionId Restricts results to a version from [fetchVersions].
+     * @param query Free-text search across title and description.
+     * @return Page of requests plus the total number of matches.
+     */
     suspend fun fetchFeatureRequests(
         userToken: String,
         limit: Int = 50,
@@ -143,6 +225,18 @@ class FeedbackClient internal constructor(
         return parseListFeatureRequests(get("/api/v1/feature-requests?${encodeQuery(params)}"))
     }
 
+    /**
+     * Submits a new feature request to `POST /api/v1/feature-requests`.
+     *
+     * New requests may be held for moderation; check
+     * [FeatureRequestSubmissionResult.pending] to know whether the request is
+     * visible on the public board yet.
+     *
+     * @param draft Title, description, and optional display name.
+     * @param userToken Stable anonymous token that owns the request.
+     * @throws FeedbackException.AuthenticationRequired when the app disallows
+     *   anonymous requests (HTTP 401).
+     */
     suspend fun submitFeatureRequest(
         draft: FeatureRequestDraft,
         userToken: String
@@ -159,6 +253,17 @@ class FeedbackClient internal constructor(
         )
     }
 
+    /**
+     * Toggles the caller's vote on a feature request via
+     * `POST /api/v1/feature-requests/{id}/vote`.
+     *
+     * @param featureRequestId Id of the request to vote on, taken from
+     *   [FeatureRequestItem.id].
+     * @param userToken Stable anonymous token; a token can cast at most one
+     *   vote per request.
+     * @return Vote state and total count after the toggle — use these to
+     *   correct optimistic UI updates.
+     */
     suspend fun toggleVote(featureRequestId: String, userToken: String): VoteResult {
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
@@ -169,6 +274,11 @@ class FeedbackClient internal constructor(
         )
     }
 
+    /**
+     * Fetches published changelog entries from
+     * `GET /api/v1/public/apps/{appKey}/changelog`, newest first by
+     * [ChangelogEntry.publishedAt].
+     */
     suspend fun fetchChangelog(): List<ChangelogEntry> {
         val json = get("/api/v1/public/apps/${config.appKey}/changelog")
         val array = json.optJSONArray("entries") ?: JSONArray()
@@ -178,8 +288,12 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Loads overlay copy and the newest published entries.
-     * Returns `null` when changelog is hidden in the console or nothing has shipped.
+     * Loads console-configured overlay copy and the newest published entries
+     * for [dev.cupthread.feedback.ui.ChangelogOverlay] and
+     * [dev.cupthread.feedback.ui.presentLatestChangelog].
+     *
+     * @return Entries plus the appearance to render them with, or `null` when
+     *   the changelog feature is hidden in the console or nothing has shipped.
      */
     suspend fun prepareChangelogOverlay(): Pair<List<ChangelogEntry>, SdkAppearance>? {
         val appearance = fetchAppConfig().sdk
@@ -189,6 +303,16 @@ class FeedbackClient internal constructor(
         return entries to appearance
     }
 
+    /**
+     * Subscribes an email address to the app's changelog updates via
+     * `POST /api/v1/public/apps/{appKey}/changelog/subscribe`.
+     *
+     * @param email Address to subscribe.
+     * @param userToken Stable anonymous token, sent as the `X-User-Token`
+     *   header.
+     * @return Whether a new subscription was created; see
+     *   [ChangelogSubscriptionResult.alreadySubscribed] for repeat calls.
+     */
     suspend fun subscribeToChangelog(email: String, userToken: String): ChangelogSubscriptionResult {
         val payload = JSONObject().put("email", email.trim())
         return parseChangelogSubscription(
@@ -202,6 +326,13 @@ class FeedbackClient internal constructor(
         )
     }
 
+    /**
+     * Removes an email address from the app's changelog updates via
+     * `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe`.
+     *
+     * @param email Address to unsubscribe.
+     * @return Whether the address was unsubscribed.
+     */
     suspend fun unsubscribeFromChangelog(email: String): ChangelogUnsubscribeResult {
         val payload = JSONObject().put("email", email.trim())
         return parseChangelogUnsubscribe(
@@ -215,8 +346,18 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Self-declared paying signals only — never payment details.
-     * Omitted parameters are left unchanged server-side.
+     * Reports self-declared user attributes via
+     * `PUT /api/v1/public/apps/{appKey}/user`.
+     *
+     * Paying signals are self-declared only — never payment details.
+     * Omitted (null) parameters are left unchanged server-side.
+     *
+     * @param userToken Stable anonymous token identifying the user.
+     * @param isPaying Whether the user reports being a paying customer.
+     * @param plan Subscription plan name, such as `pro`.
+     * @param mrr Monthly recurring revenue attributed to the user.
+     * @param currency ISO 4217 code for [mrr], such as `USD`.
+     * @return Whether the update was applied, and when.
      */
     suspend fun updateUserAttributes(
         userToken: String,

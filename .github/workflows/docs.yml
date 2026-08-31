@@ -1,0 +1,53 @@
+name: Docs
+
+# Builds the Dokka API reference and publishes it to GitHub Pages.
+# One-time setup: Settings → Pages → Source → "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'feedback/src/main/**/*.kt'
+      - 'feedback/build.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle/wrapper/gradle-wrapper.properties'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Generate API docs
+        run: ./gradlew :feedback:dokkaGenerateHtml --console=plain
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: feedback/build/dokka/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

@@ -37,8 +37,14 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 /**
- * Fetches console-configured overlay copy and presents a bottom sheet.
- * Returns `false` when changelog is hidden or there are no published entries.
+ * Fetches console-configured overlay copy and presents the What's-New bottom
+ * sheet over [activity], styled with the console theme.
+ *
+ * Suspends until the user dismisses the sheet.
+ *
+ * @return `false` when the changelog feature is disabled in the console or
+ *   there are no published entries (nothing was shown); `true` once the
+ *   sheet was shown and dismissed.
  */
 suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
     val prepared = withContext(Dispatchers.IO) { prepareChangelogOverlay() } ?: return false
@@ -69,6 +75,20 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
     }
 }
 
+/**
+ * Compose-native What's-New overlay. Loads the newest published entries when
+ * [visible] becomes `true` and shows them in a modal bottom sheet styled
+ * with the console theme.
+ *
+ * Dismisses itself by calling [onDismiss] when the changelog feature is
+ * disabled in the console or nothing has shipped. For Activity-based entry
+ * points prefer the awaitable [FeedbackClient.presentLatestChangelog].
+ *
+ * @param client Shared API client.
+ * @param visible Whether the overlay should be shown.
+ * @param onDismiss Called when the sheet is dismissed or there is nothing
+ *   to show.
+ */
 @Composable
 fun ChangelogOverlay(
     client: FeedbackClient,

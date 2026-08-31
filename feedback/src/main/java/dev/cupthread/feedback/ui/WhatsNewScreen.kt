@@ -45,6 +45,19 @@ import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.launch
 
+/**
+ * Full-screen changelog list ("What's New") with pull-to-refresh and an
+ * email subscribe sheet.
+ *
+ * The screen applies the console-configured theme itself and shows its own
+ * top app bar; embed it anywhere in your Compose hierarchy.
+ *
+ * @param client Shared API client.
+ * @param userToken Stable anonymous token from
+ *   [dev.cupthread.feedback.UserTokenStore]; used when subscribing to update
+ *   emails.
+ * @param modifier Modifier applied to the root [Scaffold].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WhatsNewScreen(

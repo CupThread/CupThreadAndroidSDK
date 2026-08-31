@@ -1,12 +1,29 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.dokka")
     id("maven-publish")
 }
 
 group = "dev.cupthread"
 // Overridden by scripts/release-sdk.mjs with -PcupthreadVersion=X.Y.Z.
 version = findProperty("cupthreadVersion") ?: "0.1.0"
+
+// Lowercase-kebab only: Dokka derives the published module directory from
+// this value, and spaces or camelCase would leak into URLs.
+dokka {
+    moduleName.set("cupthread-android-sdk")
+    dokkaSourceSets.configureEach {
+        externalDocumentationLinks {
+            create("android") {
+                url.set(uri("https://developer.android.com/reference/kotlin/"))
+            }
+            create("coroutines") {
+                url.set(uri("https://kotlinlang.org/api/kotlinx.coroutines/"))
+            }
+        }
+    }
+}
 
 android {
     namespace = "dev.cupthread.feedback"

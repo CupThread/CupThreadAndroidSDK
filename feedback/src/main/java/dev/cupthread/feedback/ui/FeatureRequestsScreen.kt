@@ -53,6 +53,19 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+/**
+ * Feature-request list with free-text search, version filter, optimistic
+ * voting, and a bottom sheet for submitting new requests.
+ *
+ * The screen applies the console-configured theme itself and shows its own
+ * top app bar and compose button.
+ *
+ * @param client Shared API client.
+ * @param userToken Stable anonymous token from
+ *   [dev.cupthread.feedback.UserTokenStore]; required so vote state and
+ *   own-request flags resolve correctly.
+ * @param modifier Modifier applied to the root [Scaffold].
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FeatureRequestsScreen(

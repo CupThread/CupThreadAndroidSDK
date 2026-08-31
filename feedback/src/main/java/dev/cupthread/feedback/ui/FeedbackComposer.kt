@@ -41,6 +41,24 @@ import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.launch
 
+/**
+ * Feedback form screen: title, description, optional reporter name and email,
+ * and a send button.
+ *
+ * When no [initialDraft] is supplied, the draft is pre-filled with the host
+ * app's version name and code from the package manager, so end users never
+ * type them. After a successful send the composer swaps to a confirmation
+ * state; use [onSubmit] for custom handling, such as closing the screen.
+ *
+ * @param client Shared API client.
+ * @param userToken Optional stable anonymous token from
+ *   [dev.cupthread.feedback.UserTokenStore], sent as the `X-User-Token`
+ *   header.
+ * @param initialDraft Draft to start editing from; defaults to an
+ *   auto-filled draft for the host package.
+ * @param onSubmit Invoked with the server result after a successful submit.
+ * @param modifier Modifier applied to the root [Scaffold].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedbackComposer(
