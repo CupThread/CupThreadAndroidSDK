@@ -4,23 +4,30 @@ Native Kotlin + Jetpack Compose SDK for Android 8+ (minSdk 26, Material 3).
 
 Part of the [CupThread.com](https://cupthread.com) platform.
 
+## 🤖 Recommended: Install via AI Agent (Agentic Coding)
+
+Instead of manually editing Gradle build files and writing boilerplate by hand, install the official **CupThread Android AI Skill** into your workspace with [`npx skills`](https://github.com/skills-directory/skills) and let your AI assistant (Claude Code, Cursor, Copilot, Android Studio, Windsurf, Codex, Antigravity) integrate and customize it for you:
+
+```sh
+npx skills add CupThread/CupThreadAgenticCoding --skill cupthread-android-sdk
+```
+
+Once installed, simply prompt your coding agent:
+> *"Integrate the CupThread feedback roadmap and changelog screens with appKey `app_xxx`"*
+
+---
+
 ## CupThread Ecosystem
 - 🌐 [CupThread.com](https://cupthread.com) — Feedback SaaS platform, developer console, and API.
 - 🍏 [CupThread/CupThreadSwiftSDK](https://github.com/CupThread/CupThreadSwiftSDK) — Apple platform SDK (SwiftUI / SPM / XCFramework).
 - 🤖 [CupThread/CupThreadAndroidSDK](https://github.com/CupThread/CupThreadAndroidSDK) — Android SDK (Jetpack Compose / Maven).
+- ⚛️ [CupThread/CupThreadReactNativeSDK](https://github.com/CupThread/CupThreadReactNativeSDK) — React Native & Expo SDK (TypeScript).
+- 💙 [CupThread/CupThreadFlutterSDK](https://github.com/CupThread/CupThreadFlutterSDK) — Flutter SDK (Dart).
 - 🧠 [CupThread/CupThreadAgenticCoding](https://github.com/CupThread/CupThreadAgenticCoding) — AI-friendly CLI & Skills for pair programming.
-
-## 🤖 Agentic Coding Friendly
-
-This repository is designed from the ground up to be **Agentic Coding friendly** for LLMs, coding agents, and pair programmers:
-- **Minimal external dependencies**: Lightweight, deterministic builds without external dependency bloat.
-- **Strict type consistency**: Full alignment with CupThread Public API schemas.
-- **Comprehensive documentation**: Full KDoc API documentation and Jetpack Compose component guides.
-- **AI skills & pair programming tooling**: Companion skills, CLI tools, and agent workflows are maintained in [CupThread/CupThreadAgenticCoding](https://github.com/CupThread/CupThreadAgenticCoding).
 
 ---
 
-## Installation
+## Manual Installation
 
 Add the CupThread Maven repository and the dependency:
 
