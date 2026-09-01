@@ -12,8 +12,11 @@ Instead of manually editing Gradle build files and writing boilerplate by hand, 
 npx skills add CupThread/CupThreadAgenticCoding --skill cupthread-android-sdk
 ```
 
-Once installed, simply prompt your coding agent:
-> *"Integrate the CupThread feedback roadmap and changelog screens with appKey `app_xxx`"*
+Once installed, simply copy and paste this prompt to your AI coding agent:
+
+```text
+Integrate the CupThread feedback roadmap and changelog screens into this app using appKey app_xxx.
+```
 
 ---
 
