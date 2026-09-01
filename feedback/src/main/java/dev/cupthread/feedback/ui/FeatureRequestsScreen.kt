@@ -1,5 +1,6 @@
 package dev.cupthread.feedback.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.cupthread.feedback.AppVersion
 import dev.cupthread.feedback.FeatureRequestDraft
@@ -109,6 +111,8 @@ private fun FeatureRequestsScreenContent(
     var composeOpen by remember { mutableStateOf(false) }
     var submittedBanner by remember { mutableStateOf(false) }
     var filterOpen by remember { mutableStateOf(false) }
+    var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
+    var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
     val defaultLoadError = stringResource(R.string.cupthread_features_load_failed)
 
     suspend fun load() {
@@ -228,6 +232,8 @@ private fun FeatureRequestsScreenContent(
                                 item = item,
                                 query = search,
                                 voting = votingIds.contains(item.id),
+                                onClick = { selectedItem = item },
+                                onOpenProfile = { selectedProfileUserId = it },
                                 onVote = {
                                     scope.launch {
                                         if (item.isOwnRequest || votingIds.contains(item.id)) return@launch
@@ -238,13 +244,22 @@ private fun FeatureRequestsScreenContent(
                                                 it.withVoteState(!it.hasVoted, if (it.hasVoted) it.voteCount - 1 else it.voteCount + 1)
                                             } else it
                                         }
+                                        selectedItem = if (selectedItem?.id == item.id) {
+                                            selectedItem?.withVoteState(!item.hasVoted, if (item.hasVoted) item.voteCount - 1 else item.voteCount + 1)
+                                        } else selectedItem
                                         try {
                                             val result = client.toggleVote(item.id, userToken)
                                             items = items.map {
                                                 if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
                                             }
+                                            if (selectedItem?.id == item.id) {
+                                                selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
+                                            }
                                         } catch (_: Exception) {
                                             items = items.map { if (it.id == item.id) previous else it }
+                                            if (selectedItem?.id == item.id) {
+                                                selectedItem = previous
+                                            }
                                         } finally {
                                             votingIds = votingIds - item.id
                                         }
@@ -270,6 +285,46 @@ private fun FeatureRequestsScreenContent(
             }
         )
     }
+
+    selectedItem?.let { currentItem ->
+        FeatureRequestDetailSheet(
+            client = client,
+            item = currentItem,
+            userToken = userToken,
+            onDismiss = { selectedItem = null },
+            voting = votingIds.contains(currentItem.id),
+            onOpenProfile = { selectedProfileUserId = it },
+            onVote = {
+                scope.launch {
+                    if (currentItem.isOwnRequest || votingIds.contains(currentItem.id)) return@launch
+                    votingIds = votingIds + currentItem.id
+                    val previous = currentItem
+                    val newVoted = !currentItem.hasVoted
+                    val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
+                    items = items.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it }
+                    selectedItem = currentItem.withVoteState(newVoted, newCount)
+                    try {
+                        val result = client.toggleVote(currentItem.id, userToken)
+                        items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
+                        selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                    } catch (_: Exception) {
+                        items = items.map { if (it.id == currentItem.id) previous else it }
+                        selectedItem = previous
+                    } finally {
+                        votingIds = votingIds - currentItem.id
+                    }
+                }
+            }
+        )
+    }
+
+    selectedProfileUserId?.let { userId ->
+        UserProfileSheet(
+            client = client,
+            userId = userId,
+            onDismiss = { selectedProfileUserId = null }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -278,11 +333,15 @@ private fun FeatureRequestRow(
     item: FeatureRequestItem,
     query: String,
     voting: Boolean,
+    onClick: () -> Unit,
+    onOpenProfile: (String) -> Unit,
     onVote: () -> Unit
 ) {
     val stage = stageStyleForRequest(item)
     val anonymousLabel = stringResource(R.string.cupthread_features_anonymous)
-    RequestCard {
+    RequestCard(
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 HighlightedText(item.title, query, MaterialTheme.typography.titleSmall, maxLines = 2)
@@ -300,11 +359,51 @@ private fun FeatureRequestRow(
                         HighlightedText(item.description, query, MaterialTheme.typography.bodySmall, maxLines = 3)
                     }
                 }
-                Text(
-                    listOfNotNull(item.requesterName?.ifBlank { null } ?: anonymousLabel, relativeOrDate(item.createdAt)).joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        UserAvatar(
+                            url = item.requesterAvatarUrl,
+                            name = item.requesterName,
+                            size = 18.dp,
+                            onClick = item.requesterClerkId?.let { clerkId -> { onOpenProfile(clerkId) } }
+                        )
+                        Text(
+                            text = item.requesterName?.ifBlank { null } ?: anonymousLabel,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (item.requesterClerkId != null) FontWeight.Medium else FontWeight.Normal,
+                                color = if (item.requesterClerkId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = if (item.requesterClerkId != null) {
+                                Modifier.clickable { onOpenProfile(item.requesterClerkId) }
+                            } else Modifier
+                        )
+                        Text(
+                            "·",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            relativeOrDate(item.createdAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (item.recentCommenters.isNotEmpty() || item.hasMoreCommenters) {
+                        AvatarStack(
+                            commenters = item.recentCommenters,
+                            hasMore = item.hasMoreCommenters,
+                            onCommenterClick = { it.clerkUserId?.let(onOpenProfile) }
+                        )
+                    }
+                }
             }
             VotePill(item.voteCount, item.hasVoted, voting, enabled = !item.isOwnRequest, onClick = onVote)
         }

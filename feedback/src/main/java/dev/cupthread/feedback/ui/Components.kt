@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,6 +52,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material3.ModalBottomSheet
+import dev.cupthread.feedback.PublicUserProfileResult
+import dev.cupthread.feedback.RecentCommenter
+import dev.cupthread.feedback.FeedbackClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.BoardColumnKind
 import dev.cupthread.feedback.FeatureRequestItem
@@ -333,3 +354,367 @@ internal fun friendlyDate(iso: String): String {
 }
 
 internal fun relativeOrDate(iso: String): String = friendlyDate(iso)
+
+private val avatarCache = java.util.concurrent.ConcurrentHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+
+/**
+ * Renders a circular user avatar with asynchronous image loading and initials fallback.
+ */
+@Composable
+fun UserAvatar(
+    url: String?,
+    name: String?,
+    size: androidx.compose.ui.unit.Dp = 24.dp,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    var bitmap by remember(url) { mutableStateOf(url?.let { avatarCache[it] }) }
+
+    LaunchedEffect(url) {
+        if (url.isNullOrBlank()) {
+            bitmap = null
+            return@LaunchedEffect
+        }
+        val cached = avatarCache[url]
+        if (cached != null) {
+            bitmap = cached
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 8_000
+                    readTimeout = 8_000
+                    doInput = true
+                }
+                connection.inputStream.use { stream ->
+                    val decoded = android.graphics.BitmapFactory.decodeStream(stream)
+                    if (decoded != null) {
+                        val imageBitmap = decoded.asImageBitmap()
+                        avatarCache[url] = imageBitmap
+                        bitmap = imageBitmap
+                    }
+                }
+            } catch (_: Exception) {
+                // fallback to initials
+            }
+        }
+    }
+
+    val clickableMod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    val initials = name?.trim()?.firstOrNull()?.uppercase() ?: ""
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .then(clickableMod),
+        contentAlignment = Alignment.Center
+    ) {
+        val currentBitmap = bitmap
+        if (currentBitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = currentBitmap,
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            val bgColors = listOf(
+                Color(0xFF6750A4), Color(0xFF1565C0), Color(0xFF2E7D32),
+                Color(0xFFEF6C00), Color(0xFFC2185B), Color(0xFF00838F)
+            )
+            val colorIndex = ((name?.hashCode() ?: 0) and 0x7FFFFFFF) % bgColors.size
+            val bgColor = bgColors[colorIndex]
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(bgColor),
+                contentAlignment = Alignment.Center
+            ) {
+                if (initials.isNotEmpty()) {
+                    Text(
+                        text = initials,
+                        color = Color.White,
+                        style = when {
+                            size <= 20.dp -> MaterialTheme.typography.labelSmall.copy(fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp), fontWeight = FontWeight.Bold)
+                            size <= 32.dp -> MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                            size <= 48.dp -> MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                            else -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                        }
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.Person,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(size * 0.6f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Renders a horizontal avatar stack of up to 3 recent commenters with an overflow indicator.
+ */
+@Composable
+fun AvatarStack(
+    commenters: List<RecentCommenter>,
+    hasMore: Boolean = false,
+    onCommenterClick: ((RecentCommenter) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    if (commenters.isEmpty()) return
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy((-6).dp)
+    ) {
+        val shown = commenters.take(3)
+        shown.forEachIndexed { index, commenter ->
+            Box(
+                modifier = Modifier
+                    .zIndex((4 - index).toFloat())
+                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
+            ) {
+                UserAvatar(
+                    url = commenter.avatarUrl,
+                    name = commenter.authorName,
+                    size = 20.dp,
+                    onClick = if (commenter.clerkUserId != null) { { onCommenterClick?.invoke(commenter) } } else null
+                )
+            }
+        }
+        if (hasMore || commenters.size > 3) {
+            Box(
+                modifier = Modifier
+                    .zIndex(0f)
+                    .size(20.dp)
+                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "···",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp),
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun UserProfileSheet(
+    client: FeedbackClient,
+    userId: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var profileResult by remember(userId) { mutableStateOf<PublicUserProfileResult?>(null) }
+    var loading by remember(userId) { mutableStateOf(true) }
+    var error by remember(userId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val defaultLoadError = stringResource(R.string.cupthread_profile_load_failed)
+
+    suspend fun load() {
+        loading = true
+        error = null
+        try {
+            profileResult = client.fetchUserProfile(userId)
+        } catch (ex: Exception) {
+            error = ex.message ?: defaultLoadError
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(userId) {
+        load()
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            when {
+                loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                error != null -> {
+                    LoadErrorState(error!!) { scope.launch { load() } }
+                }
+                profileResult != null -> {
+                    val result = profileResult!!
+                    val profile = result.profile
+
+                    // Profile Header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        UserAvatar(
+                            url = profile.avatarUrl,
+                            name = profile.displayName,
+                            size = 56.dp
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = profile.displayName?.ifBlank { null } ?: stringResource(R.string.cupthread_features_anonymous),
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            if (!profile.createdAt.isNullOrBlank()) {
+                                Text(
+                                    text = friendlyDate(profile.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    if (!profile.bio.isNullOrBlank()) {
+                        Text(
+                            text = profile.bio,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    if (!profile.websiteUrl.isNullOrBlank()) {
+                        val website = profile.websiteUrl
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.clickable {
+                                try {
+                                    val uri = android.net.Uri.parse(
+                                        if (website.startsWith("http://") || website.startsWith("https://")) website
+                                        else "https://$website"
+                                    )
+                                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                                } catch (_: Exception) {}
+                            }
+                        ) {
+                            Icon(
+                                Icons.Outlined.Public,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = website.removePrefix("https://").removePrefix("http://"),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                        }
+                    }
+
+                    // Apps Section
+                    if (result.apps.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.cupthread_profile_apps_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            result.apps.forEach { app ->
+                                RequestCard {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        UserAvatar(url = app.iconUrl, name = app.name, size = 36.dp)
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(app.name, style = MaterialTheme.typography.titleSmall)
+                                            if (!app.description.isNullOrBlank()) {
+                                                Text(
+                                                    app.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        CapsuleBadge(
+                                            stringResource(R.string.cupthread_profile_requests_count, app.requestCount),
+                                            MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Comments Section
+                    if (result.hideComments || profile.hideComments) {
+                        Text(
+                            text = stringResource(R.string.cupthread_profile_comments_hidden),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (result.recentComments.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.cupthread_profile_recent_comments),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            result.recentComments.forEach { comment ->
+                                RequestCard {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                comment.appName,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                relativeOrDate(comment.createdAt),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Text(
+                                            comment.featureRequestTitle,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        MarkdownText(comment.body, maxLines = 3)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

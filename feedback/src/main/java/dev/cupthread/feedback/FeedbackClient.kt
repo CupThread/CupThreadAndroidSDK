@@ -12,10 +12,13 @@ import dev.cupthread.feedback.internal.parseBoardColumn
 import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
+import dev.cupthread.feedback.internal.parseCommentList
+import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
 import dev.cupthread.feedback.internal.parseListFeatureRequests
 import dev.cupthread.feedback.internal.parsePublicAppConfig
+import dev.cupthread.feedback.internal.parsePublicUserProfileResult
 import dev.cupthread.feedback.internal.parseUserAttributesUpdate
 import dev.cupthread.feedback.internal.parseVoteResult
 import dev.cupthread.feedback.internal.putOptString
@@ -324,6 +327,58 @@ class FeedbackClient internal constructor(
     }
 
     /**
+     * Fetches comments on a feature request from
+     * `GET /api/v1/feature-requests/{id}/comments`.
+     *
+     * Returns a flat list of comments including author avatars and
+     * `@reply` metadata. Hidden comments are included in the response
+     * but flagged with [FeatureRequestComment.isHidden].
+     *
+     * @param featureRequestId Id of the feature request.
+     * @return List of comments, newest last.
+     */
+    suspend fun fetchComments(featureRequestId: String): List<FeatureRequestComment> =
+        parseCommentList(get("/api/v1/feature-requests/$featureRequestId/comments"))
+
+    /**
+     * Posts a comment or `@reply` on a feature request via
+     * `POST /api/v1/feature-requests/{id}/comments`.
+     *
+     * @param featureRequestId Id of the feature request to comment on.
+     * @param draft Comment content and optional reply metadata.
+     * @param userToken Stable anonymous token from [UserTokenStore], sent
+     *   as the `X-User-Token` header.
+     * @return The newly created comment with server-assigned id and
+     *   timestamp.
+     * @throws FeedbackException.AuthenticationRequired if the app
+     *   requires a user token (HTTP 401).
+     */
+    suspend fun postComment(
+        featureRequestId: String,
+        draft: CommentDraft,
+        userToken: String
+    ): FeatureRequestComment {
+        val payload = JSONObject().apply {
+            put("body", draft.body.trim())
+            putOptString("authorName", draft.authorName?.trim()?.ifEmpty { null })
+            putOptString("authorEmail", draft.authorEmail?.trim()?.ifEmpty { null })
+            putOptString("authorAvatarUrl", draft.authorAvatarUrl?.trim()?.ifEmpty { null })
+            putOptString("parentId", draft.parentId)
+            putOptString("replyToClerkId", draft.replyToClerkId)
+            putOptString("replyToAuthorName", draft.replyToAuthorName?.trim()?.ifEmpty { null })
+        }
+        return parseFeatureRequestComment(
+            sendJson(
+                method = "POST",
+                path = "/api/v1/feature-requests/$featureRequestId/comments",
+                body = payload,
+                userToken = userToken,
+                accepted = setOf(200, 201)
+            )
+        )
+    }
+
+    /**
      * Fetches published changelog entries from
      * `GET /api/v1/public/apps/{appKey}/changelog`, newest first by
      * [ChangelogEntry.publishedAt].
@@ -435,6 +490,21 @@ class FeedbackClient internal constructor(
             )
         )
     }
+
+    /**
+     * Fetches a public user profile from
+     * `GET /api/v1/users/{userId}/profile`.
+     *
+     * Returns the user's public profile, their public apps, and recent
+     * public comments (respecting the user's privacy settings).
+     *
+     * @param userId Clerk user id of the profile to fetch.
+     * @return Profile, public apps, and recent comments.
+     * @throws FeedbackException.UnexpectedStatus on HTTP 404 when the
+     *   user does not exist.
+     */
+    suspend fun fetchUserProfile(userId: String): PublicUserProfileResult =
+        parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()

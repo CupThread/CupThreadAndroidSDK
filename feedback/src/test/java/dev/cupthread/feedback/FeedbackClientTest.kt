@@ -216,10 +216,14 @@ class FeedbackClientTest {
             versionLabel = null,
             releasedVersion = null,
             requesterName = null,
+            requesterAvatarUrl = "https://example.com/avatar.png",
+            requesterClerkId = "user_123",
             approved = true,
             voteCount = 3,
             hasVoted = false,
             isOwnRequest = false,
+            recentCommenters = listOf(RecentCommenter("Alice", "user_alice", "https://example.com/alice.png")),
+            hasMoreCommenters = true,
             createdAt = "2026-01-01T00:00:00.000Z",
             updatedAt = "2026-01-01T00:00:00.000Z"
         )
@@ -228,6 +232,170 @@ class FeedbackClientTest {
         assertTrue(updated.hasVoted)
         assertEquals(base.title, updated.title)
         assertEquals(base.columnName, updated.columnName)
+        assertEquals("https://example.com/avatar.png", updated.requesterAvatarUrl)
+        assertEquals("user_123", updated.requesterClerkId)
+        assertEquals(1, updated.recentCommenters.size)
+        assertTrue(updated.hasMoreCommenters)
+    }
+
+    @Test
+    fun fetchCommentsReturnsCommentsWithAuthorAndReplyMetadata() = runTest {
+        var capturedUrl: String? = null
+        val commentsJson = """
+            {
+              "comments": [
+                {
+                  "id": "c-1",
+                  "featureRequestId": "fr-1",
+                  "authorName": "Bob",
+                  "authorEmail": "bob@example.com",
+                  "authorAvatarUrl": "https://example.com/bob.png",
+                  "authorClerkId": "user_bob",
+                  "body": "Great feature request!",
+                  "parentId": null,
+                  "replyToClerkId": null,
+                  "replyToAuthorName": null,
+                  "isHidden": false,
+                  "createdAt": "2026-02-01T10:00:00.000Z"
+                },
+                {
+                  "id": "c-2",
+                  "featureRequestId": "fr-1",
+                  "authorName": "Alice",
+                  "authorEmail": null,
+                  "authorAvatarUrl": "https://example.com/alice.png",
+                  "authorClerkId": "user_alice",
+                  "body": "I agree completely!",
+                  "parentId": "c-1",
+                  "replyToClerkId": "user_bob",
+                  "replyToAuthorName": "Bob",
+                  "isHidden": false,
+                  "createdAt": "2026-02-01T11:00:00.000Z"
+                }
+              ]
+            }
+        """.trimIndent()
+        val result = client { request ->
+            capturedUrl = request.url
+            HttpResponse(200, commentsJson)
+        }.fetchComments("fr-1")
+
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-1/comments", capturedUrl)
+        assertEquals(2, result.size)
+        assertEquals("Bob", result[0].authorName)
+        assertEquals("https://example.com/bob.png", result[0].authorAvatarUrl)
+        assertEquals("user_bob", result[0].authorClerkId)
+        assertEquals("c-1", result[1].parentId)
+        assertEquals("user_bob", result[1].replyToClerkId)
+        assertEquals("Bob", result[1].replyToAuthorName)
+    }
+
+    @Test
+    fun postCommentSendsReplyMetadataAndUserTokenHeader() = runTest {
+        var header: String? = null
+        var body: String? = null
+        var url: String? = null
+        val token = UUID.randomUUID().toString()
+        val responseJson = """
+            {
+              "id": "c-2",
+              "featureRequestId": "fr-1",
+              "authorName": "Alice",
+              "authorAvatarUrl": "https://example.com/alice.png",
+              "body": "@Bob Thanks for the feedback!",
+              "parentId": "c-1",
+              "replyToClerkId": "user_bob",
+              "replyToAuthorName": "Bob",
+              "createdAt": "2026-02-01T12:00:00.000Z"
+            }
+        """.trimIndent()
+
+        val comment = client { request ->
+            url = request.url
+            header = request.headers["X-User-Token"]
+            body = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, responseJson)
+        }.postComment(
+            featureRequestId = "fr-1",
+            draft = CommentDraft(
+                body = "@Bob Thanks for the feedback!",
+                authorName = "Alice",
+                authorAvatarUrl = "https://example.com/alice.png",
+                parentId = "c-1",
+                replyToClerkId = "user_bob",
+                replyToAuthorName = "Bob"
+            ),
+            userToken = token
+        )
+
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-1/comments", url)
+        assertEquals(token, header)
+        val payload = requireNotNull(body)
+        assertTrue(payload.contains("\"body\":\"@Bob Thanks for the feedback!\""))
+        assertTrue(payload.contains("\"authorName\":\"Alice\""))
+        assertTrue(payload.contains("\"parentId\":\"c-1\""))
+        assertTrue(payload.contains("\"replyToClerkId\":\"user_bob\""))
+        assertTrue(payload.contains("\"replyToAuthorName\":\"Bob\""))
+        assertEquals("c-2", comment.id)
+        assertEquals("Bob", comment.replyToAuthorName)
+    }
+
+    @Test
+    fun fetchUserProfileReturnsProfileAppsAndRecentComments() = runTest {
+        var url: String? = null
+        val profileJson = """
+            {
+              "profile": {
+                "clerkUserId": "user_lex",
+                "displayName": "Lex",
+                "avatarUrl": "https://example.com/lex.png",
+                "bio": "Building things",
+                "websiteUrl": "https://cupthread.com",
+                "hideComments": false,
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-02T00:00:00.000Z"
+              },
+              "apps": [
+                {
+                  "id": "app-1",
+                  "name": "CupThread",
+                  "slug": "cupthread",
+                  "iconUrl": "https://example.com/icon.png",
+                  "description": "Feedback SDK",
+                  "requestCount": 42
+                }
+              ],
+              "recentComments": [
+                {
+                  "id": "rc-1",
+                  "body": "Looking forward to this!",
+                  "createdAt": "2026-02-01T00:00:00.000Z",
+                  "featureRequestId": "fr-1",
+                  "featureRequestTitle": "Dark Mode Support",
+                  "appId": "app-1",
+                  "appName": "CupThread"
+                }
+              ],
+              "hideComments": false
+            }
+        """.trimIndent()
+
+        val result = client { request ->
+            url = request.url
+            HttpResponse(200, profileJson)
+        }.fetchUserProfile("user_lex")
+
+        assertEquals("https://api.example.com/api/v1/users/user_lex/profile", url)
+        assertEquals("Lex", result.profile.displayName)
+        assertEquals("https://example.com/lex.png", result.profile.avatarUrl)
+        assertEquals("Building things", result.profile.bio)
+        assertEquals("https://cupthread.com", result.profile.websiteUrl)
+        assertEquals(1, result.apps.size)
+        assertEquals("CupThread", result.apps[0].name)
+        assertEquals(42, result.apps[0].requestCount)
+        assertEquals(1, result.recentComments.size)
+        assertEquals("Dark Mode Support", result.recentComments[0].featureRequestTitle)
+        assertFalse(result.hideComments)
     }
 
     companion object {

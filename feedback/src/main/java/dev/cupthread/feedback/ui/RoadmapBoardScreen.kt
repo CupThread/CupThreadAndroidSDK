@@ -1,9 +1,12 @@
 package dev.cupthread.feedback.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,8 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.FeatureRequestItem
@@ -115,6 +120,9 @@ private fun RoadmapBoardScreenContent(
     var hasLoaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
+    var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
+    var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
+    var votingIds by remember { mutableStateOf(setOf<String>()) }
     val defaultLoadError = stringResource(R.string.cupthread_roadmap_load_failed)
 
     suspend fun load() {
@@ -171,10 +179,61 @@ private fun RoadmapBoardScreenContent(
                         body = if (search.isBlank()) stringResource(R.string.cupthread_roadmap_empty_body)
                         else stringResource(R.string.cupthread_features_empty_search_body, search)
                     )
-                    else -> PagedBoard(groups = visible, query = search)
+                    else -> PagedBoard(
+                        groups = visible,
+                        query = search,
+                        onCardClick = { selectedItem = it },
+                        onOpenProfile = { selectedProfileUserId = it }
+                    )
                 }
             }
         }
+    }
+
+    selectedItem?.let { currentItem ->
+        FeatureRequestDetailSheet(
+            client = client,
+            item = currentItem,
+            userToken = userToken,
+            onDismiss = { selectedItem = null },
+            voting = votingIds.contains(currentItem.id),
+            onOpenProfile = { selectedProfileUserId = it },
+            onVote = {
+                scope.launch {
+                    if (currentItem.isOwnRequest || votingIds.contains(currentItem.id)) return@launch
+                    votingIds = votingIds + currentItem.id
+                    val previous = currentItem
+                    val newVoted = !currentItem.hasVoted
+                    val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
+                    groups = groups.map { grp ->
+                        grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it })
+                    }
+                    selectedItem = currentItem.withVoteState(newVoted, newCount)
+                    try {
+                        val result = client.toggleVote(currentItem.id, userToken)
+                        groups = groups.map { grp ->
+                            grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it })
+                        }
+                        selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                    } catch (_: Exception) {
+                        groups = groups.map { grp ->
+                            grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) previous else it })
+                        }
+                        selectedItem = previous
+                    } finally {
+                        votingIds = votingIds - currentItem.id
+                    }
+                }
+            }
+        )
+    }
+
+    selectedProfileUserId?.let { userId ->
+        UserProfileSheet(
+            client = client,
+            userId = userId,
+            onDismiss = { selectedProfileUserId = null }
+        )
     }
 }
 
@@ -185,7 +244,12 @@ private fun BoxPad(content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PagedBoard(groups: List<RoadmapGroup>, query: String) {
+private fun PagedBoard(
+    groups: List<RoadmapGroup>,
+    query: String,
+    onCardClick: (FeatureRequestItem) -> Unit,
+    onOpenProfile: (String) -> Unit
+) {
     val pagerState = rememberPagerState(pageCount = { groups.size })
     val chipState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -231,7 +295,12 @@ private fun PagedBoard(groups: List<RoadmapGroup>, query: String) {
                 }
             } else {
                 items(group.requests, key = { it.id }) { item ->
-                    RoadmapCard(item, query)
+                    RoadmapCard(
+                        item = item,
+                        query = query,
+                        onClick = { onCardClick(item) },
+                        onOpenProfile = onOpenProfile
+                    )
                 }
             }
         }
@@ -239,21 +308,67 @@ private fun PagedBoard(groups: List<RoadmapGroup>, query: String) {
 }
 
 @Composable
-private fun RoadmapCard(item: FeatureRequestItem, query: String) {
-    RequestCard {
+private fun RoadmapCard(
+    item: FeatureRequestItem,
+    query: String,
+    onClick: () -> Unit,
+    onOpenProfile: (String) -> Unit
+) {
+    val anonymousLabel = stringResource(R.string.cupthread_features_anonymous)
+    RequestCard(
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HighlightedText(item.title, query, MaterialTheme.typography.titleSmall, maxLines = 2)
             if (item.description.isNotBlank()) {
                 if (query.isBlank()) MarkdownText(item.description, maxLines = 3)
                 else HighlightedText(item.description, query, MaterialTheme.typography.bodySmall, maxLines = 3)
             }
-            androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item.versionLabel?.let { CapsuleBadge(it, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Outlined.Sell) }
-                Text(
-                    stringResource(R.string.cupthread_roadmap_votes_format, item.voteCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    item.versionLabel?.let { CapsuleBadge(it, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Outlined.Sell) }
+                    Text(
+                        stringResource(R.string.cupthread_roadmap_votes_format, item.voteCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    UserAvatar(
+                        url = item.requesterAvatarUrl,
+                        name = item.requesterName,
+                        size = 18.dp,
+                        onClick = item.requesterClerkId?.let { clerkId -> { onOpenProfile(clerkId) } }
+                    )
+                    Text(
+                        text = item.requesterName?.ifBlank { null } ?: anonymousLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (item.requesterClerkId != null) FontWeight.Medium else FontWeight.Normal,
+                            color = if (item.requesterClerkId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = if (item.requesterClerkId != null) {
+                            Modifier.clickable { onOpenProfile(item.requesterClerkId) }
+                        } else Modifier
+                    )
+                    if (item.recentCommenters.isNotEmpty() || item.hasMoreCommenters) {
+                        AvatarStack(
+                            commenters = item.recentCommenters,
+                            hasMore = item.hasMoreCommenters,
+                            onCommenterClick = { it.clerkUserId?.let(onOpenProfile) }
+                        )
+                    }
+                }
             }
         }
     }

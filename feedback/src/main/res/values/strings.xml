@@ -69,6 +69,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Unsubscribe</string>
     <string name="cupthread_whatsnew_done">Done</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Comments</string>
+    <string name="cupthread_comments_empty_title">No Comments Yet</string>
+    <string name="cupthread_comments_empty_body">Be the first to leave a comment or share your thoughts.</string>
+    <string name="cupthread_comments_reply">Reply</string>
+    <string name="cupthread_comments_replying_to">Replying to @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Cancel</string>
+    <string name="cupthread_comments_add_placeholder">Add a comment…</string>
+    <string name="cupthread_comments_name_placeholder">Your name (optional)</string>
+    <string name="cupthread_comments_submit">Post</string>
+    <string name="cupthread_comments_submitting">Posting…</string>
+    <string name="cupthread_comments_load_failed">Failed to load comments</string>
+    <string name="cupthread_comments_post_failed">Failed to post comment</string>
+    <string name="cupthread_comments_more_commenters">More commenters</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profile</string>
+    <string name="cupthread_profile_apps_title">Public Apps</string>
+    <string name="cupthread_profile_requests_count">%1$d requests</string>
+    <string name="cupthread_profile_recent_comments">Recent Comments</string>
+    <string name="cupthread_profile_comments_hidden">Comments are hidden</string>
+    <string name="cupthread_profile_no_apps">No public apps</string>
+    <string name="cupthread_profile_no_comments">No recent comments</string>
+    <string name="cupthread_profile_load_failed">Failed to load profile</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Couldn\'t load</string>
     <string name="cupthread_common_retry">Retry</string>

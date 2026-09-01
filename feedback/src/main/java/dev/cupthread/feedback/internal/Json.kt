@@ -2,6 +2,13 @@ package dev.cupthread.feedback.internal
 
 import dev.cupthread.feedback.AppVersion
 import dev.cupthread.feedback.BoardColumn
+import dev.cupthread.feedback.CommentDraft
+import dev.cupthread.feedback.FeatureRequestComment
+import dev.cupthread.feedback.PublicAppSummary
+import dev.cupthread.feedback.PublicUserProfile
+import dev.cupthread.feedback.PublicUserProfileResult
+import dev.cupthread.feedback.RecentCommenter
+import dev.cupthread.feedback.UserProfileComment
 import dev.cupthread.feedback.BoardColumnKind
 import dev.cupthread.feedback.ChangelogEntry
 import dev.cupthread.feedback.ChangelogLinkedRequest
@@ -123,10 +130,14 @@ internal fun parseFeatureRequestItem(json: JSONObject): FeatureRequestItem = Fea
     versionLabel = json.stringOrNull("versionLabel"),
     releasedVersion = json.stringOrNull("releasedVersion"),
     requesterName = json.stringOrNull("requesterName"),
+    requesterAvatarUrl = json.stringOrNull("requesterAvatarUrl"),
+    requesterClerkId = json.stringOrNull("requesterClerkId"),
     approved = json.booleanOr("approved", false),
     voteCount = json.intOr("voteCount", 0),
     hasVoted = json.booleanOr("hasVoted", false),
     isOwnRequest = json.booleanOr("isOwnRequest", false),
+    recentCommenters = parseRecentCommenters(json.optJSONArray("recentCommenters")),
+    hasMoreCommenters = json.booleanOr("hasMoreCommenters", false),
     createdAt = json.optString("createdAt", ""),
     updatedAt = json.optString("updatedAt", "")
 )
@@ -206,6 +217,96 @@ internal fun parseUserAttributesUpdate(json: JSONObject): UserAttributesUpdateRe
         ok = json.booleanOr("ok", true),
         updatedAt = json.optString("updatedAt", "")
     )
+
+internal fun parseRecentCommenters(array: JSONArray?): List<RecentCommenter> {
+    if (array == null) return emptyList()
+    return buildList {
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            add(
+                RecentCommenter(
+                    authorName = item.stringOrNull("authorName"),
+                    clerkUserId = item.stringOrNull("clerkUserId"),
+                    avatarUrl = item.stringOrNull("avatarUrl")
+                )
+            )
+        }
+    }
+}
+
+internal fun parseFeatureRequestComment(json: JSONObject): FeatureRequestComment =
+    FeatureRequestComment(
+        id = json.getString("id"),
+        featureRequestId = json.getString("featureRequestId"),
+        authorName = json.stringOrNull("authorName"),
+        authorEmail = json.stringOrNull("authorEmail"),
+        authorAvatarUrl = json.stringOrNull("authorAvatarUrl"),
+        authorClerkId = json.stringOrNull("authorClerkId"),
+        body = json.getString("body"),
+        parentId = json.stringOrNull("parentId"),
+        replyToClerkId = json.stringOrNull("replyToClerkId"),
+        replyToAuthorName = json.stringOrNull("replyToAuthorName"),
+        isHidden = json.booleanOr("isHidden", false),
+        createdAt = json.optString("createdAt", "")
+    )
+
+internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
+    val array = json.optJSONArray("comments") ?: JSONArray()
+    return buildList {
+        for (i in 0 until array.length()) {
+            add(parseFeatureRequestComment(array.getJSONObject(i)))
+        }
+    }
+}
+
+internal fun parsePublicUserProfile(json: JSONObject): PublicUserProfile =
+    PublicUserProfile(
+        clerkUserId = json.getString("clerkUserId"),
+        displayName = json.stringOrNull("displayName"),
+        avatarUrl = json.stringOrNull("avatarUrl"),
+        bio = json.stringOrNull("bio"),
+        websiteUrl = json.stringOrNull("websiteUrl"),
+        hideComments = json.booleanOr("hideComments", false),
+        createdAt = json.optString("createdAt", ""),
+        updatedAt = json.optString("updatedAt", "")
+    )
+
+internal fun parsePublicAppSummary(json: JSONObject): PublicAppSummary =
+    PublicAppSummary(
+        id = json.getString("id"),
+        name = json.getString("name"),
+        slug = json.getString("slug"),
+        iconUrl = json.stringOrNull("iconUrl"),
+        description = json.stringOrNull("description"),
+        requestCount = json.intOr("requestCount", 0)
+    )
+
+internal fun parseUserProfileComment(json: JSONObject): UserProfileComment =
+    UserProfileComment(
+        id = json.getString("id"),
+        body = json.getString("body"),
+        createdAt = json.optString("createdAt", ""),
+        featureRequestId = json.getString("featureRequestId"),
+        featureRequestTitle = json.getString("featureRequestTitle"),
+        appId = json.getString("appId"),
+        appName = json.getString("appName")
+    )
+
+internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileResult {
+    val profileJson = json.getJSONObject("profile")
+    val appsArray = json.optJSONArray("apps") ?: JSONArray()
+    val commentsArray = json.optJSONArray("recentComments") ?: JSONArray()
+    return PublicUserProfileResult(
+        profile = parsePublicUserProfile(profileJson),
+        apps = buildList {
+            for (i in 0 until appsArray.length()) add(parsePublicAppSummary(appsArray.getJSONObject(i)))
+        },
+        recentComments = buildList {
+            for (i in 0 until commentsArray.length()) add(parseUserProfileComment(commentsArray.getJSONObject(i)))
+        },
+        hideComments = json.booleanOr("hideComments", false)
+    )
+}
 
 internal fun JSONObject.putOptString(name: String, value: String?) {
     if (value != null) put(name, value)

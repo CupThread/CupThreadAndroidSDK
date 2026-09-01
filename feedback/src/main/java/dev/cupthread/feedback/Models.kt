@@ -392,11 +392,15 @@ data class AppVersion(
  * @property versionLabel Display label of that version.
  * @property releasedVersion Version label once the request has shipped.
  * @property requesterName Display name of the requester, when given.
+ * @property requesterAvatarUrl Avatar image URL of the requester, when available.
+ * @property requesterClerkId Clerk user id of the requester, when signed in.
  * @property approved Whether a moderator approved the request.
  * @property voteCount Total number of votes.
  * @property hasVoted Whether the fetching user has voted.
  * @property isOwnRequest Whether the fetching user created the request; own
  *   requests cannot be voted on.
+ * @property recentCommenters Up to 3 most recent commenters, displayed as an avatar stack on the card.
+ * @property hasMoreCommenters Whether there are more commenters beyond [recentCommenters].
  * @property createdAt Creation timestamp.
  * @property updatedAt Last-change timestamp.
  */
@@ -414,10 +418,14 @@ data class FeatureRequestItem(
     val versionLabel: String?,
     val releasedVersion: String?,
     val requesterName: String?,
+    val requesterAvatarUrl: String? = null,
+    val requesterClerkId: String? = null,
     val approved: Boolean,
     val voteCount: Int,
     val hasVoted: Boolean,
     val isOwnRequest: Boolean,
+    val recentCommenters: List<RecentCommenter> = emptyList(),
+    val hasMoreCommenters: Boolean = false,
     val createdAt: String,
     val updatedAt: String
 ) {
@@ -446,6 +454,151 @@ data class FeatureRequestDraft(
     val title: String = "",
     val description: String = "",
     val requesterName: String = ""
+)
+
+/**
+ * A recent commenter on a feature request, shown in the avatar stack
+ * on [FeatureRequestItem] cards.
+ *
+ * @property authorName Display name of the commenter, when given.
+ * @property clerkUserId Clerk user id, when the commenter is a signed-in user.
+ * @property avatarUrl Avatar image URL, when available.
+ */
+data class RecentCommenter(
+    val authorName: String? = null,
+    val clerkUserId: String? = null,
+    val avatarUrl: String? = null
+)
+
+/**
+ * A comment on a feature request, as returned by
+ * [FeedbackClient.fetchComments].
+ *
+ * @property id Comment id.
+ * @property featureRequestId Id of the parent feature request.
+ * @property authorName Display name of the comment author, when given.
+ * @property authorEmail Author email, when given.
+ * @property authorAvatarUrl Avatar image URL, when available.
+ * @property authorClerkId Clerk user id, when the author is signed in.
+ * @property body Comment text; may contain inline Markdown.
+ * @property parentId Id of the parent comment this is a reply to, when applicable.
+ * @property replyToClerkId Clerk user id of the user being replied to, when applicable.
+ * @property replyToAuthorName Display name of the user being replied to, when applicable.
+ * @property isHidden Whether the comment has been hidden by a moderator.
+ * @property createdAt Creation timestamp (ISO 8601).
+ */
+data class FeatureRequestComment(
+    val id: String,
+    val featureRequestId: String,
+    val authorName: String? = null,
+    val authorEmail: String? = null,
+    val authorAvatarUrl: String? = null,
+    val authorClerkId: String? = null,
+    val body: String,
+    val parentId: String? = null,
+    val replyToClerkId: String? = null,
+    val replyToAuthorName: String? = null,
+    val isHidden: Boolean = false,
+    val createdAt: String
+)
+
+/**
+ * New comment content for [FeedbackClient.postComment].
+ *
+ * @property body Comment text; at least 1 character.
+ * @property authorName Optional display name shown with the comment.
+ * @property authorEmail Optional contact address for follow-ups.
+ * @property authorAvatarUrl Optional avatar URL for the comment author.
+ * @property parentId Id of the parent comment, when replying.
+ * @property replyToClerkId Clerk user id of the user being replied to.
+ * @property replyToAuthorName Display name of the user being replied to.
+ */
+data class CommentDraft(
+    val body: String = "",
+    val authorName: String? = null,
+    val authorEmail: String? = null,
+    val authorAvatarUrl: String? = null,
+    val parentId: String? = null,
+    val replyToClerkId: String? = null,
+    val replyToAuthorName: String? = null
+)
+
+/**
+ * A public user profile, as returned by [FeedbackClient.fetchUserProfile].
+ *
+ * @property clerkUserId Clerk user id.
+ * @property displayName Display name, when set.
+ * @property avatarUrl Avatar image URL, when available.
+ * @property bio Short biography, when set.
+ * @property websiteUrl Personal website URL, when set.
+ * @property hideComments Whether the user has opted to hide their comments.
+ * @property createdAt Profile creation timestamp.
+ * @property updatedAt Profile last-update timestamp.
+ */
+data class PublicUserProfile(
+    val clerkUserId: String,
+    val displayName: String? = null,
+    val avatarUrl: String? = null,
+    val bio: String? = null,
+    val websiteUrl: String? = null,
+    val hideComments: Boolean = false,
+    val createdAt: String = "",
+    val updatedAt: String = ""
+)
+
+/**
+ * Summary of a public app, as shown on a user's profile.
+ *
+ * @property id App id.
+ * @property name Display name.
+ * @property slug URL-friendly app name.
+ * @property iconUrl App icon URL, when configured.
+ * @property description App description, when set.
+ * @property requestCount Number of public feature requests.
+ */
+data class PublicAppSummary(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val iconUrl: String? = null,
+    val description: String? = null,
+    val requestCount: Int = 0
+)
+
+/**
+ * A comment shown on a user's public profile page.
+ *
+ * @property id Comment id.
+ * @property body Comment text.
+ * @property createdAt Creation timestamp.
+ * @property featureRequestId Feature request the comment belongs to.
+ * @property featureRequestTitle Title of the feature request.
+ * @property appId App the comment belongs to.
+ * @property appName Display name of the app.
+ */
+data class UserProfileComment(
+    val id: String,
+    val body: String,
+    val createdAt: String,
+    val featureRequestId: String,
+    val featureRequestTitle: String,
+    val appId: String,
+    val appName: String
+)
+
+/**
+ * Result of [FeedbackClient.fetchUserProfile].
+ *
+ * @property profile The user's public profile.
+ * @property apps Public apps owned by the user.
+ * @property recentComments Recent public comments by the user.
+ * @property hideComments Whether the user has opted to hide comments.
+ */
+data class PublicUserProfileResult(
+    val profile: PublicUserProfile,
+    val apps: List<PublicAppSummary> = emptyList(),
+    val recentComments: List<UserProfileComment> = emptyList(),
+    val hideComments: Boolean = false
 )
 
 /**
