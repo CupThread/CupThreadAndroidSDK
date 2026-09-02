@@ -39,8 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.cupthread.feedback.ChangelogEntry
+import dev.cupthread.feedback.ChangelogLinkedRequest
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.FeedbackException
+import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.launch

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.delay

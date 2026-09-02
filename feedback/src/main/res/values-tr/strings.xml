@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Geri bildiriminiz ekibe iletildi.</string>
     <string name="cupthread_feedback_send_more">Daha Fazla Geri Bildirim Gönder</string>
     <string name="cupthread_feedback_generic_error">Bir şeyler ters gitti</string>
+    <string name="cupthread_feedback_attachments_title">Ekler</string>
+    <string name="cupthread_feedback_add_attachment">Ekran görüntüsü veya görsel ekle</string>
+    <string name="cupthread_feedback_uploading_attachment">Ek yükleniyor…</string>
+    <string name="cupthread_feedback_remove_attachment">Eki kaldır</string>
+    <string name="cupthread_feedback_upload_failed">Ek yüklenemedi</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Özellik Talepleri</string>

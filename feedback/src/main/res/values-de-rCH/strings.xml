@@ -15,7 +15,12 @@
     <string name="cupthread_feedback_thanks_title">Vielen Dank!</string>
     <string name="cupthread_feedback_thanks_subtitle">Ihr Feedback wurde an das Team gesendet.</string>
     <string name="cupthread_feedback_send_more">Weiteres Feedback senden</string>
-    <string name="cupthread_feedback_generic_error">Etwas ist schiefgelaufen</string>
+    <string name="cupthread_feedback_generic_error">Ein Fehler ist aufgetreten</string>
+    <string name="cupthread_feedback_attachments_title">Anhänge</string>
+    <string name="cupthread_feedback_add_attachment">Screenshot oder Bild hinzufügen</string>
+    <string name="cupthread_feedback_uploading_attachment">Anhang wird hochgeladen…</string>
+    <string name="cupthread_feedback_remove_attachment">Anhang entfernen</string>
+    <string name="cupthread_feedback_upload_failed">Fehler beim Hochladen des Anhangs</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funktionswünsche</string>

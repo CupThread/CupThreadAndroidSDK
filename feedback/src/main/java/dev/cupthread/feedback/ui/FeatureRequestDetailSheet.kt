@@ -50,6 +50,7 @@ import dev.cupthread.feedback.CommentDraft
 import dev.cupthread.feedback.FeatureRequestComment
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import kotlinx.coroutines.launch
 

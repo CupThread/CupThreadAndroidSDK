@@ -1,5 +1,6 @@
 package dev.cupthread.feedback
 
+import android.content.Context
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.UrlConnectionTransport
@@ -530,25 +531,66 @@ class FeedbackClient internal constructor(
      * Automatically honors the console-configured `changelogOverlay.entryCount` setting,
      * clamped between 1 and 10 entries.
      *
+     * When [onlyIfUnseen] is `true` and [context] is provided, checks [ChangelogStore] on the device
+     * and returns `null` if the latest release has already been viewed.
+     *
+     * @param context Optional Android [Context] used to look up seen changelog records in [ChangelogStore].
+     * @param onlyIfUnseen If `true`, returns `null` when the latest changelog version or ID has already been marked as seen.
      * @return A [Pair] containing the list of entries and the active [SdkAppearance],
-     *   or `null` if the changelog feature is disabled in the console or no entries have been published.
+     *   or `null` if the changelog feature is disabled, no entries exist, or the latest entry was already seen.
      * @throws FeedbackException on network or parsing failure.
      *
      * Example:
      * ```kotlin
-     * val overlayData = client.prepareChangelogOverlay()
+     * val overlayData = client.prepareChangelogOverlay(context, onlyIfUnseen = true)
      * if (overlayData != null) {
      *     val (entries, appearance) = overlayData
      *     println("Displaying ${entries.size} new updates with title '${appearance.changelogOverlay.title}'")
      * }
      * ```
      */
-    suspend fun prepareChangelogOverlay(): Pair<List<ChangelogEntry>, SdkAppearance>? {
+    suspend fun prepareChangelogOverlay(
+        context: Context? = null,
+        onlyIfUnseen: Boolean = false
+    ): Pair<List<ChangelogEntry>, SdkAppearance>? {
         val appearance = fetchAppConfig().sdk
         if (!appearance.features.changelog) return null
         val entries = fetchChangelog().take(appearance.changelogOverlay.clampedEntryCount)
         if (entries.isEmpty()) return null
+
+        if (onlyIfUnseen && context != null) {
+            val store = ChangelogStore.create(context)
+            val latest = entries.firstOrNull()
+            if (latest != null) {
+                val hasSeenLabel = !latest.versionLabel.isNullOrBlank() && store.hasSeenChangelog(latest.versionLabel)
+                val hasSeenId = store.hasSeenChangelog(latest.id)
+                if (hasSeenLabel || hasSeenId) {
+                    return null
+                }
+            }
+        }
+
         return entries to appearance
+    }
+
+    /**
+     * Checks whether the user has already viewed the changelog for [versionOrId] on this device.
+     *
+     * @param context Android [Context].
+     * @param versionOrId Version string (e.g. `"1.2.0"`) or unique changelog entry ID.
+     * @return `true` if previously viewed, `false` otherwise.
+     */
+    fun hasSeenChangelog(context: Context, versionOrId: String): Boolean =
+        ChangelogStore.create(context).hasSeenChangelog(versionOrId)
+
+    /**
+     * Marks the changelog for [versionOrId] as seen on this device.
+     *
+     * @param context Android [Context].
+     * @param versionOrId Version string (e.g. `"1.2.0"`) or unique changelog entry ID.
+     */
+    fun markChangelogSeen(context: Context, versionOrId: String) {
+        ChangelogStore.create(context).markChangelogSeen(versionOrId)
     }
 
     /**

@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Tilbakemeldingen din er sendt til teamet.</string>
     <string name="cupthread_feedback_send_more">Send mer tilbakemelding</string>
     <string name="cupthread_feedback_generic_error">Noe gikk galt</string>
+    <string name="cupthread_feedback_attachments_title">Vedlegg</string>
+    <string name="cupthread_feedback_add_attachment">Legg til skjermbilde eller bilde</string>
+    <string name="cupthread_feedback_uploading_attachment">Laster opp vedlegg…</string>
+    <string name="cupthread_feedback_remove_attachment">Fjern vedlegg</string>
+    <string name="cupthread_feedback_upload_failed">Kunne ikke laste opp vedlegg</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funksjonsønsker</string>

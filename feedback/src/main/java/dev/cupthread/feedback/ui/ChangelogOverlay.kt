@@ -27,7 +27,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import dev.cupthread.feedback.ChangelogEntry
+import dev.cupthread.feedback.ChangelogStore
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkAppearance
@@ -45,9 +47,11 @@ import kotlin.coroutines.resume
  *
  * ### Behavior & Thread Safety
  * - Fetches changelog entries and configuration asynchronously on [Dispatchers.IO].
+ * - When [onlyIfUnseen] is `true`, skips presentation if the latest release note was already viewed on this device.
+ * - When [autoMarkSeen] is `true`, automatically records the latest release note in [ChangelogStore] on presentation.
  * - Dynamically mounts a translucent Compose dialog on the main UI thread.
  * - Wraps the content in [CupThreadTheme] to ensure console-selected theme palettes are honored.
- * - Resumes with `false` immediately if the changelog feature is disabled in the console or if no entries exist.
+ * - Resumes with `false` immediately if the changelog feature is disabled, if no entries exist, or if already seen.
  * - Resumes with `true` once the user views and closes the sheet.
  *
  * ### Example Usage
@@ -60,9 +64,12 @@ import kotlin.coroutines.resume
  *     override fun onResume() {
  *         super.onResume()
  *         lifecycleScope.launch {
- *             val shown = feedbackClient.presentLatestChangelog(this@MainActivity)
+ *             val shown = feedbackClient.presentLatestChangelog(
+ *                 activity = this@MainActivity,
+ *                 onlyIfUnseen = true
+ *             )
  *             if (shown) {
- *                 Log.d("Changelog", "User viewed and dismissed the What's-New overlay.")
+ *                 Log.d("Changelog", "User viewed new What's-New release notes.")
  *             }
  *         }
  *     }
@@ -71,10 +78,28 @@ import kotlin.coroutines.resume
  *
  * @receiver The [FeedbackClient] used to fetch changelog entries and appearance configuration.
  * @param activity The host Android [Activity] over which the dialog window will be shown.
- * @return `false` if the changelog is disabled or empty (nothing shown); `true` if the sheet was presented and dismissed.
+ * @param onlyIfUnseen If `true`, checks [ChangelogStore] and skips presentation if the latest version was already seen.
+ * @param autoMarkSeen If `true`, automatically marks the latest version as seen upon presentation.
+ * @return `false` if the changelog is disabled, empty, or already seen; `true` if the sheet was presented and dismissed.
  */
-suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
-    val prepared = withContext(Dispatchers.IO) { prepareChangelogOverlay() } ?: return false
+suspend fun FeedbackClient.presentLatestChangelog(
+    activity: Activity,
+    onlyIfUnseen: Boolean = false,
+    autoMarkSeen: Boolean = true
+): Boolean {
+    val prepared = withContext(Dispatchers.IO) {
+        prepareChangelogOverlay(context = activity, onlyIfUnseen = onlyIfUnseen)
+    } ?: return false
+
+    if (autoMarkSeen) {
+        val store = ChangelogStore.create(activity)
+        val latest = prepared.first.firstOrNull()
+        if (latest != null) {
+            if (!latest.versionLabel.isNullOrBlank()) store.markChangelogSeen(latest.versionLabel)
+            store.markChangelogSeen(latest.id)
+        }
+    }
+
     return suspendCancellableCoroutine { continuation ->
         activity.runOnUiThread {
             val dialog = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar)
@@ -110,9 +135,9 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
  * styled according to console configuration.
  *
  * ### Auto-Dismissal and Clean Lifecycle
- * If the changelog feature is disabled in the CupThread developer console or no published entries exist,
- * this composable automatically invokes [onDismiss], making it safe to mount unconditionally on app startup
- * or home screen composables.
+ * If the changelog feature is disabled in the CupThread developer console, no published entries exist,
+ * or [onlyIfUnseen] is `true` and the release was already seen, this composable automatically invokes [onDismiss],
+ * making it safe to mount unconditionally on app startup or home screen composables.
  *
  * ### Theming
  * Inherits the ambient Compose [MaterialTheme]. Wrap inside [CupThreadTheme] to inherit the remote
@@ -131,6 +156,7 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
  *             ChangelogOverlay(
  *                 client = client,
  *                 visible = showChangelog,
+ *                 onlyIfUnseen = true,
  *                 onDismiss = { showChangelog = false }
  *             )
  *         }
@@ -140,28 +166,41 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
  *
  * @param client Shared [FeedbackClient] instance.
  * @param visible Whether the What's-New bottom sheet should be displayed.
+ * @param onlyIfUnseen If `true`, checks [ChangelogStore] and auto-dismisses if the latest version was already seen.
+ * @param autoMarkSeen If `true`, automatically marks the latest version as seen in [ChangelogStore].
  * @param onDismiss Invoked when the user taps close/continue or if there are no new updates to show.
  */
 @Composable
 fun ChangelogOverlay(
     client: FeedbackClient,
     visible: Boolean,
+    onlyIfUnseen: Boolean = false,
+    autoMarkSeen: Boolean = true,
     onDismiss: () -> Unit
 ) {
     if (!visible) return
+    val context = LocalContext.current
     var entries by remember { mutableStateOf<List<ChangelogEntry>?>(null) }
     var appearance by remember { mutableStateOf(SdkAppearance.defaults) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(client) {
+    LaunchedEffect(client, visible, onlyIfUnseen) {
         try {
-            val prepared = client.prepareChangelogOverlay()
+            val prepared = client.prepareChangelogOverlay(context = context, onlyIfUnseen = onlyIfUnseen)
             if (prepared == null) {
                 onDismiss()
                 return@LaunchedEffect
             }
             entries = prepared.first
             appearance = prepared.second
+            if (autoMarkSeen) {
+                val store = ChangelogStore.create(context)
+                val latest = prepared.first.firstOrNull()
+                if (latest != null) {
+                    if (!latest.versionLabel.isNullOrBlank()) store.markChangelogSeen(latest.versionLabel)
+                    store.markChangelogSeen(latest.id)
+                }
+            }
         } catch (ex: Exception) {
             error = ex.message ?: "Failed to load updates"
         }

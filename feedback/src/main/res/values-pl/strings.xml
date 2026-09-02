@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Twoja opinia została przesłana do zespołu.</string>
     <string name="cupthread_feedback_send_more">Wyślij kolejną opinię</string>
     <string name="cupthread_feedback_generic_error">Wystąpił błąd</string>
+    <string name="cupthread_feedback_attachments_title">Załączniki</string>
+    <string name="cupthread_feedback_add_attachment">Dodaj zrzut ekranu lub zdjęcie</string>
+    <string name="cupthread_feedback_uploading_attachment">Przesyłanie załącznika…</string>
+    <string name="cupthread_feedback_remove_attachment">Usuń załącznik</string>
+    <string name="cupthread_feedback_upload_failed">Nie udało się przesłać załącznika</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Propozycje funkcji</string>

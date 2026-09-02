@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import dev.cupthread.feedback.ChangelogEntry
+import dev.cupthread.feedback.FeatureRequestItem
 
 /**
  * Lightweight inline Markdown renderer for Jetpack Compose.

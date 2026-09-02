@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Seu feedback foi enviado para a equipe.</string>
     <string name="cupthread_feedback_send_more">Enviar mais feedback</string>
     <string name="cupthread_feedback_generic_error">Ocorreu um erro</string>
+    <string name="cupthread_feedback_attachments_title">Anexos</string>
+    <string name="cupthread_feedback_add_attachment">Adicionar captura de tela ou imagem</string>
+    <string name="cupthread_feedback_uploading_attachment">Enviando anexo…</string>
+    <string name="cupthread_feedback_remove_attachment">Remover anexo</string>
+    <string name="cupthread_feedback_upload_failed">Falha ao enviar anexo</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Sugestões de recursos</string>

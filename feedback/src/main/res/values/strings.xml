@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Your feedback was sent to the team.</string>
     <string name="cupthread_feedback_send_more">Send More Feedback</string>
     <string name="cupthread_feedback_generic_error">Something went wrong</string>
+    <string name="cupthread_feedback_attachments_title">Attachments</string>
+    <string name="cupthread_feedback_add_attachment">Add Screenshot or Image</string>
+    <string name="cupthread_feedback_uploading_attachment">Uploading attachment…</string>
+    <string name="cupthread_feedback_remove_attachment">Remove attachment</string>
+    <string name="cupthread_feedback_upload_failed">Failed to upload attachment</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Feature Requests</string>

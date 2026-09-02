@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">Votre retour a bien été transmis à l\'équipe.</string>
     <string name="cupthread_feedback_send_more">Envoyer un autre retour</string>
     <string name="cupthread_feedback_generic_error">Une erreur est survenue</string>
+    <string name="cupthread_feedback_attachments_title">Pièces jointes</string>
+    <string name="cupthread_feedback_add_attachment">Ajouter une capture d\'écran ou une image</string>
+    <string name="cupthread_feedback_uploading_attachment">Téléversement de la pièce jointe…</string>
+    <string name="cupthread_feedback_remove_attachment">Supprimer la pièce jointe</string>
+    <string name="cupthread_feedback_upload_failed">Échec du téléversement de la pièce jointe</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Demandes de fonctionnalités</string>

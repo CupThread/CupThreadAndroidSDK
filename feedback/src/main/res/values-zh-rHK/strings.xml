@@ -14,8 +14,13 @@
     <string name="cupthread_feedback_sending_button">發送中…</string>
     <string name="cupthread_feedback_thanks_title">感謝反饋！</string>
     <string name="cupthread_feedback_thanks_subtitle">您的反饋已成功送達團隊。</string>
-    <string name="cupthread_feedback_send_more">發送更多反饋</string>
+    <string name="cupthread_feedback_send_more">傳送更多回饋</string>
     <string name="cupthread_feedback_generic_error">發生錯誤，請稍後重試</string>
+    <string name="cupthread_feedback_attachments_title">附件</string>
+    <string name="cupthread_feedback_add_attachment">新增螢幕截圖或圖片</string>
+    <string name="cupthread_feedback_uploading_attachment">正在上傳附件…</string>
+    <string name="cupthread_feedback_remove_attachment">刪除附件</string>
+    <string name="cupthread_feedback_upload_failed">上傳附件失敗</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">功能建議</string>

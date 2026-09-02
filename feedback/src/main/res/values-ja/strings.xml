@@ -16,6 +16,11 @@
     <string name="cupthread_feedback_thanks_subtitle">フィードバックがチームに送信されました。</string>
     <string name="cupthread_feedback_send_more">さらにフィードバックを送信</string>
     <string name="cupthread_feedback_generic_error">エラーが発生しました</string>
+    <string name="cupthread_feedback_attachments_title">添付ファイル</string>
+    <string name="cupthread_feedback_add_attachment">スクリーンショットまたは画像を追加</string>
+    <string name="cupthread_feedback_uploading_attachment">添付ファイルをアップロード中…</string>
+    <string name="cupthread_feedback_remove_attachment">添付ファイルを削除</string>
+    <string name="cupthread_feedback_upload_failed">添付ファイルのアップロードに失敗しました</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">機能リクエスト</string>

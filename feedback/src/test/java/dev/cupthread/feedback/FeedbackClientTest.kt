@@ -398,6 +398,42 @@ class FeedbackClientTest {
         assertFalse(result.hideComments)
     }
 
+    @Test
+    fun changelogStoreTracksSeenVersionsAndIds() {
+        val prefs = FakeSharedPreferences()
+        val store = ChangelogStore(prefs)
+
+        assertFalse(store.hasSeenChangelog("2.1.0"))
+        assertFalse(store.hasSeenChangelog("cl_123"))
+
+        store.markChangelogSeen("2.1.0")
+        store.markChangelogSeen("cl_123")
+
+        assertTrue(store.hasSeenChangelog("2.1.0"))
+        assertTrue(store.hasSeenChangelog("cl_123"))
+        assertEquals(setOf("2.1.0", "cl_123"), store.getSeenChangelogs())
+
+        store.markChangelogUnseen("2.1.0")
+        assertFalse(store.hasSeenChangelog("2.1.0"))
+        assertTrue(store.hasSeenChangelog("cl_123"))
+
+        store.clearSeenChangelogs()
+        assertFalse(store.hasSeenChangelog("cl_123"))
+        assertTrue(store.getSeenChangelogs().isEmpty())
+    }
+
+    @Test
+    fun userTokenStoreGeneratesAndPersistsStableToken() {
+        val prefs = FakeSharedPreferences()
+        val store1 = UserTokenStore(prefs)
+        val token1 = store1.token
+        assertTrue(token1.isNotBlank())
+
+        val store2 = UserTokenStore(prefs)
+        val token2 = store2.token
+        assertEquals(token1, token2)
+    }
+
     companion object {
         private val CONFIG_JSON = """
             {
@@ -416,5 +452,44 @@ class FeedbackClientTest {
               "allowAnonymousFeedback":true
             }
         """.trimIndent()
+    }
+}
+
+private class FakeSharedPreferences : android.content.SharedPreferences {
+    private val map = mutableMapOf<String, Any?>()
+
+    override fun getAll(): MutableMap<String, *> = map.toMutableMap()
+    override fun getString(key: String?, defValue: String?): String? = map[key] as? String ?: defValue
+    @Suppress("UNCHECKED_CAST")
+    override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
+        (map[key] as? Set<String>)?.toMutableSet() ?: defValues
+    override fun getInt(key: String?, defValue: Int): Int = map[key] as? Int ?: defValue
+    override fun getLong(key: String?, defValue: Long): Long = map[key] as? Long ?: defValue
+    override fun getFloat(key: String?, defValue: Float): Float = map[key] as? Float ?: defValue
+    override fun getBoolean(key: String?, defValue: Boolean): Boolean = map[key] as? Boolean ?: defValue
+    override fun contains(key: String?): Boolean = map.containsKey(key)
+    override fun edit(): android.content.SharedPreferences.Editor = FakeEditor()
+    override fun registerOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    override fun unregisterOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+
+    private inner class FakeEditor : android.content.SharedPreferences.Editor {
+        private val temp = mutableMapOf<String, Any?>()
+        private var clear = false
+
+        override fun putString(key: String?, value: String?): android.content.SharedPreferences.Editor = apply { temp[key!!] = value }
+        override fun putStringSet(key: String?, values: MutableSet<String>?): android.content.SharedPreferences.Editor = apply { temp[key!!] = values?.toSet() }
+        override fun putInt(key: String?, value: Int): android.content.SharedPreferences.Editor = apply { temp[key!!] = value }
+        override fun putLong(key: String?, value: Long): android.content.SharedPreferences.Editor = apply { temp[key!!] = value }
+        override fun putFloat(key: String?, value: Float): android.content.SharedPreferences.Editor = apply { temp[key!!] = value }
+        override fun putBoolean(key: String?, value: Boolean): android.content.SharedPreferences.Editor = apply { temp[key!!] = value }
+        override fun remove(key: String?): android.content.SharedPreferences.Editor = apply { temp[key!!] = this }
+        override fun clear(): android.content.SharedPreferences.Editor = apply { clear = true }
+        override fun commit(): Boolean { apply(); return true }
+        override fun apply() {
+            if (clear) map.clear()
+            temp.forEach { (k, v) ->
+                if (v === this) map.remove(k) else map[k] = v
+            }
+        }
     }
 }

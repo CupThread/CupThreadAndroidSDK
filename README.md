@@ -89,41 +89,47 @@ To generate the docs locally (output in `feedback/build/dokka/html`):
 
 Wrap your UI tree in `CupThreadTheme(client)` so console skin settings apply:
 
-- `FeedbackComposer(client, userToken, onSubmit)` — Structured feedback form with attachment uploads.
+- `FeedbackComposer(client, userToken, onSubmit)` / `FeedbackComposerSheet(client, userToken, onDismiss, onSubmit)` — Structured feedback form with attachment uploads and system PhotoPicker.
 - `FeatureRequestsScreen(client, userToken)` — Browse, vote (optimistic), and submit requests.
 - `RoadmapBoardScreen(client, userToken)` — Column chips + paged lists grouped by public roadmap columns.
 - `WhatsNewScreen(client, userToken)` — Changelog list with email subscribe / unsubscribe.
-- `ChangelogOverlay(client, visible, onDismiss)` / `client.presentLatestChangelog(activity)` — Latest changelog modal.
+- `ChangelogOverlay(client, visible, onlyIfUnseen, onDismiss)` / `client.presentLatestChangelog(activity, onlyIfUnseen)` — What's-New modal with built-in seen state persistence.
 
 ```kotlin
 CupThreadTheme(client) {
     RoadmapBoardScreen(client = client, userToken = userToken)
 }
 
-// Present latest changelog:
-client.presentLatestChangelog(activity)
+// Present latest changelog only if unseen:
+lifecycleScope.launch {
+    client.presentLatestChangelog(activity, onlyIfUnseen = true)
+}
 ```
 
 ---
 
 ## API Surface
 
-| Method | Endpoint |
-| ------ | -------- |
+| Method | Endpoint / Description |
+| ------ | ---------------------- |
 | `submit(draft, userToken)` | `POST /api/v1/feedback` (sends `X-User-Token`) |
 | `uploadAttachment(data, filename, mimeType, preferredKind)` | `POST /api/v1/uploads/{images,r2}` |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
-| `prepareChangelogOverlay()` | Config + newest changelog entries |
-| `presentLatestChangelog(activity)` | Presents overlay sheet using console copy |
+| `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
+| `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
 | `fetchFeatureRequests(userToken, limit, offset, versionId, query)` | `GET /api/v1/feature-requests` |
 | `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` |
 | `toggleVote(featureRequestId, userToken)` | `POST /api/v1/feature-requests/{id}/vote` |
+| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` |
+| `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
+| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile` |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
 | `subscribeToChangelog(email, userToken)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
 | `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
+| `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
 
 ---
 
