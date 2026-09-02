@@ -42,37 +42,48 @@ import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.launch
 
 /**
- * Feedback form screen: title, description, optional reporter name and email,
- * and a send button.
+ * Ready-made User Feedback Submission Form composable.
  *
- * Behavior details:
- * - The send button stays disabled until the title has at least 3 characters
- *   and the description at least 5.
- * - When no [initialDraft] is supplied, the draft is pre-filled with the host
- *   app's version name and code from the package manager, so end users never
- *   type them.
- * - After a successful send the composer swaps to a confirmation state; use
- *   [onSubmit] for custom handling, such as closing the screen.
+ * Provides a streamlined interface for collecting user feedback, issue reports, and contact info.
+ * Includes title input, multiline description, optional reporter name and email fields, validation
+ * indicators, and a confirmation state.
  *
- * The screen applies the console-configured theme itself — no explicit
- * [CupThreadTheme] wrapper is required:
+ * ### Behavior & Input Validation
+ * - **Pre-filled App Version Info**: When [initialDraft] is omitted, automatically extracts `versionName`
+ *   and `versionCode` from the Android [android.content.pm.PackageManager] so users don't need to specify them.
+ * - **Character Validation**: Submit button remains disabled until the title contains at least 3 non-whitespace
+ *   characters and the description contains at least 5 characters.
+ * - **Success Confirmation View**: Upon successful delivery via [FeedbackClient.submit], displays a confirmation
+ *   card thanking the user, rendering any server warnings, and offering a "Send More" button.
+ * - **Callback Handling**: [onSubmit] is invoked with the [FeedbackSubmissionResult], allowing the host app
+ *   to trigger navigation (e.g. popping the back stack) or custom analytics.
+ * - **Remote Theming & Feature Gating**: Automatically wrapped in [SdkSurface] with [SdkFeature.FEEDBACK].
  *
+ * ### Example Integration
  * ```kotlin
- * FeedbackComposer(
- *     client = client,
- *     userToken = userToken,
- *     onSubmit = { result -> navController.popBackStack() },
- * )
+ * @Composable
+ * fun FeedbackNavigationDestination(
+ *     client: FeedbackClient,
+ *     userTokenStore: UserTokenStore,
+ *     onNavigateBack: () -> Unit
+ * ) {
+ *     FeedbackComposer(
+ *         client = client,
+ *         userToken = userTokenStore.token,
+ *         onSubmit = { result ->
+ *             Log.d("Feedback", "Sent: ${result.submissionId}")
+ *             onNavigateBack()
+ *         },
+ *         modifier = Modifier.fillMaxSize()
+ *     )
+ * }
  * ```
  *
- * @param client Shared API client.
- * @param userToken Optional stable anonymous token from
- *   [dev.cupthread.feedback.UserTokenStore], sent as the `X-User-Token`
- *   header.
- * @param initialDraft Draft to start editing from; defaults to an
- *   auto-filled draft for the host package.
- * @param onSubmit Invoked with the server result after a successful submit.
- * @param modifier Modifier applied to the root [Scaffold].
+ * @param client Shared [FeedbackClient] instance used to submit feedback.
+ * @param userToken Optional stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
+ * @param initialDraft Optional pre-populated [FeedbackDraft]; defaults to an auto-filled draft for the current package.
+ * @param onSubmit Callback invoked with the [FeedbackSubmissionResult] upon successful submission.
+ * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

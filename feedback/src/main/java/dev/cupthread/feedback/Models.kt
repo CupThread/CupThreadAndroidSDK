@@ -1,24 +1,52 @@
 package dev.cupthread.feedback
 
 /**
- * Platform value the API accepts. The backend distinguishes
- * `ios` / `macos` / `android` / `universal`.
+ * Platform identifier recognized by the CupThread REST API.
+ *
+ * The backend distinguishes between Apple platforms (`ios`, `macos`), Android (`android`),
+ * and cross-platform or web projects (`universal`).
+ *
+ * Example usage:
+ * ```kotlin
+ * val platform = FeedbackPlatform.fromWire("android") ?: FeedbackPlatform.current
+ * println("Target platform: ${platform.wireValue}")
+ * ```
+ *
+ * @property wireValue The raw string token transmitted across the network in API requests and responses.
  */
 enum class FeedbackPlatform(val wireValue: String) {
+    /** Apple iOS platform (`ios`). */
     IOS("ios"),
+
+    /** Apple macOS desktop platform (`macos`). */
     MACOS("macos"),
+
+    /** Google Android platform (`android`). */
     ANDROID("android"),
+
+    /** Universal / cross-platform target (`universal`). */
     UNIVERSAL("universal");
 
     companion object {
         /**
-         * Platform reported for this SDK: always [ANDROID]. Exposed so shared
-         * code can pick the right value per platform SDK.
+         * Platform reported for this SDK: always [ANDROID].
+         *
+         * Exposed so shared cross-platform logic can select the correct platform identifier
+         * dynamically per SDK runtime.
          */
         val current: FeedbackPlatform = ANDROID
 
         /**
-         * Parses a wire value such as `android`, or returns `null` when unknown.
+         * Parses a wire value such as `"android"` into its corresponding [FeedbackPlatform] enum entry.
+         *
+         * @param value The raw string representation from the API or configuration.
+         * @return The matched [FeedbackPlatform], or `null` if the wire value is unrecognized.
+         *
+         * Example:
+         * ```kotlin
+         * val platform = FeedbackPlatform.fromWire("android") // FeedbackPlatform.ANDROID
+         * val unknown = FeedbackPlatform.fromWire("windows") // null
+         * ```
          */
         fun fromWire(value: String): FeedbackPlatform? =
             entries.firstOrNull { it.wireValue == value }
@@ -28,11 +56,24 @@ enum class FeedbackPlatform(val wireValue: String) {
 /**
  * Immutable configuration for [FeedbackClient].
  *
- * @property baseUrl API root, such as `https://api.cupthread.com`. Endpoint
- *   paths are appended directly, so it must not contain path segments.
- * @property appKey App key from the CupThread developer console (`app_...`).
- * @property defaultPlatform Platform reported on feedback drafts when the
- *   caller does not set one; defaults to [FeedbackPlatform.current].
+ * Contains server connectivity settings, your app's public API credentials from the CupThread
+ * developer console, and default device metadata defaults.
+ *
+ * Example:
+ * ```kotlin
+ * val config = FeedbackClientConfig(
+ *     baseUrl = "https://api.cupthread.com",
+ *     appKey = "app_live_sampleAppKey123",
+ *     defaultPlatform = FeedbackPlatform.ANDROID
+ * )
+ * val client = FeedbackClient(config)
+ * ```
+ *
+ * @property baseUrl API root URL (e.g. `https://api.cupthread.com`). Endpoint paths are
+ *   appended directly, so this URL should not contain trailing slashes or subpaths.
+ * @property appKey Public app key generated in the CupThread developer dashboard (e.g., `app_live_...`).
+ * @property defaultPlatform Default platform reported on feedback drafts when none is explicitly provided;
+ *   defaults to [FeedbackPlatform.current] ([FeedbackPlatform.ANDROID]).
  */
 data class FeedbackClientConfig(
     val baseUrl: String,
@@ -41,15 +82,31 @@ data class FeedbackClientConfig(
 )
 
 /**
- * An uploaded attachment, as returned by [FeedbackClient.uploadAttachment].
- * Attach instances to a [FeedbackDraft.attachments] before submitting.
+ * An uploaded attachment descriptor, as returned by [FeedbackClient.uploadAttachment].
  *
- * @property kind Storage backend the file was uploaded to.
- * @property key Server-side storage key.
- * @property url Public URL for rendering or downloading the file.
- * @property filename Original file name, when provided at upload time.
- * @property mimeType MIME type, when provided at upload time.
- * @property size File size in bytes, when reported by the server.
+ * Attach one or more instances to [FeedbackDraft.attachments] before calling [FeedbackClient.submit].
+ *
+ * Example:
+ * ```kotlin
+ * val attachment = client.uploadAttachment(
+ *     data = imageBytes,
+ *     filename = "bug_screenshot.png",
+ *     mimeType = "image/png"
+ * )
+ * val draft = FeedbackDraft(
+ *     title = "UI Glitch on Pixel 8",
+ *     description = "Navigation bar overlaps bottom buttons.",
+ *     platform = FeedbackPlatform.ANDROID,
+ *     attachments = listOf(attachment)
+ * )
+ * ```
+ *
+ * @property kind Storage backend where the file is hosted (see [FeedbackAttachment.Kind]).
+ * @property key Unique storage key assigned by the server.
+ * @property url Publicly accessible CDN URL for rendering or downloading the attachment.
+ * @property filename Original file name provided during upload (e.g., `"screenshot.png"`), or `null`.
+ * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
+ * @property size File size in bytes as reported by the storage backend, or `null`.
  */
 data class FeedbackAttachment(
     val kind: Kind,
@@ -60,19 +117,23 @@ data class FeedbackAttachment(
     val size: Long? = null
 ) {
     /**
-     * Storage backend for an attachment: `image` files land in image storage,
-     * everything else in generic R2 object storage.
+     * Storage backend category for an attachment.
+     *
+     * @property wireValue The string token used in JSON serialization.
      */
     enum class Kind(val wireValue: String) {
-        /** Generic object storage (Cloudflare R2) for non-image files. */
+        /** Generic Cloudflare R2 object storage for logs, diagnostics, and non-image files (`r2`). */
         R2("r2"),
 
-        /** Image storage for screenshots and other media. */
+        /** Optimized image storage for screenshots and visual attachments (`image`). */
         IMAGE("image");
 
         companion object {
             /**
-             * Parses a wire value such as `image`, or returns `null` when unknown.
+             * Parses a raw wire string (e.g. `"image"`, `"r2"`) into its [Kind] enum entry.
+             *
+             * @param value The wire string representation.
+             * @return The corresponding [Kind], or `null` if unrecognized.
              */
             fun fromWire(value: String): Kind? = entries.firstOrNull { it.wireValue == value }
         }
@@ -80,24 +141,36 @@ data class FeedbackAttachment(
 }
 
 /**
- * Editable feedback content for [FeedbackClient.submit].
+ * Editable feedback submission content passed to [FeedbackClient.submit].
  *
- * Optional fields are omitted from the request when blank. Use
- * [FeedbackDraft.autofilled] to pre-fill the version fields from the host app;
- * the bundled [dev.cupthread.feedback.ui.FeedbackComposer] does this for you.
+ * Optional fields left empty or blank are automatically omitted from the network payload.
+ * Use [FeedbackDraft.autofilled] to automatically populate version and platform fields
+ * from the host application.
  *
- * @property title Short summary. The composer requires at least 3 characters.
- * @property description What happened and what was expected. The composer
- *   requires at least 5 characters.
- * @property reporterName Optional display name of the reporter.
- * @property reporterEmail Optional contact address for follow-ups.
- * @property platform Platform the feedback was captured on.
- * @property appVersion Host app version name, such as `1.2.0`.
- * @property buildNumber Host app version code, such as `42`.
- * @property metadata Free-form string metadata. The SDK appends its own
- *   `sdk`, `platform`, and `submittedAt` entries on submit.
- * @property attachments Files uploaded beforehand via
- *   [FeedbackClient.uploadAttachment].
+ * Example:
+ * ```kotlin
+ * val draft = FeedbackDraft.autofilled(
+ *     versionName = "2.1.0",
+ *     versionCode = "104"
+ * ).copy(
+ *     title = "Dark mode contrast issue",
+ *     description = "Secondary text in settings is hard to read in dark mode.",
+ *     reporterEmail = "user@example.com",
+ *     metadata = mapOf("device_model" to "Pixel 8 Pro", "os_version" to "Android 14")
+ * )
+ * val result = client.submit(draft, userToken = "user_anon_token_123")
+ * ```
+ *
+ * @property title Brief summary of the feedback (minimum 3 characters required by composer UI).
+ * @property description Detailed explanation of what happened or what is requested (minimum 5 characters).
+ * @property reporterName Optional display name of the user providing feedback.
+ * @property reporterEmail Optional email address of the reporter for follow-up communications.
+ * @property platform Operating system platform the feedback was captured on.
+ * @property appVersion Semantic version name of the host application (e.g., `"1.2.0"`).
+ * @property buildNumber Internal build code of the host application (e.g., `"42"`).
+ * @property metadata Arbitrary key-value diagnostic metadata. The SDK automatically appends
+ *   `sdk`, `platform`, and `submittedAt` timestamps upon submission.
+ * @property attachments Pre-uploaded files and screenshots returned by [FeedbackClient.uploadAttachment].
  */
 data class FeedbackDraft(
     val title: String = "",
@@ -112,8 +185,21 @@ data class FeedbackDraft(
 ) {
     companion object {
         /**
-         * Pre-fills platform, versionName, and versionCode from the host package
-         * so end users never type them. Priority is a developer-side field.
+         * Convenience factory that pre-populates platform, version name, and version code
+         * from the host application package so end users never have to enter them manually.
+         *
+         * @param platform Target platform; defaults to [FeedbackPlatform.current].
+         * @param versionName Host app version name (e.g., `BuildConfig.VERSION_NAME`).
+         * @param versionCode Host app version code (e.g., `BuildConfig.VERSION_CODE.toString()`).
+         * @return A newly initialized [FeedbackDraft] ready for user input.
+         *
+         * Example:
+         * ```kotlin
+         * val draft = FeedbackDraft.autofilled(
+         *     versionName = "1.0.0",
+         *     versionCode = "1"
+         * )
+         * ```
          */
         fun autofilled(
             platform: FeedbackPlatform = FeedbackPlatform.current,
@@ -128,15 +214,22 @@ data class FeedbackDraft(
 }
 
 /**
- * Result of [FeedbackClient.submit].
+ * Result returned by [FeedbackClient.submit] upon successful delivery of a feedback draft.
  *
- * @property submissionId Server-assigned id for the submission.
- * @property forwardedToGithub Whether the platform mirrored the feedback to a
- *   connected GitHub discussion.
- * @property githubDiscussionId GitHub discussion id, when forwarded.
- * @property githubDiscussionUrl Public discussion URL, when forwarded.
- * @property warning Non-fatal notice from the server to show the reporter,
- *   such as a partially rejected attachment.
+ * Example:
+ * ```kotlin
+ * val result = client.submit(draft)
+ * if (result.forwardedToGithub) {
+ *     println("Discussion created: ${result.githubDiscussionUrl}")
+ * }
+ * result.warning?.let { println("Notice: $it") }
+ * ```
+ *
+ * @property submissionId Unique server-assigned tracking identifier for the feedback submission.
+ * @property forwardedToGithub Whether the platform automatically mirrored the feedback to a connected GitHub Discussion.
+ * @property githubDiscussionId Numerical ID of the mirrored GitHub Discussion, or `null` if not forwarded.
+ * @property githubDiscussionUrl Web URL of the mirrored GitHub Discussion, or `null` if not forwarded.
+ * @property warning Non-fatal informational notice from the server (e.g., if an attachment was stripped due to size limits).
  */
 data class FeedbackSubmissionResult(
     val submissionId: String,
@@ -147,23 +240,50 @@ data class FeedbackSubmissionResult(
 )
 
 /**
- * Color themes selectable in the CupThread console and applied to every SDK
- * surface by [dev.cupthread.feedback.ui.CupThreadTheme].
+ * Visual color themes selectable in the CupThread developer console and applied across SDK composables
+ * by [dev.cupthread.feedback.ui.CupThreadTheme].
+ *
+ * Each theme defines specific accent colors and surface backgrounds for both light and dark modes.
+ *
+ * @property wireValue Raw string identifier matching console configuration settings.
  */
 enum class SdkTheme(val wireValue: String) {
+    /** Follows system appearance using standard blue accent (`#2563EB`). */
     SYSTEM("system"),
+
+    /** Forces light mode with blue accent (`#2563EB`) and white backgrounds. */
     LIGHT("light"),
+
+    /** Forces dark mode with blue accent (`#60A5FA`) and slate dark backgrounds (`#0F172A`). */
     DARK("dark"),
+
+    /** Pitch dark theme with violet accent (`#818CF8`) and near-black backgrounds (`#09090B`). */
     MIDNIGHT("midnight"),
+
+    /** Teal palette (`#0D9488`) with soothing aquatic tones. */
     OCEAN("ocean"),
+
+    /** Emerald green palette (`#16A34A`) with natural forest accents. */
     FOREST("forest"),
+
+    /** Vibrant warm orange palette (`#EA580C`) with warm amber undertones. */
     SUNSET("sunset"),
+
+    /** Playful deep pink palette (`#DB2777`) with rose accents. */
     CANDY("candy");
 
     companion object {
         /**
-         * Parses a wire value, falling back to [SYSTEM] for missing or
-         * unknown values.
+         * Parses a theme wire value, gracefully falling back to [SYSTEM] when missing or unrecognized.
+         *
+         * @param value The wire string representation from public app config (e.g., `"ocean"`).
+         * @return The matched [SdkTheme] or [SYSTEM] as default.
+         *
+         * Example:
+         * ```kotlin
+         * val theme = SdkTheme.fromWire("midnight") // SdkTheme.MIDNIGHT
+         * val fallback = SdkTheme.fromWire(null) // SdkTheme.SYSTEM
+         * ```
          */
         fun fromWire(value: String?): SdkTheme =
             entries.firstOrNull { it.wireValue == value } ?: SYSTEM
@@ -171,22 +291,37 @@ enum class SdkTheme(val wireValue: String) {
 }
 
 /**
- * A user-facing SDK surface that can be enabled or disabled from the console.
+ * Functional SDK surface areas that can be toggled on or off remotely from the CupThread console.
  */
 enum class SdkFeature {
+    /** General user feedback submission form ([dev.cupthread.feedback.ui.FeedbackComposer]). */
     FEEDBACK,
+
+    /** Public feature request listing and voting list ([dev.cupthread.feedback.ui.FeatureRequestsScreen]). */
     FEATURE_REQUESTS,
+
+    /** Kanban roadmap board ([dev.cupthread.feedback.ui.RoadmapBoardScreen]). */
     ROADMAP,
+
+    /** Release notes and What's New changelog stream ([dev.cupthread.feedback.ui.WhatsNewScreen]). */
     CHANGELOG
 }
 
 /**
- * Which [SdkFeature]s are enabled for the app, as configured in the console.
+ * Feature availability switches configured remotely in the CupThread developer console.
  *
- * @property feedback Whether the feedback composer is available.
- * @property featureRequests Whether the feature-request list is available.
- * @property roadmap Whether the roadmap board is available.
- * @property changelog Whether the What's-New surfaces are available.
+ * Example:
+ * ```kotlin
+ * val features = SdkFeatures(feedback = true, roadmap = false)
+ * if (features.isEnabled(SdkFeature.ROADMAP)) {
+ *     // Render roadmap tab
+ * }
+ * ```
+ *
+ * @property feedback Whether the feedback composer surface is enabled.
+ * @property featureRequests Whether the feature request board and voting are enabled.
+ * @property roadmap Whether the public roadmap kanban board is enabled.
+ * @property changelog Whether the What's-New changelog screens and overlays are enabled.
  */
 data class SdkFeatures(
     val feedback: Boolean = true,
@@ -195,7 +330,10 @@ data class SdkFeatures(
     val changelog: Boolean = true
 ) {
     /**
-     * Returns whether [feature] is enabled for the app.
+     * Checks if the given [feature] is enabled for this app.
+     *
+     * @param feature The [SdkFeature] surface to query.
+     * @return `true` if enabled in the console, `false` otherwise.
      */
     fun isEnabled(feature: SdkFeature): Boolean = when (feature) {
         SdkFeature.FEEDBACK -> feedback
@@ -205,21 +343,20 @@ data class SdkFeatures(
     }
 
     companion object {
-        /** Configuration with every surface enabled; the default. */
+        /** Default configuration with all SDK surfaces enabled. */
         val allEnabled = SdkFeatures()
     }
 }
 
 /**
- * Copy and layout options for the What's-New overlay, configured in the
- * console and honored by [dev.cupthread.feedback.ui.ChangelogOverlay].
+ * Copy, button label, and display count settings for the What's-New modal overlay
+ * ([dev.cupthread.feedback.ui.ChangelogOverlay]).
  *
- * @property title Sheet headline.
- * @property subtitle Optional line under the headline.
- * @property entryCount Requested number of entries; [clampedEntryCount]
- *   coerces this to the supported 1–10 range.
- * @property primaryButton Label of the primary button.
- * @property closeButton Label of the secondary (close) button.
+ * @property title Header title displayed at the top of the What's-New sheet (e.g., `"What's New"`).
+ * @property subtitle Optional secondary description displayed under the header.
+ * @property entryCount Desired number of changelog entries to present (coerced between 1 and 10).
+ * @property primaryButton Label for the main action button (e.g., `"Continue"`).
+ * @property closeButton Label for the secondary dismissal button (e.g., `"Close"`).
  */
 data class ChangelogOverlayConfig(
     val title: String = "What's New",
@@ -228,13 +365,19 @@ data class ChangelogOverlayConfig(
     val primaryButton: String = "Continue",
     val closeButton: String = "Close"
 ) {
-    /** Entry count coerced into the supported 1–10 range. */
+    /**
+     * Number of changelog entries guaranteed to be within the valid 1..10 range.
+     */
     val clampedEntryCount: Int get() = entryCount.coerceIn(1, 10)
 }
 
 /**
- * Console-configured look and feel applied to every SDK surface: color theme,
- * enabled features, and What's-New overlay copy.
+ * Complete remote appearance package configured in the CupThread developer console:
+ * color palette theme, feature switches, and changelog presentation options.
+ *
+ * @property theme Primary color theme ([SdkTheme]).
+ * @property features Enabled feature flags ([SdkFeatures]).
+ * @property changelogOverlay Layout and copy settings for What's-New sheets ([ChangelogOverlayConfig]).
  */
 data class SdkAppearance(
     val theme: SdkTheme = SdkTheme.SYSTEM,
@@ -242,37 +385,41 @@ data class SdkAppearance(
     val changelogOverlay: ChangelogOverlayConfig = ChangelogOverlayConfig()
 ) {
     companion object {
-        /** Sensible defaults used when the console config is unavailable. */
+        /** Default appearance parameters applied when network configuration is unavailable. */
         val defaults = SdkAppearance()
     }
 }
 
 /**
- * Public configuration for an app, served by
- * `GET /api/v1/public/config/{appKey}`.
+ * Public metadata and configuration for an application, fetched from `GET /api/v1/public/config/{appKey}`.
  *
- * The `allowAnonymous*` flags mirror the console privacy settings; check them
- * before presenting surfaces to users who have no user token. Surfaces of
- * this SDK read this config themselves, so most apps never need to use the
- * flags directly.
+ * Contains remote access policies (such as anonymous voting or roadmap visibility), attachment size limits,
+ * app store links, and SDK visual styling.
  *
- * @property appId Stable platform id of the app.
- * @property appKey App key used to fetch this config.
- * @property slug URL-friendly app name.
- * @property name Display name.
- * @property storeUrl App store URL, when configured.
- * @property storeKind Store identifier such as `app_store` or `play_store`.
- * @property iconUrl App icon URL, when configured.
- * @property allowPublic Whether the app is publicly reachable at all.
- * @property allowedPlatforms Platforms the app accepts feedback for.
- * @property maxAttachmentBytes Maximum accepted attachment size in bytes.
- * @property allowAnonymousRoadmap Whether the roadmap can be viewed without a
- *   user token.
- * @property allowAnonymousVote Whether voting requires a user token.
- * @property allowAnonymousFeedback Whether feedback can be sent without a
- *   user token.
- * @property allowAnonymousChangelog Whether the changelog requires a user token.
- * @property sdk Console-configured appearance for SDK surfaces.
+ * Example:
+ * ```kotlin
+ * val config = client.fetchAppConfig()
+ * if (config.allowAnonymousFeedback) {
+ *     // Anonymous users can submit feedback without an explicit user session
+ * }
+ * println("Max upload: ${config.maxAttachmentBytes / (1024 * 1024)} MB")
+ * ```
+ *
+ * @property appId Globally unique ID of the application.
+ * @property appKey Public app key used to authenticate SDK calls.
+ * @property slug URL-friendly slug identifier for the application.
+ * @property name Human-readable display name of the application.
+ * @property storeUrl Direct URL to the app on Google Play or Apple App Store, or `null`.
+ * @property storeKind App store ecosystem (e.g. `"play_store"`, `"app_store"`), or `null`.
+ * @property iconUrl Hosted icon image URL, or `null`.
+ * @property allowPublic Whether the application's public portal is globally enabled.
+ * @property allowedPlatforms List of operating system platforms accepted for feedback.
+ * @property maxAttachmentBytes Maximum allowed upload size per attachment in bytes (e.g., `10485760` for 10MB).
+ * @property allowAnonymousRoadmap Whether the roadmap board can be viewed without a valid user token.
+ * @property allowAnonymousVote Whether feature requests can be upvoted by anonymous users.
+ * @property allowAnonymousFeedback Whether feedback submissions can be sent anonymously.
+ * @property allowAnonymousChangelog Whether changelog release notes can be viewed anonymously.
+ * @property sdk Remote theme and surface appearance bundle ([SdkAppearance]).
  */
 data class PublicAppConfig(
     val appId: String,
@@ -293,22 +440,26 @@ data class PublicAppConfig(
 )
 
 /**
- * Semantic kind of a roadmap [BoardColumn].
+ * Semantic classification of a kanban [BoardColumn].
+ *
+ * @property wireValue String identifier used in the REST API.
  */
 enum class BoardColumnKind(val wireValue: String) {
-    /** Requests awaiting moderator approval are filed here. */
+    /** Column for newly submitted requests awaiting moderator approval (`pending_review`). */
     PENDING_REVIEW("pending_review"),
 
-    /** Ordinary board stage. */
+    /** Standard active development or planning stage (`normal`). */
     NORMAL("normal"),
 
-    /** Terminal column for shipped or closed requests. */
+    /** Terminal status column for completed or closed items (`done`). */
     DONE("done");
 
     companion object {
         /**
-         * Parses a wire value, falling back to [NORMAL] for missing or
-         * unknown values.
+         * Parses a wire string into its corresponding [BoardColumnKind], defaulting to [NORMAL] on mismatch.
+         *
+         * @param value The wire string representation.
+         * @return The matched [BoardColumnKind].
          */
         fun fromWire(value: String): BoardColumnKind =
             entries.firstOrNull { it.wireValue == value } ?: NORMAL
@@ -316,21 +467,27 @@ enum class BoardColumnKind(val wireValue: String) {
 }
 
 /**
- * A roadmap kanban column, as shown by
- * [dev.cupthread.feedback.ui.RoadmapBoardScreen].
+ * A column on the public roadmap kanban board, as displayed in [dev.cupthread.feedback.ui.RoadmapBoardScreen].
  *
- * @property id Column id referenced by [FeatureRequestItem.columnId].
- * @property appId Id of the owning app.
- * @property name Display name, such as `In Progress`.
- * @property slug URL-friendly name; also used to derive stage styling.
- * @property position Sort position, lowest first.
- * @property isVisible Whether the column is shown on the public board.
- * @property isSystem Whether the column is a system column, such as
- *   pending-review intake.
- * @property kind Semantic kind of the column.
- * @property color Column accent color as a hex string, when configured.
- * @property createdAt Creation timestamp.
- * @property updatedAt Last-change timestamp.
+ * Example:
+ * ```kotlin
+ * val columns = client.fetchColumns()
+ * columns.forEach { col ->
+ *     println("Column: ${col.name} (position ${col.position})")
+ * }
+ * ```
+ *
+ * @property id Unique column identifier referenced by [FeatureRequestItem.columnId].
+ * @property appId Identifier of the owning application.
+ * @property name Display name of the column (e.g., `"In Progress"`, `"Planned"`, `"Completed"`).
+ * @property slug URL-friendly slug used for stage style heuristics (e.g., `"in-progress"`).
+ * @property position Ordering index for display sorting (ascending).
+ * @property isVisible Whether this column is visible on the public board.
+ * @property isSystem Whether this is an internal system column (such as pending review queue).
+ * @property kind Semantic categorization of the column ([BoardColumnKind]).
+ * @property color Optional hex color string for column accent tinting (e.g., `"#16A34A"`).
+ * @property createdAt ISO 8601 creation timestamp.
+ * @property updatedAt ISO 8601 last update timestamp.
  */
 data class BoardColumn(
     val id: String,
@@ -347,18 +504,24 @@ data class BoardColumn(
 )
 
 /**
- * A release version of the app, used to filter
- * [FeatureRequestItem]s by the version they ship in.
+ * A release milestone or version tag of the app, used to categorize and filter [FeatureRequestItem]s.
  *
- * @property id Version id used with [FeedbackClient.fetchFeatureRequests].
- * @property appId Id of the owning app.
- * @property label Display label such as `1.2.0`.
- * @property position Sort position, lowest first.
- * @property released Whether the version has shipped.
- * @property releasedAt Release timestamp, when shipped.
- * @property description Optional release description.
- * @property createdAt Creation timestamp.
- * @property updatedAt Last-change timestamp.
+ * Example:
+ * ```kotlin
+ * val versions = client.fetchVersions()
+ * val latestVersion = versions.firstOrNull { it.released }
+ * println("Latest released version: ${latestVersion?.label}")
+ * ```
+ *
+ * @property id Version identifier used in [FeedbackClient.fetchFeatureRequests].
+ * @property appId Identifier of the owning application.
+ * @property label Display version string (e.g., `"2.1.0"`).
+ * @property position Ordering position (ascending).
+ * @property released Whether this version has officially shipped to users.
+ * @property releasedAt ISO 8601 release timestamp, or `null` if unreleased.
+ * @property description Optional release summary or milestone goal.
+ * @property createdAt ISO 8601 creation timestamp.
+ * @property updatedAt ISO 8601 last update timestamp.
  */
 data class AppVersion(
     val id: String,
@@ -373,36 +536,42 @@ data class AppVersion(
 )
 
 /**
- * A feature request as returned by [FeedbackClient.fetchFeatureRequests].
+ * A public feature request, as returned by [FeedbackClient.fetchFeatureRequests].
  *
- * Vote fields ([hasVoted], [voteCount]) are resolved against the user token
- * used for the fetch; use [withVoteState] to apply optimistic updates.
+ * Includes live vote counts, the current user's vote state, roadmap column placement,
+ * moderation status, and recent commenter avatars.
  *
- * @property id Request id; the target of [FeedbackClient.toggleVote].
- * @property appId Id of the owning app.
- * @property title Short summary.
- * @property description Longer rationale; may contain the inline Markdown
- *   subset rendered by [dev.cupthread.feedback.ui.MarkdownText].
- * @property status Workflow status slug, such as `backlog`.
- * @property columnId Roadmap column the request sits in, when on the board.
- * @property columnSlug Slug of that column.
- * @property columnName Display name of that column.
- * @property columnColor Accent color of that column, when configured.
- * @property versionId Version the request ships in, when assigned.
- * @property versionLabel Display label of that version.
- * @property releasedVersion Version label once the request has shipped.
- * @property requesterName Display name of the requester, when given.
- * @property requesterAvatarUrl Avatar image URL of the requester, when available.
- * @property requesterClerkId Clerk user id of the requester, when signed in.
- * @property approved Whether a moderator approved the request.
- * @property voteCount Total number of votes.
- * @property hasVoted Whether the fetching user has voted.
- * @property isOwnRequest Whether the fetching user created the request; own
- *   requests cannot be voted on.
- * @property recentCommenters Up to 3 most recent commenters, displayed as an avatar stack on the card.
- * @property hasMoreCommenters Whether there are more commenters beyond [recentCommenters].
- * @property createdAt Creation timestamp.
- * @property updatedAt Last-change timestamp.
+ * Example:
+ * ```kotlin
+ * val result = client.fetchFeatureRequests(userToken = token)
+ * result.requests.forEach { item ->
+ *     println("${item.title} - ${item.voteCount} votes (Voted: ${item.hasVoted})")
+ * }
+ * ```
+ *
+ * @property id Unique identifier for the feature request; used in [FeedbackClient.toggleVote] and comments.
+ * @property appId Identifier of the owning application.
+ * @property title Brief summary of the proposed feature.
+ * @property description Detailed description; may contain inline Markdown formatting rendered by [dev.cupthread.feedback.ui.MarkdownText].
+ * @property status Workflow status slug (e.g., `"backlog"`, `"planned"`, `"completed"`).
+ * @property columnId Associated roadmap [BoardColumn] ID, or `null` if uncategorized.
+ * @property columnSlug Slug of the associated roadmap column, or `null`.
+ * @property columnName Display name of the associated roadmap column, or `null`.
+ * @property columnColor Optional accent color of the associated column.
+ * @property versionId Target [AppVersion] ID where this feature is scheduled to ship, or `null`.
+ * @property versionLabel Display label of the target release version, or `null`.
+ * @property releasedVersion Actual release version label once shipped, or `null`.
+ * @property requesterName Display name of the user who submitted the request, or `null`.
+ * @property requesterAvatarUrl Hosted avatar image URL of the requester, or `null`.
+ * @property requesterClerkId User account ID of the requester if signed in, or `null`.
+ * @property approved Whether a moderator has approved this request for public display.
+ * @property voteCount Total number of upvotes.
+ * @property hasVoted Whether the current user (identified by `userToken`) has upvoted this request.
+ * @property isOwnRequest Whether the current user created this request (users cannot vote on their own requests).
+ * @property recentCommenters Up to 3 most recent commenters for rendering avatar stacks.
+ * @property hasMoreCommenters Whether additional commenters exist beyond [recentCommenters].
+ * @property createdAt ISO 8601 creation timestamp.
+ * @property updatedAt ISO 8601 last update timestamp.
  */
 data class FeatureRequestItem(
     val id: String,
@@ -430,25 +599,46 @@ data class FeatureRequestItem(
     val updatedAt: String
 ) {
     /**
-     * Display name of the roadmap stage: the column name when the request is
-     * on the board, otherwise the raw [status].
+     * Display name of the roadmap stage: returns [columnName] when on the board,
+     * otherwise falls back to the raw [status] slug.
      */
     val stageName: String get() = columnName ?: status
 
     /**
-     * Returns a copy with an updated vote state — used to apply optimistic
-     * updates and server corrections after [FeedbackClient.toggleVote].
+     * Creates a copy of this item with updated vote state.
+     *
+     * Useful for performing optimistic UI updates before network confirmation
+     * and reconciling server state after [FeedbackClient.toggleVote].
+     *
+     * @param voted Whether the user has voted.
+     * @param count The new total vote count.
+     * @return An updated [FeatureRequestItem] instance.
+     *
+     * Example:
+     * ```kotlin
+     * val optimistic = item.withVoteState(voted = true, count = item.voteCount + 1)
+     * ```
      */
     fun withVoteState(voted: Boolean, count: Int): FeatureRequestItem =
         copy(hasVoted = voted, voteCount = count)
 }
 
 /**
- * New feature request content for [FeedbackClient.submitFeatureRequest].
+ * Draft content for submitting a new feature request via [FeedbackClient.submitFeatureRequest].
  *
- * @property title Short summary; at least 3 characters in the composer.
- * @property description Longer rationale; at least 5 characters in the composer.
- * @property requesterName Optional display name shown with the request.
+ * Example:
+ * ```kotlin
+ * val draft = FeatureRequestDraft(
+ *     title = "Add Biometric Authentication",
+ *     description = "Support Fingerprint and Face Unlock on login.",
+ *     requesterName = "Alex"
+ * )
+ * val result = client.submitFeatureRequest(draft, userToken = token)
+ * ```
+ *
+ * @property title Concise feature title (minimum 3 characters).
+ * @property description Comprehensive rationale and use case (minimum 5 characters).
+ * @property requesterName Optional author name to display alongside the request.
  */
 data class FeatureRequestDraft(
     val title: String = "",
@@ -457,12 +647,11 @@ data class FeatureRequestDraft(
 )
 
 /**
- * A recent commenter on a feature request, shown in the avatar stack
- * on [FeatureRequestItem] cards.
+ * Summary of a recent commenter on a [FeatureRequestItem], used in avatar stacks.
  *
- * @property authorName Display name of the commenter, when given.
- * @property clerkUserId Clerk user id, when the commenter is a signed-in user.
- * @property avatarUrl Avatar image URL, when available.
+ * @property authorName Display name of the commenter, or `null`.
+ * @property clerkUserId Unique user ID if the commenter is signed in, or `null`.
+ * @property avatarUrl Hosted avatar image URL, or `null`.
  */
 data class RecentCommenter(
     val authorName: String? = null,
@@ -471,21 +660,28 @@ data class RecentCommenter(
 )
 
 /**
- * A comment on a feature request, as returned by
- * [FeedbackClient.fetchComments].
+ * A comment or reply on a feature request, returned by [FeedbackClient.fetchComments].
  *
- * @property id Comment id.
- * @property featureRequestId Id of the parent feature request.
- * @property authorName Display name of the comment author, when given.
- * @property authorEmail Author email, when given.
- * @property authorAvatarUrl Avatar image URL, when available.
- * @property authorClerkId Clerk user id, when the author is signed in.
- * @property body Comment text; may contain inline Markdown.
- * @property parentId Id of the parent comment this is a reply to, when applicable.
- * @property replyToClerkId Clerk user id of the user being replied to, when applicable.
- * @property replyToAuthorName Display name of the user being replied to, when applicable.
- * @property isHidden Whether the comment has been hidden by a moderator.
- * @property createdAt Creation timestamp (ISO 8601).
+ * Example:
+ * ```kotlin
+ * val comments = client.fetchComments(featureRequestId = "req_123")
+ * comments.forEach { comment ->
+ *     println("${comment.authorName ?: "Anon"}: ${comment.body}")
+ * }
+ * ```
+ *
+ * @property id Unique comment identifier.
+ * @property featureRequestId Parent [FeatureRequestItem.id] this comment belongs to.
+ * @property authorName Display name of the commenter, or `null`.
+ * @property authorEmail Email address of the author, or `null`.
+ * @property authorAvatarUrl Hosted avatar image URL, or `null`.
+ * @property authorClerkId Unique user ID if signed in, or `null`.
+ * @property body Comment content; supports inline Markdown.
+ * @property parentId Identifier of the parent comment if this is a reply, or `null`.
+ * @property replyToClerkId User ID of the participant being replied to, or `null`.
+ * @property replyToAuthorName Name of the participant being replied to, or `null`.
+ * @property isHidden Whether this comment was moderated and hidden from public view.
+ * @property createdAt ISO 8601 creation timestamp.
  */
 data class FeatureRequestComment(
     val id: String,
@@ -503,15 +699,26 @@ data class FeatureRequestComment(
 )
 
 /**
- * New comment content for [FeedbackClient.postComment].
+ * Draft content for creating a new comment or threaded `@reply` via [FeedbackClient.postComment].
  *
- * @property body Comment text; at least 1 character.
- * @property authorName Optional display name shown with the comment.
- * @property authorEmail Optional contact address for follow-ups.
- * @property authorAvatarUrl Optional avatar URL for the comment author.
- * @property parentId Id of the parent comment, when replying.
- * @property replyToClerkId Clerk user id of the user being replied to.
- * @property replyToAuthorName Display name of the user being replied to.
+ * Example:
+ * ```kotlin
+ * val comment = CommentDraft(
+ *     body = "I would love to see this implemented in the next release!",
+ *     authorName = "Jordan",
+ *     parentId = parentComment.id,
+ *     replyToAuthorName = parentComment.authorName
+ * )
+ * val created = client.postComment(featureRequestId = "req_123", draft = comment, userToken = token)
+ * ```
+ *
+ * @property body Text content of the comment (minimum 1 character).
+ * @property authorName Optional display name of the comment author.
+ * @property authorEmail Optional contact email address.
+ * @property authorAvatarUrl Optional avatar picture URL.
+ * @property parentId ID of the parent comment when creating a reply, or `null` for top-level comments.
+ * @property replyToClerkId User ID of the person being replied to, or `null`.
+ * @property replyToAuthorName Display name of the person being replied to, or `null`.
  */
 data class CommentDraft(
     val body: String = "",
@@ -524,16 +731,16 @@ data class CommentDraft(
 )
 
 /**
- * A public user profile, as returned by [FeedbackClient.fetchUserProfile].
+ * Public user profile information, as returned by [FeedbackClient.fetchUserProfile].
  *
- * @property clerkUserId Clerk user id.
- * @property displayName Display name, when set.
- * @property avatarUrl Avatar image URL, when available.
- * @property bio Short biography, when set.
- * @property websiteUrl Personal website URL, when set.
- * @property hideComments Whether the user has opted to hide their comments.
- * @property createdAt Profile creation timestamp.
- * @property updatedAt Profile last-update timestamp.
+ * @property clerkUserId Unique user identifier.
+ * @property displayName User's public display name, or `null`.
+ * @property avatarUrl Hosted profile picture URL, or `null`.
+ * @property bio Biography or tagline, or `null`.
+ * @property websiteUrl Personal website or portfolio link, or `null`.
+ * @property hideComments Whether the user has chosen to hide their public comment history.
+ * @property createdAt ISO 8601 account creation timestamp.
+ * @property updatedAt ISO 8601 last update timestamp.
  */
 data class PublicUserProfile(
     val clerkUserId: String,
@@ -547,14 +754,14 @@ data class PublicUserProfile(
 )
 
 /**
- * Summary of a public app, as shown on a user's profile.
+ * Summary of an application owned or associated with a user profile.
  *
- * @property id App id.
- * @property name Display name.
- * @property slug URL-friendly app name.
- * @property iconUrl App icon URL, when configured.
- * @property description App description, when set.
- * @property requestCount Number of public feature requests.
+ * @property id Unique app identifier.
+ * @property name Application display name.
+ * @property slug URL-friendly slug.
+ * @property iconUrl Hosted app icon URL, or `null`.
+ * @property description Short description of the application, or `null`.
+ * @property requestCount Total number of public feature requests in this app.
  */
 data class PublicAppSummary(
     val id: String,
@@ -566,15 +773,15 @@ data class PublicAppSummary(
 )
 
 /**
- * A comment shown on a user's public profile page.
+ * A user comment displayed on their public profile activity feed.
  *
- * @property id Comment id.
- * @property body Comment text.
- * @property createdAt Creation timestamp.
- * @property featureRequestId Feature request the comment belongs to.
+ * @property id Unique comment ID.
+ * @property body Text content of the comment.
+ * @property createdAt ISO 8601 creation timestamp.
+ * @property featureRequestId ID of the feature request where the comment was posted.
  * @property featureRequestTitle Title of the feature request.
- * @property appId App the comment belongs to.
- * @property appName Display name of the app.
+ * @property appId ID of the application owning the feature request.
+ * @property appName Display name of the application.
  */
 data class UserProfileComment(
     val id: String,
@@ -587,12 +794,12 @@ data class UserProfileComment(
 )
 
 /**
- * Result of [FeedbackClient.fetchUserProfile].
+ * Combined public profile result returned by [FeedbackClient.fetchUserProfile].
  *
- * @property profile The user's public profile.
- * @property apps Public apps owned by the user.
- * @property recentComments Recent public comments by the user.
- * @property hideComments Whether the user has opted to hide comments.
+ * @property profile Core user profile metadata ([PublicUserProfile]).
+ * @property apps List of public apps associated with the user ([PublicAppSummary]).
+ * @property recentComments Recent comments posted by the user across public requests ([UserProfileComment]).
+ * @property hideComments Whether comment history is obscured due to user privacy settings.
  */
 data class PublicUserProfileResult(
     val profile: PublicUserProfile,
@@ -602,11 +809,10 @@ data class PublicUserProfileResult(
 )
 
 /**
- * Result of [FeedbackClient.submitFeatureRequest].
+ * Result of submitting a feature request via [FeedbackClient.submitFeatureRequest].
  *
- * @property featureRequestId Server-assigned request id.
- * @property pending `true` while the request awaits moderator approval and is
- *   not yet visible on the public board.
+ * @property featureRequestId Server-assigned ID for the created feature request.
+ * @property pending `true` if the request was held for moderation and is not yet visible on the public board.
  */
 data class FeatureRequestSubmissionResult(
     val featureRequestId: String,
@@ -614,10 +820,10 @@ data class FeatureRequestSubmissionResult(
 )
 
 /**
- * Result of [FeedbackClient.toggleVote].
+ * Result of toggling an upvote on a feature request via [FeedbackClient.toggleVote].
  *
- * @property voted Vote state after the toggle.
- * @property voteCount Total votes on the request after the toggle.
+ * @property voted Whether the user is currently upvoting the request after the toggle.
+ * @property voteCount The reconciled total vote count on the server after the toggle.
  */
 data class VoteResult(
     val voted: Boolean,
@@ -625,11 +831,10 @@ data class VoteResult(
 )
 
 /**
- * Page of [FeatureRequestItem]s returned by
- * [FeedbackClient.fetchFeatureRequests].
+ * Paginated list of feature requests returned by [FeedbackClient.fetchFeatureRequests].
  *
- * @property requests The page of requests.
- * @property total Total number of matching requests, independent of paging.
+ * @property requests The current page of [FeatureRequestItem] objects.
+ * @property total Total number of requests matching the query across all pages.
  */
 data class ListFeatureRequestsResult(
     val requests: List<FeatureRequestItem>,
@@ -637,10 +842,10 @@ data class ListFeatureRequestsResult(
 )
 
 /**
- * Feature request linked from a [ChangelogEntry].
+ * Feature request referenced by a [ChangelogEntry], highlighting resolved requests.
  *
- * @property id Linked request id.
- * @property title Linked request title.
+ * @property id Unique ID of the linked feature request.
+ * @property title Headline of the linked feature request.
  */
 data class ChangelogLinkedRequest(
     val id: String,
@@ -648,16 +853,22 @@ data class ChangelogLinkedRequest(
 )
 
 /**
- * A published changelog entry, as returned by [FeedbackClient.fetchChangelog].
+ * A published changelog entry or release note, returned by [FeedbackClient.fetchChangelog].
  *
- * @property id Entry id.
- * @property title Headline.
- * @property body Release notes; may contain the inline Markdown subset
- *   rendered by [dev.cupthread.feedback.ui.MarkdownText].
- * @property versionLabel Version the entry ships with, when set.
- * @property publishedAt Publication timestamp (ISO 8601); the sort key for
- *   [FeedbackClient.fetchChangelog].
- * @property linkedRequests Feature requests shipped with this entry.
+ * Example:
+ * ```kotlin
+ * val entries = client.fetchChangelog()
+ * entries.forEach { entry ->
+ *     println("${entry.versionLabel ?: "Update"}: ${entry.title}")
+ * }
+ * ```
+ *
+ * @property id Unique changelog entry ID.
+ * @property title Headline of the release note.
+ * @property body Markdown body containing release highlights and details.
+ * @property versionLabel Associated version name (e.g., `"v2.0.0"`), or `null`.
+ * @property publishedAt ISO 8601 publication timestamp (entries are sorted newest first).
+ * @property linkedRequests List of feature requests closed or shipped as part of this release.
  */
 data class ChangelogEntry(
     val id: String,
@@ -669,10 +880,10 @@ data class ChangelogEntry(
 )
 
 /**
- * Result of [FeedbackClient.subscribeToChangelog].
+ * Result of subscribing an email to product updates via [FeedbackClient.subscribeToChangelog].
  *
- * @property subscribed Whether the address is subscribed after the call.
- * @property alreadySubscribed Whether the address was already on the list.
+ * @property subscribed Whether the email is active in the subscriber list.
+ * @property alreadySubscribed Whether the email was already registered previously.
  */
 data class ChangelogSubscriptionResult(
     val subscribed: Boolean,
@@ -680,21 +891,22 @@ data class ChangelogSubscriptionResult(
 )
 
 /**
- * Result of [FeedbackClient.unsubscribeFromChangelog].
+ * Result of removing an email from product update emails via [FeedbackClient.unsubscribeFromChangelog].
  *
- * @property unsubscribed Whether the address was unsubscribed.
+ * @property unsubscribed Whether the email was successfully removed from the newsletter list.
  */
 data class ChangelogUnsubscribeResult(
     val unsubscribed: Boolean
 )
 
 /**
- * Result of [FeedbackClient.updateUserAttributes].
+ * Result of updating user telemetry attributes via [FeedbackClient.updateUserAttributes].
  *
- * @property ok Whether the update was applied.
- * @property updatedAt Server timestamp of the update.
+ * @property ok Whether the attribute update was accepted by the server.
+ * @property updatedAt ISO 8601 timestamp when the attributes were saved.
  */
 data class UserAttributesUpdateResult(
     val ok: Boolean,
     val updatedAt: String
 )
+

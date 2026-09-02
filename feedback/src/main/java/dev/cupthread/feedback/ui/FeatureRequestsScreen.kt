@@ -56,29 +56,40 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
- * Feature-request list with free-text search, version filter, optimistic
- * voting, and a bottom sheet for submitting new requests.
+ * Full-screen interactive Feature Requests board and proposal submission screen.
  *
- * Behavior details:
- * - Search is debounced (~350 ms) and matches titles and descriptions.
- * - Voting is optimistic: the vote pill updates immediately and reverts if
- *   the server rejects the toggle. Own requests cannot be voted on.
- * - Pull to refresh reloads the current view; new requests appear in the
- *   list only after moderation approval
- *   ([dev.cupthread.feedback.FeatureRequestSubmissionResult.pending]).
+ * Renders a searchable, filterable list of community feature proposals with live vote counters,
+ * status badges, author avatars, and an interactive Floating Action Button to draft new requests.
  *
- * The screen applies the console-configured theme itself and shows its own
- * top app bar and compose button:
+ * ### Key Behaviors & Architecture
+ * - **Debounced Search**: Free-text search matching titles and descriptions, debounced at ~350 ms.
+ * - **Version Filter**: Top app bar dropdown menu that filters requests by milestone release ([AppVersion]).
+ * - **Optimistic Upvoting**: Vote pill immediately animates count increment/decrement and automatically
+ *   reconciles with server response or reverts on failure. Users cannot vote on their own requests ([FeatureRequestItem.isOwnRequest]).
+ * - **New Request Bottom Sheet**: Bottom sheet modal allowing users to draft and submit new proposals
+ *   ([FeatureRequestDraft]). Handles moderation feedback ([FeatureRequestSubmissionResult.pending]).
+ * - **Detail & Profile Sheets**: Tapping a card opens [FeatureRequestDetailSheet] for discussions and replies,
+ *   while tapping user avatars opens [UserProfileSheet].
+ * - **Remote Theming & Feature Gating**: Automatically wrapped in [SdkSurface] with [SdkFeature.FEATURE_REQUESTS].
  *
+ * ### Example Integration
  * ```kotlin
- * FeatureRequestsScreen(client = client, userToken = userToken)
+ * @Composable
+ * fun CommunityFeedbackTab(
+ *     client: FeedbackClient,
+ *     userTokenStore: UserTokenStore
+ * ) {
+ *     FeatureRequestsScreen(
+ *         client = client,
+ *         userToken = userTokenStore.token,
+ *         modifier = Modifier.fillMaxSize()
+ *     )
+ * }
  * ```
  *
- * @param client Shared API client.
- * @param userToken Stable anonymous token from
- *   [dev.cupthread.feedback.UserTokenStore]; required so vote state and
- *   own-request flags resolve correctly.
- * @param modifier Modifier applied to the root [Scaffold].
+ * @param client Shared [FeedbackClient] instance used for network queries and mutations.
+ * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state and ownership.
+ * @param modifier Optional [Modifier] applied to the root [Scaffold] container.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable

@@ -46,25 +46,38 @@ import dev.cupthread.feedback.SdkFeature
 import kotlinx.coroutines.launch
 
 /**
- * Full-screen changelog list ("What's New") with pull-to-refresh and an
- * email subscribe sheet.
+ * Full-screen "What's New" and Product Changelog Screen composable.
  *
- * Entries are sorted newest first; the mail icon in the top app bar (and the
- * footer card) opens a sheet where users subscribe to update emails with an
- * address — or unsubscribe again from the same sheet.
+ * Renders a reverse-chronological timeline of published release notes and product announcements
+ * with inline Markdown rendering, version badges, linked feature requests, pull-to-refresh,
+ * and an integrated email newsletter subscription sheet.
  *
- * The screen applies the console-configured theme itself and shows its own
- * top app bar; embed it anywhere in your Compose hierarchy:
+ * ### Key Features & Architecture
+ * - **Chronological Release Timeline**: Fetches published [ChangelogEntry] items via [FeedbackClient.fetchChangelog]
+ *   and displays formatted release titles, publication dates, and rich Markdown content.
+ * - **Linked Feature Badges**: Highlights completed user requests associated with each release via [ChangelogLinkedRequest].
+ * - **Email Subscription Modal**: The top bar mail icon and footer card open an interactive modal bottom sheet
+ *   allowing users to subscribe to product update emails (or unsubscribe) directly from the device.
+ * - **Remote Theming & Feature Gating**: Automatically wrapped in [SdkSurface] with [SdkFeature.CHANGELOG].
  *
+ * ### Example Integration
  * ```kotlin
- * WhatsNewScreen(client = client, userToken = userToken)
+ * @Composable
+ * fun ProductUpdatesTab(
+ *     client: FeedbackClient,
+ *     userTokenStore: UserTokenStore
+ * ) {
+ *     WhatsNewScreen(
+ *         client = client,
+ *         userToken = userTokenStore.token,
+ *         modifier = Modifier.fillMaxSize()
+ *     )
+ * }
  * ```
  *
- * @param client Shared API client.
- * @param userToken Stable anonymous token from
- *   [dev.cupthread.feedback.UserTokenStore]; used when subscribing to update
- *   emails.
- * @param modifier Modifier applied to the root [Scaffold].
+ * @param client Shared [FeedbackClient] instance used to load changelog entries and manage email subscriptions.
+ * @param userToken Stable anonymous user token from [UserTokenStore] used to authenticate subscription actions.
+ * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

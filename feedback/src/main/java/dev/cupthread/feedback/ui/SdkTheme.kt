@@ -62,19 +62,42 @@ internal fun sdkColorScheme(theme: SdkTheme, systemDark: Boolean) =
     }
 
 /**
- * Returns the active [SdkAppearance]: the value injected by an enclosing
- * [SdkSurface] or [CupThreadTheme] when present, otherwise fetched from
- * [FeedbackClient.fetchAppConfig], falling back to [SdkAppearance.defaults]
- * on failure.
+ * Remembers and observes the active remote [SdkAppearance] configuration for [client].
  *
- * Use it to branch your own UI on console settings:
+ * If an enclosing [SdkSurface] or [CupThreadTheme] has already provided an [SdkAppearance]
+ * via `LocalSdkAppearance`, that instance is immediately returned without performing a redundant
+ * network call. Otherwise, this composable executes an asynchronous query against
+ * [FeedbackClient.fetchAppConfig] inside a [LaunchedEffect], gracefully falling back to
+ * [SdkAppearance.defaults] if the request fails or the device is offline.
+ *
+ * Use this composable when building custom UI flows that need to conditionally render
+ * components based on remote console settings:
  *
  * ```kotlin
- * val appearance = rememberSdkAppearance(client)
- * if (appearance.features.isEnabled(SdkFeature.CHANGELOG)) {
- *     WhatsNewButton(onClick = onOpenWhatsNew)
+ * @Composable
+ * fun SettingsScreen(client: FeedbackClient, userToken: String) {
+ *     val appearance = rememberSdkAppearance(client)
+ *
+ *     Column {
+ *         Text("Settings", style = MaterialTheme.typography.titleLarge)
+ *
+ *         if (appearance.features.isEnabled(SdkFeature.FEEDBACK)) {
+ *             Button(onClick = { /* navigate to feedback composer */ }) {
+ *                 Text("Send Feedback")
+ *             }
+ *         }
+ *
+ *         if (appearance.features.isEnabled(SdkFeature.CHANGELOG)) {
+ *             Button(onClick = { /* open changelog */ }) {
+ *                 Text(appearance.changelogOverlay.title)
+ *             }
+ *         }
+ *     }
  * }
  * ```
+ *
+ * @param client The [FeedbackClient] used to retrieve remote app appearance and features.
+ * @return The resolved [SdkAppearance] state.
  */
 @Composable
 fun rememberSdkAppearance(client: FeedbackClient): SdkAppearance {
@@ -89,18 +112,38 @@ fun rememberSdkAppearance(client: FeedbackClient): SdkAppearance {
 }
 
 /**
- * Material theme carrying the console-configured [SdkAppearance]. Wraps
- * [content] with the console-selected [SdkTheme] color scheme; use it when
- * hosting SDK composables outside the ready-made screens, for example
- * [ChangelogOverlay]:
+ * Material 3 Theme wrapper that applies the console-configured [SdkTheme] palette to [content].
+ *
+ * Automatically resolves the active [SdkAppearance] via [rememberSdkAppearance] and injects it
+ * into [LocalSdkAppearance] for descendant composables. Translates the remote [SdkTheme] setting
+ * (such as [SdkTheme.OCEAN], [SdkTheme.SUNSET], or [SdkTheme.MIDNIGHT]) into an Android Material 3
+ * [androidx.compose.material3.ColorScheme] that adapts to system dark mode preferences.
+ *
+ * Use [CupThreadTheme] when embedding standalone SDK composables (like [ChangelogOverlay]
+ * or custom feedback views) in an existing Jetpack Compose hierarchy:
  *
  * ```kotlin
- * setContent {
- *     CupThreadTheme(client) {
- *         ChangelogOverlay(client = client, visible = true, onDismiss = {})
+ * class FeedbackActivity : ComponentActivity() {
+ *     private val client = FeedbackClient(FeedbackClientConfig("https://api.cupthread.com", "app_live_xyz"))
+ *     private val userTokenStore by lazy { UserTokenStore.create(this) }
+ *
+ *     override fun onCreate(savedInstanceState: Bundle?) {
+ *         super.onCreate(savedInstanceState)
+ *         setContent {
+ *             CupThreadTheme(client) {
+ *                 FeedbackComposer(
+ *                     client = client,
+ *                     userToken = userTokenStore.token,
+ *                     onSubmit = { finish() }
+ *                 )
+ *             }
+ *         }
  *     }
  * }
  * ```
+ *
+ * @param client Shared [FeedbackClient] instance used to fetch remote appearance and theme settings.
+ * @param content Composable content to be styled with the resolved theme.
  */
 @Composable
 fun CupThreadTheme(
@@ -115,22 +158,30 @@ fun CupThreadTheme(
 }
 
 /**
- * Host for an SDK surface: applies the console-configured theme and renders
- * [content] only when [feature] is enabled in the console — otherwise shows
- * an "unavailable" placeholder. All ready-made screens use this internally;
- * it is also the gate for custom surfaces so they follow the console's
- * feature switches:
+ * Remote feature gate and theming wrapper for SDK UI surfaces.
+ *
+ * Wraps [content] inside a console-styled [MaterialTheme] and checks whether [feature]
+ * is enabled in [SdkAppearance.features]. If enabled, [content] is rendered normally.
+ * If the feature has been disabled remotely from the CupThread console, a styled placeholder
+ * empty state is rendered informing the user that the surface is currently unavailable.
+ *
+ * All ready-made SDK screens ([RoadmapBoardScreen], [FeatureRequestsScreen], [WhatsNewScreen],
+ * and [FeedbackComposer]) use [SdkSurface] internally. You can also use [SdkSurface] to guard
+ * your own custom UI modules:
  *
  * ```kotlin
- * SdkSurface(client, SdkFeature.FEEDBACK) {
- *     MyCustomFeedbackPanel(client = client, userToken = userToken)
+ * @Composable
+ * fun CustomRoadmapTab(client: FeedbackClient, userToken: String) {
+ *     SdkSurface(client = client, feature = SdkFeature.ROADMAP) {
+ *         // This block only executes if ROADMAP is enabled in the CupThread console.
+ *         MyCustomRoadmapKanbanView(client = client, userToken = userToken)
+ *     }
  * }
  * ```
  *
- * @param client Shared API client.
- * @param feature The surface being hosted, checked against the console's
- *   enabled features.
- * @param content Surface content, rendered when the feature is enabled.
+ * @param client Shared [FeedbackClient] instance used to check remote feature flags and appearance.
+ * @param feature The target [SdkFeature] required to display [content].
+ * @param content The surface composable content rendered when [feature] is enabled.
  */
 @Composable
 fun SdkSurface(

@@ -33,82 +33,107 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Entry point for the CupThread public API: feedback, feature requests,
- * roadmap, and changelog.
+ * Primary HTTP API client for interacting with the CupThread developer platform.
  *
- * Every method is a [suspend] function that performs its network call on
- * `Dispatchers.IO`; call it from a coroutine scope. All failures are raised
- * as [FeedbackException] subclasses, so catching that type is enough to
- * handle API errors uniformly.
+ * Provides asynchronous, coroutine-based access to:
+ * - Feedback drafting and binary attachment uploads ([submit], [uploadAttachment])
+ * - Public application configuration and styling ([fetchAppConfig])
+ * - Roadmap kanban boards and milestones ([fetchColumns], [fetchVersions])
+ * - Feature request submissions, filtering, and voting ([fetchFeatureRequests], [submitFeatureRequest], [toggleVote])
+ * - Threaded feature request comments and replies ([fetchComments], [postComment])
+ * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [unsubscribeFromChangelog])
+ * - User telemetry and customer segment attributes ([updateUserAttributes])
+ * - Public user profiles ([fetchUserProfile])
  *
- * Requests use a 15-second connection timeout and a 20-second read timeout.
- * The client holds no mutable state, so a single instance can be shared by
- * concurrent coroutines — create one per app process and pass it around.
+ * ### Thread Safety and Concurrency
+ * Every public method is a `suspend` function that automatically dispatches network operations
+ * on [Dispatchers.IO]. [FeedbackClient] maintains no mutable state and is safe to use concurrently
+ * from multiple coroutines. You should create a single instance during application startup
+ * and share it across your dependency injection graph.
  *
- * Typical programmatic usage (for ready-made UI, see the screens in
- * [dev.cupthread.feedback.ui]):
+ * ### Error Handling
+ * All API and network failures are wrapped in subclasses of [FeedbackException], allowing
+ * predictable and uniform exception handling:
+ * - [FeedbackException.AuthenticationRequired]: Endpoint requires an authenticated or permitted user session (HTTP 401).
+ * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
+ * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
+ * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
  *
+ * ### Example Initialization
  * ```kotlin
- * val client = FeedbackClient(
- *     FeedbackClientConfig(
- *         baseUrl = "https://api.cupthread.com",
- *         appKey = "app_live_yourAppKey", // from the CupThread console
- *     )
+ * val config = FeedbackClientConfig(
+ *     baseUrl = "https://api.cupthread.com",
+ *     appKey = "app_live_yourConsoleAppKey",
+ *     defaultPlatform = FeedbackPlatform.ANDROID
  * )
+ * val client = FeedbackClient(config)
  * val userToken = UserTokenStore.create(context).token
  *
- * scope.launch {
- *     val submission = client.submit(
- *         FeedbackDraft(
- *             title = "Keyboard covers the send button",
- *             description = "On the login screen the keyboard hides the button.",
- *         ),
- *         userToken = userToken,
- *     )
- *     Log.d("Feedback", "Submitted as ${submission.submissionId}")
+ * lifecycleScope.launch {
+ *     try {
+ *         val appConfig = client.fetchAppConfig()
+ *         println("Loaded app: ${appConfig.name}")
+ *     } catch (e: FeedbackException) {
+ *         Log.e("CupThread", "Failed to load config", e)
+ *     }
  * }
  * ```
  *
- * @param config Immutable client configuration; see [FeedbackClientConfig].
- * @param transport HTTP transport used for every request. Defaults to a
- *   `java.net.HttpURLConnection`-based transport; inject a fake in unit tests.
+ * @param config Immutable client configuration ([FeedbackClientConfig]).
+ * @param transport Internal HTTP transport implementation; defaults to standard `HttpURLConnection`.
  */
 class FeedbackClient internal constructor(
     val config: FeedbackClientConfig,
     internal val transport: HttpTransport
 ) {
+    /**
+     * Constructs a [FeedbackClient] with default HTTP URL connection transport.
+     *
+     * @param config The [FeedbackClientConfig] holding the API base URL and app key.
+     *
+     * Example:
+     * ```kotlin
+     * val client = FeedbackClient(
+     *     FeedbackClientConfig(
+     *         baseUrl = "https://api.cupthread.com",
+     *         appKey = "app_live_sample123"
+     *     )
+     * )
+     * ```
+     */
     constructor(config: FeedbackClientConfig) : this(config, UrlConnectionTransport())
 
     /**
-     * Submits a feedback draft to `POST /api/v1/feedback`.
+     * Submits a completed feedback draft to `POST /api/v1/feedback`.
      *
-     * Title and description are trimmed and blank optional fields are omitted.
-     * The SDK appends `sdk`, `platform`, and `submittedAt` entries to
-     * [FeedbackDraft.metadata] before sending. Attachments referenced by the
-     * draft must already be uploaded with [uploadAttachment].
+     * Text fields are automatically trimmed, and blank optional values are omitted from
+     * the payload. The SDK injects default diagnostic metadata (`sdk`, `platform`, `submittedAt`)
+     * alongside any custom properties in [FeedbackDraft.metadata].
      *
-     * @param draft Feedback content, reporter info, and uploaded attachments.
-     * @param userToken Stable anonymous token from [UserTokenStore], sent as
-     *   the `X-User-Token` header. Optional when the app allows anonymous
-     *   feedback.
-     * @return Server-assigned submission id and GitHub discussion link, when
-     *   the platform mirrored the feedback to GitHub.
-     * @throws FeedbackException.AuthenticationRequired if the app requires a
-     *   user token (HTTP 401).
-     * @throws FeedbackException.UnexpectedStatus on any other rejected status.
-     * @throws FeedbackException.InvalidResponse if the request fails at the
-     *   transport level or the response cannot be parsed.
+     * All attachments included in [FeedbackDraft.attachments] must be uploaded beforehand via
+     * [uploadAttachment].
+     *
+     * @param draft The feedback content, reporter details, and uploaded attachments ([FeedbackDraft]).
+     * @param userToken Optional stable anonymous user token from [UserTokenStore]. Sent as the `X-User-Token`
+     *   header to attribute submissions.
+     * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
+     * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
+     * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
      * Example:
      * ```kotlin
      * val draft = FeedbackDraft.autofilled(
-     *     versionName = "1.2.0",
-     *     versionCode = "42",
+     *     versionName = BuildConfig.VERSION_NAME,
+     *     versionCode = BuildConfig.VERSION_CODE.toString()
      * ).copy(
-     *     title = "Crash when syncing offline queue",
-     *     description = "App crashes right after the network reconnects.",
+     *     title = "Audio drops out on Bluetooth disconnect",
+     *     description = "When disconnecting headphones during playback, sound does not route to speaker.",
+     *     reporterEmail = "listener@example.com"
      * )
-     * val result = client.submit(draft, userToken)
+     *
+     * val result = client.submit(draft, userToken = userToken)
+     * Log.d("Feedback", "Submitted: ${result.submissionId}")
      * ```
      */
     suspend fun submit(draft: FeedbackDraft, userToken: String? = null): FeedbackSubmissionResult {
@@ -149,32 +174,31 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Uploads a binary attachment and returns the descriptor to attach to a
-     * [FeedbackDraft].
+     * Uploads a binary file or screenshot attachment to storage and returns a descriptor ready
+     * to be attached to a [FeedbackDraft].
      *
-     * Image MIME types upload to `POST /api/v1/uploads/images`; everything
-     * else goes to `POST /api/v1/uploads/r2` object storage.
+     * - Image MIME types (e.g., `image/png`, `image/jpeg`) are routed to `POST /api/v1/uploads/images`.
+     * - All other files (e.g. logs, crashes, text) are routed to `POST /api/v1/uploads/r2` object storage.
+     * - Use [preferredKind] to explicitly override the destination storage backend.
      *
-     * @param data Raw file contents.
-     * @param filename Original file name, echoed back on the result.
-     * @param mimeType MIME type such as `image/png`; also decides the upload
-     *   route unless [preferredKind] is given.
-     * @param preferredKind Forces a storage backend, overriding the
-     *   MIME-type-based choice.
-     * @return Attachment descriptor (kind, storage key, URL, size).
-     * @throws FeedbackException.UnreadableUploadResponse if the upload
-     *   succeeded but the response could not be parsed.
-     * @throws FeedbackException.UnexpectedStatus on rejected uploads, for
-     *   example payloads above the app's `maxAttachmentBytes` limit.
+     * @param data Raw binary bytes of the file.
+     * @param filename Suggested original filename (e.g. `"screenshot.png"`, `"logcat.txt"`).
+     * @param mimeType Standard MIME type string (e.g. `"image/png"`, `"text/plain"`).
+     * @param preferredKind Optional storage destination override ([FeedbackAttachment.Kind]).
+     * @return [FeedbackAttachment] containing the CDN URL and storage key.
+     * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
+     * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded `maxAttachmentBytes`).
+     * @throws FeedbackException.InvalidResponse if a network error occurs.
      *
-     * Example — upload a screenshot, then attach it to a draft:
+     * Example:
      * ```kotlin
-     * val screenshot = client.uploadAttachment(
-     *     data = bitmapBytes,
-     *     filename = "screenshot.png",
-     *     mimeType = "image/png",
+     * val screenshotBytes = captureViewAsPngBytes(window.decorView)
+     * val attachment = client.uploadAttachment(
+     *     data = screenshotBytes,
+     *     filename = "device_screenshot.png",
+     *     mimeType = "image/png"
      * )
-     * val draft = baseDraft.copy(attachments = baseDraft.attachments + screenshot)
+     * val draft = baseDraft.copy(attachments = listOf(attachment))
      * client.submit(draft, userToken)
      * ```
      */
@@ -213,17 +237,42 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches the public app configuration from
-     * `GET /api/v1/public/config/{appKey}`: display metadata, anonymous-access
-     * switches, attachment size limit, and the console-configured
-     * [PublicAppConfig.sdk] appearance.
+     * Fetches public app configuration from `GET /api/v1/public/config/{appKey}`.
+     *
+     * Returns app metadata, anonymous permission flags ([PublicAppConfig.allowAnonymousFeedback],
+     * [PublicAppConfig.allowAnonymousVote], etc.), attachment size limits, and the console-configured
+     * SDK appearance theme ([PublicAppConfig.sdk]).
+     *
+     * @return The [PublicAppConfig] for the configured application.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as invalid app key).
+     * @throws FeedbackException.InvalidResponse on network failure or response parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val appConfig = client.fetchAppConfig()
+     * println("App Name: ${appConfig.name}")
+     * println("Theme: ${appConfig.sdk.theme}")
+     * ```
      */
     suspend fun fetchAppConfig(): PublicAppConfig =
         parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
 
     /**
-     * Fetches the roadmap kanban columns for the app from
-     * `GET /api/v1/public/columns/{appKey}`, sorted by display position.
+     * Fetches the roadmap kanban columns from `GET /api/v1/public/columns/{appKey}`.
+     *
+     * Columns are returned sorted in ascending order by their [BoardColumn.position].
+     *
+     * @return List of [BoardColumn] instances configured for the app.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val columns = client.fetchColumns()
+     * columns.forEach { column ->
+     *     println("Column: ${column.name} (${column.kind})")
+     * }
+     * ```
      */
     suspend fun fetchColumns(): List<BoardColumn> {
         val json = get("/api/v1/public/columns/${config.appKey}")
@@ -234,9 +283,21 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches the app's release versions from
-     * `GET /api/v1/public/versions/{appKey}`, sorted by display position.
-     * Version ids from this list can be used to filter [fetchFeatureRequests].
+     * Fetches milestone release versions from `GET /api/v1/public/versions/{appKey}`.
+     *
+     * Versions are returned sorted in ascending order by their [AppVersion.position].
+     * Version IDs can be passed to [fetchFeatureRequests] to filter requests by release target.
+     *
+     * @return List of [AppVersion] instances configured for the app.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val versions = client.fetchVersions()
+     * val nextMilestone = versions.firstOrNull { !it.released }
+     * println("Upcoming release: ${nextMilestone?.label}")
+     * ```
      */
     suspend fun fetchVersions(): List<AppVersion> {
         val json = get("/api/v1/public/versions/${config.appKey}")
@@ -247,17 +308,32 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches a page of feature requests from `GET /api/v1/feature-requests`.
+     * Fetches a paginated list of public feature requests from `GET /api/v1/feature-requests`.
      *
-     * Each item carries the caller's vote state (`hasVoted`) and ownership
-     * flag (`isOwnRequest`), both derived from [userToken].
+     * Each returned [FeatureRequestItem] is annotated with the caller's vote status ([FeatureRequestItem.hasVoted])
+     * and creator status ([FeatureRequestItem.isOwnRequest]), derived from the provided [userToken].
      *
-     * @param userToken Stable anonymous token from [UserTokenStore].
-     * @param limit Page size; the server caps and defaults this (50).
-     * @param offset Number of requests to skip, for pagination.
-     * @param versionId Restricts results to a version from [fetchVersions].
-     * @param query Free-text search across title and description.
-     * @return Page of requests plus the total number of matches.
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @param limit Maximum number of requests to return per page; default is 50.
+     * @param offset Number of requests to skip for pagination; default is 0.
+     * @param versionId Optional [AppVersion.id] to restrict results to a specific release target.
+     * @param query Optional free-text search query matching against titles and descriptions.
+     * @return [ListFeatureRequestsResult] containing the list of requests and total match count.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.fetchFeatureRequests(
+     *     userToken = userToken,
+     *     query = "dark mode",
+     *     limit = 20
+     * )
+     * println("Found ${result.total} matching requests")
+     * result.requests.forEach { item ->
+     *     println("${item.title} (${item.voteCount} votes)")
+     * }
+     * ```
      */
     suspend fun fetchFeatureRequests(
         userToken: String,
@@ -278,16 +354,32 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Submits a new feature request to `POST /api/v1/feature-requests`.
+     * Submits a new feature request proposal to `POST /api/v1/feature-requests`.
      *
-     * New requests may be held for moderation; check
-     * [FeatureRequestSubmissionResult.pending] to know whether the request is
-     * visible on the public board yet.
+     * Depending on the console's moderation settings, new requests may be immediately visible
+     * or placed into moderation review (indicated by [FeatureRequestSubmissionResult.pending]).
      *
-     * @param draft Title, description, and optional display name.
-     * @param userToken Stable anonymous token that owns the request.
-     * @throws FeedbackException.AuthenticationRequired when the app disallows
-     *   anonymous requests (HTTP 401).
+     * @param draft The proposed title, description, and optional requester display name ([FeatureRequestDraft]).
+     * @param userToken Stable anonymous user token from [UserTokenStore] that owns the request.
+     * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
+     * @throws FeedbackException.AuthenticationRequired if anonymous requests are disallowed (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     *
+     * Example:
+     * ```kotlin
+     * val draft = FeatureRequestDraft(
+     *     title = "Support Tablet Landscape Mode",
+     *     description = "Split view layouts for larger tablets and foldables.",
+     *     requesterName = "Taylor"
+     * )
+     * val result = client.submitFeatureRequest(draft, userToken = userToken)
+     * if (result.pending) {
+     *     println("Request submitted for moderator review: ${result.featureRequestId}")
+     * } else {
+     *     println("Request published to board: ${result.featureRequestId}")
+     * }
+     * ```
      */
     suspend fun submitFeatureRequest(
         draft: FeatureRequestDraft,
@@ -306,15 +398,23 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Toggles the caller's vote on a feature request via
-     * `POST /api/v1/feature-requests/{id}/vote`.
+     * Toggles an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * @param featureRequestId Id of the request to vote on, taken from
-     *   [FeatureRequestItem.id].
-     * @param userToken Stable anonymous token; a token can cast at most one
-     *   vote per request.
-     * @return Vote state and total count after the toggle — use these to
-     *   correct optimistic UI updates.
+     * If the user has not voted yet, a vote is added; if they have already voted, their vote is removed.
+     * Returns the reconciled server vote state for optimistic UI synchronization.
+     *
+     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [VoteResult] containing the updated vote state (`voted`) and current total count (`voteCount`).
+     * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.toggleVote(featureRequestId = "req_123", userToken = userToken)
+     * println("Voted: ${result.voted}, New total: ${result.voteCount}")
+     * ```
      */
     suspend fun toggleVote(featureRequestId: String, userToken: String): VoteResult {
         val payload = JSONObject().apply {
@@ -327,31 +427,49 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches comments on a feature request from
-     * `GET /api/v1/feature-requests/{id}/comments`.
+     * Fetches public comments on a feature request from `GET /api/v1/feature-requests/{id}/comments`.
      *
-     * Returns a flat list of comments including author avatars and
-     * `@reply` metadata. Hidden comments are included in the response
-     * but flagged with [FeatureRequestComment.isHidden].
+     * Returns a flat list of comments including avatar URLs and threaded `@reply` references.
      *
-     * @param featureRequestId Id of the feature request.
-     * @return List of comments, newest last.
+     * @param featureRequestId Target [FeatureRequestItem.id].
+     * @return List of [FeatureRequestComment] instances, sorted chronologically.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val comments = client.fetchComments("req_123")
+     * comments.filter { !it.isHidden }.forEach { comment ->
+     *     println("${comment.authorName ?: "Anonymous"}: ${comment.body}")
+     * }
+     * ```
      */
     suspend fun fetchComments(featureRequestId: String): List<FeatureRequestComment> =
         parseCommentList(get("/api/v1/feature-requests/$featureRequestId/comments"))
 
     /**
-     * Posts a comment or `@reply` on a feature request via
+     * Posts a new comment or threaded `@reply` on a feature request via
      * `POST /api/v1/feature-requests/{id}/comments`.
      *
-     * @param featureRequestId Id of the feature request to comment on.
-     * @param draft Comment content and optional reply metadata.
-     * @param userToken Stable anonymous token from [UserTokenStore], sent
-     *   as the `X-User-Token` header.
-     * @return The newly created comment with server-assigned id and
-     *   timestamp.
-     * @throws FeedbackException.AuthenticationRequired if the app
-     *   requires a user token (HTTP 401).
+     * @param featureRequestId ID of the feature request being commented on.
+     * @param draft Comment text and optional author/reply metadata ([CommentDraft]).
+     * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
+     * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
+     * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val draft = CommentDraft(
+     *     body = "Great idea! I can help test this if you need beta feedback.",
+     *     authorName = "Jordan",
+     *     parentId = parentComment?.id,
+     *     replyToAuthorName = parentComment?.authorName
+     * )
+     * val comment = client.postComment("req_123", draft, userToken = userToken)
+     * println("Posted comment: ${comment.id}")
+     * ```
      */
     suspend fun postComment(
         featureRequestId: String,
@@ -379,9 +497,23 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches published changelog entries from
-     * `GET /api/v1/public/apps/{appKey}/changelog`, newest first by
-     * [ChangelogEntry.publishedAt].
+     * Fetches published changelog entries and release notes from
+     * `GET /api/v1/public/apps/{appKey}/changelog`.
+     *
+     * Entries are returned in descending chronological order by [ChangelogEntry.publishedAt] (newest first).
+     *
+     * @return List of published [ChangelogEntry] objects.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val changelog = client.fetchChangelog()
+     * changelog.forEach { entry ->
+     *     println("${entry.versionLabel ?: "Release"}: ${entry.title}")
+     *     println(entry.body)
+     * }
+     * ```
      */
     suspend fun fetchChangelog(): List<ChangelogEntry> {
         val json = get("/api/v1/public/apps/${config.appKey}/changelog")
@@ -392,16 +524,24 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Loads console-configured overlay copy and the newest published entries
-     * for [dev.cupthread.feedback.ui.ChangelogOverlay] and
-     * [dev.cupthread.feedback.ui.presentLatestChangelog].
+     * Prepares changelog entries and appearance styling for What's-New presentation overlays
+     * ([dev.cupthread.feedback.ui.ChangelogOverlay] and [dev.cupthread.feedback.ui.presentLatestChangelog]).
      *
-     * The number of returned entries follows the console's
-     * `changelogOverlay.entryCount` setting, clamped to 1–10 (see
-     * [ChangelogOverlayConfig.clampedEntryCount]).
+     * Automatically honors the console-configured `changelogOverlay.entryCount` setting,
+     * clamped between 1 and 10 entries.
      *
-     * @return Entries plus the appearance to render them with, or `null` when
-     *   the changelog feature is hidden in the console or nothing has shipped.
+     * @return A [Pair] containing the list of entries and the active [SdkAppearance],
+     *   or `null` if the changelog feature is disabled in the console or no entries have been published.
+     * @throws FeedbackException on network or parsing failure.
+     *
+     * Example:
+     * ```kotlin
+     * val overlayData = client.prepareChangelogOverlay()
+     * if (overlayData != null) {
+     *     val (entries, appearance) = overlayData
+     *     println("Displaying ${entries.size} new updates with title '${appearance.changelogOverlay.title}'")
+     * }
+     * ```
      */
     suspend fun prepareChangelogOverlay(): Pair<List<ChangelogEntry>, SdkAppearance>? {
         val appearance = fetchAppConfig().sdk
@@ -412,14 +552,24 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Subscribes an email address to the app's changelog updates via
+     * Subscribes an email address to product update emails via
      * `POST /api/v1/public/apps/{appKey}/changelog/subscribe`.
      *
-     * @param email Address to subscribe.
-     * @param userToken Stable anonymous token, sent as the `X-User-Token`
-     *   header.
-     * @return Whether a new subscription was created; see
-     *   [ChangelogSubscriptionResult.alreadySubscribed] for repeat calls.
+     * @param email Valid email address to subscribe.
+     * @param userToken Stable anonymous token from [UserTokenStore].
+     * @return [ChangelogSubscriptionResult] indicating subscription success and whether the address was already registered.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.subscribeToChangelog("user@example.com", userToken = userToken)
+     * if (result.alreadySubscribed) {
+     *     println("Already subscribed!")
+     * } else {
+     *     println("Successfully subscribed to update emails.")
+     * }
+     * ```
      */
     suspend fun subscribeToChangelog(email: String, userToken: String): ChangelogSubscriptionResult {
         val payload = JSONObject().put("email", email.trim())
@@ -435,11 +585,19 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Removes an email address from the app's changelog updates via
+     * Unsubscribes an email address from product update emails via
      * `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe`.
      *
-     * @param email Address to unsubscribe.
-     * @return Whether the address was unsubscribed.
+     * @param email Email address to remove from the subscriber list.
+     * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.unsubscribeFromChangelog("user@example.com")
+     * println("Unsubscribed: ${result.unsubscribed}")
+     * ```
      */
     suspend fun unsubscribeFromChangelog(email: String): ChangelogUnsubscribeResult {
         val payload = JSONObject().put("email", email.trim())
@@ -454,18 +612,34 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Reports self-declared user attributes via
+     * Reports self-declared user segmentation attributes and telemetry via
      * `PUT /api/v1/public/apps/{appKey}/user`.
      *
-     * Paying signals are self-declared only — never payment details.
-     * Omitted (null) parameters are left unchanged server-side.
+     * Parameters provided as `null` are left untouched on the server, allowing partial updates.
      *
-     * @param userToken Stable anonymous token identifying the user.
-     * @param isPaying Whether the user reports being a paying customer.
-     * @param plan Subscription plan name, such as `pro`.
-     * @param mrr Monthly recurring revenue attributed to the user.
-     * @param currency ISO 4217 code for [mrr], such as `USD`.
-     * @return Whether the update was applied, and when.
+     * > [!NOTE]
+     * > Financial values such as [mrr] and [isPaying] are self-declared signals used for feedback prioritization
+     * > and feature triage, never actual payment transaction details.
+     *
+     * @param userToken Stable anonymous token identifying the user ([UserTokenStore]).
+     * @param isPaying Whether the user is on a paid subscription tier.
+     * @param plan Identifier or name of the subscription plan (e.g. `"pro"`, `"enterprise"`).
+     * @param mrr Monthly recurring revenue associated with the user account.
+     * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`).
+     * @return [UserAttributesUpdateResult] indicating whether the update was saved.
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
+     * @throws FeedbackException.InvalidResponse on network failure.
+     *
+     * Example:
+     * ```kotlin
+     * client.updateUserAttributes(
+     *     userToken = userToken,
+     *     isPaying = true,
+     *     plan = "Pro Annual",
+     *     mrr = 9.99,
+     *     currency = "USD"
+     * )
+     * ```
      */
     suspend fun updateUserAttributes(
         userToken: String,
@@ -492,19 +666,26 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches a public user profile from
-     * `GET /api/v1/users/{userId}/profile`.
+     * Fetches a public user profile from `GET /api/v1/users/{userId}/profile`.
      *
-     * Returns the user's public profile, their public apps, and recent
-     * public comments (respecting the user's privacy settings).
+     * Returns the user's public biographical details, public applications, and recent public comments.
      *
-     * @param userId Clerk user id of the profile to fetch.
-     * @return Profile, public apps, and recent comments.
-     * @throws FeedbackException.UnexpectedStatus on HTTP 404 when the
-     *   user does not exist.
+     * @param userId Unique user identifier (e.g., Clerk user account ID).
+     * @return [PublicUserProfileResult] containing the user profile, associated apps, and comments.
+     * @throws FeedbackException.UnexpectedStatus on HTTP 404 if the user profile does not exist.
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     *
+     * Example:
+     * ```kotlin
+     * val userProfile = client.fetchUserProfile("user_clerk_123")
+     * println("User: ${userProfile.profile.displayName}")
+     * println("Bio: ${userProfile.profile.bio}")
+     * println("Apps count: ${userProfile.apps.size}")
+     * ```
      */
     suspend fun fetchUserProfile(userId: String): PublicUserProfileResult =
         parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
+
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()

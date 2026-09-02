@@ -49,18 +49,22 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
- * One roadmap board column with its requests, as rendered by
- * [RoadmapBoardScreen].
+ * Represents a grouped roadmap category consisting of a kanban [BoardColumn] and its active [FeatureRequestItem]s.
  *
- * @property column The backing kanban column, or `null` for the synthetic
- *   "Other" group that collects requests without a column.
- * @property requests Requests currently in [column].
+ * Rendered as an individual horizontal page and filter chip inside [RoadmapBoardScreen].
+ *
+ * @property column The backing roadmap [BoardColumn], or `null` for the synthetic "Other" fallback group
+ *   that aggregates requests with no assigned column.
+ * @property requests List of [FeatureRequestItem]s categorized under [column].
  */
 data class RoadmapGroup(
     val column: BoardColumn?,
     val requests: List<FeatureRequestItem>
 ) {
+    /** Unique identifier for the group: returns [BoardColumn.id] or `"uncategorized"` when [column] is `null`. */
     val id: String get() = column?.id ?: "uncategorized"
+
+    /** Display name of the group: returns [BoardColumn.name] or `"Other"` when [column] is `null`. */
     val name: String get() = column?.name ?: "Other"
 }
 
@@ -74,26 +78,38 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
 }
 
 /**
- * Roadmap kanban board: horizontally paged columns with chip navigation,
- * free-text search, and pull-to-refresh.
+ * Full-screen interactive Roadmap Kanban Board composable.
  *
- * Behavior details:
- * - Columns and their order come from the console; requests without a
- *   column are collected in a synthetic "Other" page.
- * - Search is debounced (~350 ms); while searching, empty columns are
- *   hidden so matches surface immediately.
- * - Pull to refresh reloads both columns and requests.
+ * Renders a horizontally paged kanban board displaying live product feature requests organized
+ * across milestone stages (such as *Planned*, *In Progress*, *Completed*), as configured in the
+ * CupThread developer console.
  *
- * The screen applies the console-configured theme itself:
+ * ### Key Features
+ * - **Horizontal Pager & Synchronized Chip Bar**: Swipe smoothly between columns or tap chips with badge counts.
+ * - **Debounced Search**: Filters requests in real-time (~350 ms debounce). During search, empty columns are hidden.
+ * - **Pull-to-Refresh**: Refreshes both columns and feature requests concurrently.
+ * - **Optimistic Voting & Detail Sheet**: Tapping a request opens the interactive [FeatureRequestDetailSheet]
+ *   supporting comments, author profiles, and real-time upvoting.
+ * - **Remote Theming & Feature Gating**: Automatically wrapped in [SdkSurface] with [SdkFeature.ROADMAP].
  *
+ * ### Example Integration
  * ```kotlin
- * RoadmapBoardScreen(client = client, userToken = userToken)
+ * @Composable
+ * fun ProductRoadmapDestination(
+ *     client: FeedbackClient,
+ *     userTokenStore: UserTokenStore
+ * ) {
+ *     RoadmapBoardScreen(
+ *         client = client,
+ *         userToken = userTokenStore.token,
+ *         modifier = Modifier.fillMaxSize()
+ *     )
+ * }
  * ```
  *
- * @param client Shared API client.
- * @param userToken Stable anonymous token from
- *   [dev.cupthread.feedback.UserTokenStore] used to load requests.
- * @param modifier Modifier applied to the root [Scaffold].
+ * @param client Shared [FeedbackClient] used for network communication.
+ * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state.
+ * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable

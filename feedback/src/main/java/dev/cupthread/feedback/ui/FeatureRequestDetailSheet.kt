@@ -54,16 +54,49 @@ import dev.cupthread.feedback.R
 import kotlinx.coroutines.launch
 
 /**
- * Bottom sheet displaying full feature request details, comments thread,
- * author avatars, and flat `@reply` functionality.
+ * Interactive Modal Bottom Sheet displaying comprehensive feature request details and comment discussions.
  *
- * @param client Shared API client.
- * @param item The feature request being viewed.
- * @param userToken Stable anonymous user token for posting comments and voting.
- * @param onDismiss Callback to dismiss the detail sheet.
- * @param onVote Callback when the user toggles their vote.
- * @param voting Whether a vote request is currently in flight for this item.
- * @param onOpenProfile Callback when a user avatar/name is tapped with a valid clerkUserId.
+ * Provides a dedicated detail view showing:
+ * - Proposal title, rich inline Markdown description, and stage badge
+ * - Requester identity with clickable avatar linking to [UserProfileSheet]
+ * - Live upvote toggle pill ([VotePill])
+ * - Chronological list of user comments with avatars and threaded `@reply` indicators
+ * - Comment input field with support for direct comments and targeted replies
+ *
+ * ### Example Integration
+ * ```kotlin
+ * @Composable
+ * fun RequestCardWithDetail(
+ *     client: FeedbackClient,
+ *     item: FeatureRequestItem,
+ *     userToken: String
+ * ) {
+ *     var showDetail by remember { mutableStateOf(false) }
+ *
+ *     Card(modifier = Modifier.clickable { showDetail = true }) {
+ *         Text(item.title)
+ *     }
+ *
+ *     if (showDetail) {
+ *         FeatureRequestDetailSheet(
+ *             client = client,
+ *             item = item,
+ *             userToken = userToken,
+ *             onDismiss = { showDetail = false },
+ *             onVote = { /* toggle vote */ },
+ *             onOpenProfile = { clerkId -> /* open user profile */ }
+ *         )
+ *     }
+ * }
+ * ```
+ *
+ * @param client Shared [FeedbackClient] instance used for comments and vote actions.
+ * @param item The target [FeatureRequestItem] being viewed.
+ * @param userToken Stable anonymous user token from [UserTokenStore] used to authenticate comments and votes.
+ * @param onDismiss Callback invoked when the user dismisses the bottom sheet.
+ * @param onVote Callback invoked when the user taps the upvote button.
+ * @param voting Whether an upvote network request is currently in flight for this item.
+ * @param onOpenProfile Callback invoked with a Clerk user ID when a user avatar or name is clicked.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable

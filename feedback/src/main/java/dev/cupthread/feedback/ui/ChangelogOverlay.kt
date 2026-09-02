@@ -37,22 +37,41 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 /**
- * Fetches console-configured overlay copy and presents the What's-New bottom
- * sheet over [activity], styled with the console theme.
+ * Convenience extension function that fetches console-configured What's-New copy and presents
+ * a modal bottom sheet dialog directly over an Android [Activity].
  *
- * Suspends until the user dismisses the sheet, so launch it from a scope
- * that survives as long as the UI does — e.g. `lifecycleScope`:
+ * This function suspends until the user dismisses the dialog, allowing straightforward sequential
+ * integration within Activity lifecycles or coroutine launch scopes.
  *
+ * ### Behavior & Thread Safety
+ * - Fetches changelog entries and configuration asynchronously on [Dispatchers.IO].
+ * - Dynamically mounts a translucent Compose dialog on the main UI thread.
+ * - Wraps the content in [CupThreadTheme] to ensure console-selected theme palettes are honored.
+ * - Resumes with `false` immediately if the changelog feature is disabled in the console or if no entries exist.
+ * - Resumes with `true` once the user views and closes the sheet.
+ *
+ * ### Example Usage
  * ```kotlin
- * lifecycleScope.launch {
- *     val shown = client.presentLatestChangelog(this@MainActivity)
- *     if (shown) analytics.track("whats_new_viewed")
+ * class MainActivity : ComponentActivity() {
+ *     private val feedbackClient by lazy {
+ *         FeedbackClient(FeedbackClientConfig("https://api.cupthread.com", "app_live_sample123"))
+ *     }
+ *
+ *     override fun onResume() {
+ *         super.onResume()
+ *         lifecycleScope.launch {
+ *             val shown = feedbackClient.presentLatestChangelog(this@MainActivity)
+ *             if (shown) {
+ *                 Log.d("Changelog", "User viewed and dismissed the What's-New overlay.")
+ *             }
+ *         }
+ *     }
  * }
  * ```
  *
- * @return `false` when the changelog feature is disabled in the console or
- *   there are no published entries (nothing was shown); `true` once the
- *   sheet was shown and dismissed.
+ * @receiver The [FeedbackClient] used to fetch changelog entries and appearance configuration.
+ * @param activity The host Android [Activity] over which the dialog window will be shown.
+ * @return `false` if the changelog is disabled or empty (nothing shown); `true` if the sheet was presented and dismissed.
  */
 suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
     val prepared = withContext(Dispatchers.IO) { prepareChangelogOverlay() } ?: return false
@@ -84,33 +103,44 @@ suspend fun FeedbackClient.presentLatestChangelog(activity: Activity): Boolean {
 }
 
 /**
- * Compose-native What's-New overlay. Loads the newest published entries when
- * [visible] becomes `true` and shows them in a modal bottom sheet.
+ * Pure Jetpack Compose What's-New modal bottom sheet overlay.
  *
- * Dismisses itself by calling [onDismiss] when the changelog feature is
- * disabled in the console or nothing has shipped, so it is safe to keep the
- * overlay mounted on app start.
+ * When [visible] becomes `true`, asynchronously loads the latest published release notes
+ * via [FeedbackClient.prepareChangelogOverlay] and displays them inside a modal bottom sheet
+ * styled according to console configuration.
  *
- * The sheet inherits the ambient [MaterialTheme]; wrap it in [CupThreadTheme]
- * for the console-configured styling. For Activity-based entry points prefer
- * the awaitable [FeedbackClient.presentLatestChangelog], which applies the
- * theme itself.
+ * ### Auto-Dismissal and Clean Lifecycle
+ * If the changelog feature is disabled in the CupThread developer console or no published entries exist,
+ * this composable automatically invokes [onDismiss], making it safe to mount unconditionally on app startup
+ * or home screen composables.
  *
+ * ### Theming
+ * Inherits the ambient Compose [MaterialTheme]. Wrap inside [CupThreadTheme] to inherit the remote
+ * color theme configured in the developer console.
+ *
+ * ### Example Integration
  * ```kotlin
- * CupThreadTheme(client) {
- *     var showWhatsNew by remember { mutableStateOf(true) }
- *     ChangelogOverlay(
- *         client = client,
- *         visible = showWhatsNew,
- *         onDismiss = { showWhatsNew = false },
- *     )
+ * @Composable
+ * fun MainAppScreen(client: FeedbackClient) {
+ *     var showChangelog by rememberSaveable { mutableStateOf(true) }
+ *
+ *     CupThreadTheme(client) {
+ *         Scaffold { padding ->
+ *             AppNavigation(Modifier.padding(padding))
+ *
+ *             ChangelogOverlay(
+ *                 client = client,
+ *                 visible = showChangelog,
+ *                 onDismiss = { showChangelog = false }
+ *             )
+ *         }
+ *     }
  * }
  * ```
  *
- * @param client Shared API client.
- * @param visible Whether the overlay should be shown.
- * @param onDismiss Called when the sheet is dismissed or there is nothing
- *   to show.
+ * @param client Shared [FeedbackClient] instance.
+ * @param visible Whether the What's-New bottom sheet should be displayed.
+ * @param onDismiss Invoked when the user taps close/continue or if there are no new updates to show.
  */
 @Composable
 fun ChangelogOverlay(

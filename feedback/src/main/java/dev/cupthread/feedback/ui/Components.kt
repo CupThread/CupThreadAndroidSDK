@@ -358,7 +358,27 @@ internal fun relativeOrDate(iso: String): String = friendlyDate(iso)
 private val avatarCache = java.util.concurrent.ConcurrentHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
 
 /**
- * Renders a circular user avatar with asynchronous image loading and initials fallback.
+ * Renders a circular user avatar with in-memory caching and fallback to author initials.
+ *
+ * Asynchronously downloads the image from [url] using an in-memory bitmap cache (`avatarCache`).
+ * If [url] is null, blank, or fails to load, generates a deterministic background color from
+ * the user's name hash and renders their capitalized initial (or a generic silhouette if no name is provided).
+ *
+ * ### Example Usage
+ * ```kotlin
+ * UserAvatar(
+ *     url = "https://cdn.cupthread.com/avatars/user_123.png",
+ *     name = "Alex Johnson",
+ *     size = 32.dp,
+ *     onClick = { /* open user profile */ }
+ * )
+ * ```
+ *
+ * @param url Remote image URL for the avatar picture, or `null`.
+ * @param name Display name of the user used to generate initials and deterministic background color.
+ * @param size Target diameter of the circular avatar; defaults to `24.dp`.
+ * @param modifier Optional [Modifier] applied to the avatar container.
+ * @param onClick Optional callback invoked when the avatar is clicked.
  */
 @Composable
 fun UserAvatar(
@@ -457,7 +477,25 @@ fun UserAvatar(
 }
 
 /**
- * Renders a horizontal avatar stack of up to 3 recent commenters with an overflow indicator.
+ * Renders an overlapping horizontal avatar stack of up to 3 recent commenters with an overflow indicator.
+ *
+ * Useful for displaying social activity and discussion engagement directly on feature request cards.
+ *
+ * ### Example Usage
+ * ```kotlin
+ * AvatarStack(
+ *     commenters = item.recentCommenters,
+ *     hasMore = item.hasMoreCommenters,
+ *     onCommenterClick = { commenter ->
+ *         commenter.clerkUserId?.let { openProfile(it) }
+ *     }
+ * )
+ * ```
+ *
+ * @param commenters List of [RecentCommenter] objects representing participants.
+ * @param hasMore Whether additional commenters exist beyond the provided list.
+ * @param onCommenterClick Optional callback invoked with the clicked [RecentCommenter].
+ * @param modifier Optional [Modifier] applied to the row layout.
  */
 @Composable
 fun AvatarStack(
@@ -510,6 +548,30 @@ fun AvatarStack(
     }
 }
 
+/**
+ * Interactive Modal Bottom Sheet displaying a public user profile.
+ *
+ * Asynchronously retrieves user profile data via [FeedbackClient.fetchUserProfile] and displays:
+ * - Avatar, display name, account age, bio, and personal website link
+ * - Showcase of public apps owned by the user
+ * - Recent public comments across requests (respecting privacy settings)
+ *
+ * ### Example Usage
+ * ```kotlin
+ * @Composable
+ * fun ProfileModal(client: FeedbackClient, userId: String, onDismiss: () -> Unit) {
+ *     UserProfileSheet(
+ *         client = client,
+ *         userId = userId,
+ *         onDismiss = onDismiss
+ *     )
+ * }
+ * ```
+ *
+ * @param client Shared [FeedbackClient] used to load the user profile.
+ * @param userId Unique user identifier (e.g. Clerk user ID).
+ * @param onDismiss Callback invoked to close the profile bottom sheet.
+ */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun UserProfileSheet(
