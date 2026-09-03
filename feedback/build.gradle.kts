@@ -32,6 +32,17 @@ dokka {
     }
 }
 
+val copyDokkaScreenshots by tasks.registering(Copy::class) {
+    from(rootProject.layout.projectDirectory.dir("docs/images")) {
+        include("*.jpg")
+    }
+    into(layout.buildDirectory.dir("dokka/html/images"))
+}
+
+tasks.named("dokkaGenerateHtml") {
+    finalizedBy(copyDokkaScreenshots)
+}
+
 android {
     namespace = "dev.cupthread.feedback"
     compileSdk = 35

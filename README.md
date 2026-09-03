@@ -108,6 +108,21 @@ lifecycleScope.launch {
 
 ---
 
+## Screenshots
+
+| Roadmap | Feature Requests | Submit a Request |
+| --- | --- | --- |
+| ![Roadmap screen](docs/images/roadmap.jpg) | ![Feature Requests screen](docs/images/feature_requests.jpg) | ![Submit a Feature Request sheet](docs/images/submit_request.jpg) |
+
+| What's New | Changelog Overlay | Feedback Composer |
+| --- | --- | --- |
+| ![What's New screen](docs/images/whats_new.jpg) | ![Changelog overlay](docs/images/changelog_overlay.jpg) | ![Feedback composer](docs/images/feedback_composer.jpg) |
+
+The images above are generated from the demo's mocked UI test data. Refresh them with
+`./scripts/capture-screenshots.sh <device-serial>`.
+
+---
+
 ## API Surface
 
 | Method | Endpoint / Description |

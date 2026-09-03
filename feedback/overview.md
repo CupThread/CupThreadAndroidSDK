@@ -69,6 +69,18 @@ read this themselves before rendering.
 the same theming to trees that host SDK composables directly, such as the What's-New
 overlay.
 
+## Screenshots
+
+| Roadmap | Feature Requests | Submit a Request |
+| --- | --- | --- |
+| ![Roadmap screen](images/roadmap.jpg) | ![Feature Requests screen](images/feature_requests.jpg) | ![Submit a Feature Request sheet](images/submit_request.jpg) |
+
+| What's New | Changelog Overlay | Feedback Composer |
+| --- | --- | --- |
+| ![What's New screen](images/whats_new.jpg) | ![Changelog overlay](images/changelog_overlay.jpg) | ![Feedback composer](images/feedback_composer.jpg) |
+
+These images are generated from the demo's mocked UI test data.
+
 ## Error handling
 
 Every client method throws a [dev.cupthread.feedback.FeedbackException] subclass —
