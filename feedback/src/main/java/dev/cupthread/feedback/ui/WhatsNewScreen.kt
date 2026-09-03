@@ -77,6 +77,9 @@ import kotlinx.coroutines.launch
  * }
  * ```
  *
+ * ### Screenshot
+ * <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/whats_new.jpg" width="320" alt="What's New Screen" />
+ *
  * @param client Shared [FeedbackClient] instance used to load changelog entries and manage email subscriptions.
  * @param userToken Stable anonymous user token from [UserTokenStore] used to authenticate subscription actions.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.

@@ -76,6 +76,9 @@ import kotlin.coroutines.resume
  * }
  * ```
  *
+ * ### Screenshot
+ * <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/changelog_overlay.jpg" width="320" alt="Changelog Overlay" />
+ *
  * @receiver The [FeedbackClient] used to fetch changelog entries and appearance configuration.
  * @param activity The host Android [Activity] over which the dialog window will be shown.
  * @param onlyIfUnseen If `true`, checks [ChangelogStore] and skips presentation if the latest version was already seen.
@@ -163,6 +166,9 @@ suspend fun FeedbackClient.presentLatestChangelog(
  *     }
  * }
  * ```
+ *
+ * ### Screenshot
+ * <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/changelog_overlay.jpg" width="320" alt="Changelog Overlay" />
  *
  * @param client Shared [FeedbackClient] instance.
  * @param visible Whether the What's-New bottom sheet should be displayed.

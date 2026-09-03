@@ -4,6 +4,20 @@ Native Kotlin + Jetpack Compose SDK for Android 8+ (minSdk 26, Material 3).
 
 Part of the [CupThread.com](https://cupthread.com) platform.
 
+## Visual Showcase
+
+| **Roadmap Board** | **Feature Requests** | **Submit Request** |
+| :---: | :---: | :---: |
+| <img src="docs/images/roadmap.jpg" width="260" alt="Roadmap Board" /> | <img src="docs/images/feature_requests.jpg" width="260" alt="Feature Requests" /> | <img src="docs/images/submit_request.jpg" width="260" alt="Submit Request Sheet" /> |
+| Kanban columns, stage chips & vote counts | Optimistic voting, search & version filter | User request compose sheet |
+
+| **What's New / Changelog** | **Changelog Overlay** | **Feedback Composer** |
+| :---: | :---: | :---: |
+| <img src="docs/images/whats_new.jpg" width="260" alt="What's New Changelog" /> | <img src="docs/images/changelog_overlay.jpg" width="260" alt="Changelog Overlay" /> | <img src="docs/images/feedback_composer.jpg" width="260" alt="Feedback Composer" /> |
+| Markdown release notes & email subscribe | In-app What's-New sheet with seen tracking | Structured feedback with auto metadata |
+
+---
+
 ## 🤖 Recommended: Install via AI Agent (Agentic Coding)
 
 Instead of manually editing Gradle build files and writing boilerplate by hand, install the official **CupThread Android AI Skill** into your workspace with [`npx skills`](https://github.com/skills-directory/skills) and let your AI assistant (Claude Code, Cursor, Copilot, Android Studio, Windsurf, Codex, Antigravity) integrate and customize it for you:
@@ -105,21 +119,6 @@ lifecycleScope.launch {
     client.presentLatestChangelog(activity, onlyIfUnseen = true)
 }
 ```
-
----
-
-## Screenshots
-
-| Roadmap | Feature Requests | Submit a Request |
-| --- | --- | --- |
-| ![Roadmap screen](docs/images/roadmap.jpg) | ![Feature Requests screen](docs/images/feature_requests.jpg) | ![Submit a Feature Request sheet](docs/images/submit_request.jpg) |
-
-| What's New | Changelog Overlay | Feedback Composer |
-| --- | --- | --- |
-| ![What's New screen](docs/images/whats_new.jpg) | ![Changelog overlay](docs/images/changelog_overlay.jpg) | ![Feedback composer](docs/images/feedback_composer.jpg) |
-
-The images above are generated from the demo's mocked UI test data. Refresh them with
-`./scripts/capture-screenshots.sh <device-serial>`.
 
 ---
 

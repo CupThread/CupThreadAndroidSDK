@@ -71,13 +71,15 @@ overlay.
 
 ## Screenshots
 
-| Roadmap | Feature Requests | Submit a Request |
-| --- | --- | --- |
-| ![Roadmap screen](images/roadmap.jpg) | ![Feature Requests screen](images/feature_requests.jpg) | ![Submit a Feature Request sheet](images/submit_request.jpg) |
+| **Roadmap Board** | **Feature Requests** | **Submit Request** |
+| :---: | :---: | :---: |
+| <img src="images/roadmap.jpg" width="260" alt="Roadmap Board" /> | <img src="images/feature_requests.jpg" width="260" alt="Feature Requests" /> | <img src="images/submit_request.jpg" width="260" alt="Submit Request Sheet" /> |
+| Kanban columns, stage chips & vote counts | Optimistic voting, search & version filter | User request compose sheet |
 
-| What's New | Changelog Overlay | Feedback Composer |
-| --- | --- | --- |
-| ![What's New screen](images/whats_new.jpg) | ![Changelog overlay](images/changelog_overlay.jpg) | ![Feedback composer](images/feedback_composer.jpg) |
+| **What's New / Changelog** | **Changelog Overlay** | **Feedback Composer** |
+| :---: | :---: | :---: |
+| <img src="images/whats_new.jpg" width="260" alt="What's New Changelog" /> | <img src="images/changelog_overlay.jpg" width="260" alt="Changelog Overlay" /> | <img src="images/feedback_composer.jpg" width="260" alt="Feedback Composer" /> |
+| Markdown release notes & email subscribe | In-app What's-New sheet with seen tracking | Structured feedback with auto metadata |
 
 These images are generated from the demo's mocked UI test data.
 

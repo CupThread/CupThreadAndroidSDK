@@ -89,6 +89,11 @@ import kotlinx.coroutines.launch
  * }
  * ```
  *
+ * ### Screenshots
+ * | Feature Requests | Submit a Request |
+ * | :---: | :---: |
+ * | <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/feature_requests.jpg" width="280" alt="Feature Requests Screen" /> | <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/submit_request.jpg" width="280" alt="Submit Request Sheet" /> |
+ *
  * @param client Shared [FeedbackClient] instance used for network queries and mutations.
  * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state and ownership.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] container.

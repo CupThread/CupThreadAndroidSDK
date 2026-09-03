@@ -104,6 +104,9 @@ import java.util.Locale
  * }
  * ```
  *
+ * ### Screenshot
+ * <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/feedback_composer.jpg" width="320" alt="Feedback Composer" />
+ *
  * @param client Shared [FeedbackClient] instance used to submit feedback and upload attachments.
  * @param userToken Optional stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
  * @param initialDraft Optional pre-populated [FeedbackDraft]; defaults to an auto-filled draft for the current package.

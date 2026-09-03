@@ -108,6 +108,9 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
  * }
  * ```
  *
+ * ### Screenshot
+ * <img src="https://raw.githubusercontent.com/CupThread/CupThreadAndroidSDK/main/docs/images/roadmap.jpg" width="320" alt="Roadmap Board Screen" />
+ *
  * @param client Shared [FeedbackClient] used for network communication.
  * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
