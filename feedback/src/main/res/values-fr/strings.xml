@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Se désabonner</string>
     <string name="cupthread_whatsnew_done">Terminé</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Commentaires</string>
+    <string name="cupthread_comments_empty_title">Aucun commentaire pour le moment</string>
+    <string name="cupthread_comments_empty_body">Soyez le premier à laisser un commentaire ou à partager votre avis.</string>
+    <string name="cupthread_comments_reply">Répondre</string>
+    <string name="cupthread_comments_replying_to">Réponse à @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Annuler</string>
+    <string name="cupthread_comments_add_placeholder">Ajouter un commentaire…</string>
+    <string name="cupthread_comments_name_placeholder">Votre nom (facultatif)</string>
+    <string name="cupthread_comments_submit">Publier</string>
+    <string name="cupthread_comments_submitting">Publication en cours…</string>
+    <string name="cupthread_comments_load_failed">Impossible de charger les commentaires</string>
+    <string name="cupthread_comments_post_failed">Échec de la publication du commentaire</string>
+    <string name="cupthread_comments_more_commenters">Plus de contributeurs</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profil</string>
+    <string name="cupthread_profile_apps_title">Applications publiques</string>
+    <string name="cupthread_profile_requests_count">%1$d demandes</string>
+    <string name="cupthread_profile_recent_comments">Commentaires récents</string>
+    <string name="cupthread_profile_comments_hidden">Les commentaires sont masqués</string>
+    <string name="cupthread_profile_no_apps">Aucune application publique</string>
+    <string name="cupthread_profile_no_comments">Aucun commentaire récent</string>
+    <string name="cupthread_profile_load_failed">Impossible de charger le profil</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Échec du chargement</string>
     <string name="cupthread_common_retry">Réessayer</string>

@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Avslutt abonnement</string>
     <string name="cupthread_whatsnew_done">Ferdig</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Kommentarer</string>
+    <string name="cupthread_comments_empty_title">Ingen kommentarer ennå</string>
+    <string name="cupthread_comments_empty_body">Vær den første til å legge igjen en kommentar eller dele tankene dine.</string>
+    <string name="cupthread_comments_reply">Svar</string>
+    <string name="cupthread_comments_replying_to">Svarer til @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Avbryt</string>
+    <string name="cupthread_comments_add_placeholder">Legg til en kommentar…</string>
+    <string name="cupthread_comments_name_placeholder">Navnet ditt (valgfritt)</string>
+    <string name="cupthread_comments_submit">Publiser</string>
+    <string name="cupthread_comments_submitting">Publiserer…</string>
+    <string name="cupthread_comments_load_failed">Kunne ikke laste inn kommentarer</string>
+    <string name="cupthread_comments_post_failed">Kunne ikke publisere kommentar</string>
+    <string name="cupthread_comments_more_commenters">Flere kommentatorer</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profil</string>
+    <string name="cupthread_profile_apps_title">Offentlige apper</string>
+    <string name="cupthread_profile_requests_count">%1$d ønsker</string>
+    <string name="cupthread_profile_recent_comments">Nylige kommentarer</string>
+    <string name="cupthread_profile_comments_hidden">Kommentarer er skjult</string>
+    <string name="cupthread_profile_no_apps">Ingen offentlige apper</string>
+    <string name="cupthread_profile_no_comments">Ingen nylige kommentarer</string>
+    <string name="cupthread_profile_load_failed">Kunne ikke laste inn profil</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Kunne ikke laste inn</string>
     <string name="cupthread_common_retry">Prøv igjen</string>

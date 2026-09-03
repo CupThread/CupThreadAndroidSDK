@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback Composer -->
+    <string name="cupthread_feedback_title">Gửi phản hồi</string>
+    <string name="cupthread_feedback_short_summary">Tóm tắt ngắn gọn</string>
+    <string name="cupthread_feedback_title_label">Tiêu đề</string>
+    <string name="cupthread_feedback_desc_label">Mô tả</string>
+    <string name="cupthread_feedback_desc_placeholder">Chuyện gì đã xảy ra và bạn mong đợi điều gì?</string>
+    <string name="cupthread_feedback_desc_hint">Hãy cho chúng tôi biết điều gì đã hiệu quả, điều gì chưa và bạn muốn thấy gì tiếp theo.</string>
+    <string name="cupthread_feedback_name_label">Tên (không bắt buộc)</string>
+    <string name="cupthread_feedback_email_label">Email (không bắt buộc)</string>
+    <string name="cupthread_feedback_contact_hint">Chúng tôi chỉ sử dụng thông tin liên hệ để phản hồi lại góp ý của bạn.</string>
+    <string name="cupthread_feedback_send_button">Gửi phản hồi</string>
+    <string name="cupthread_feedback_sending_button">Đang gửi…</string>
+    <string name="cupthread_feedback_thanks_title">Cảm ơn bạn!</string>
+    <string name="cupthread_feedback_thanks_subtitle">Phản hồi của bạn đã được gửi đến đội ngũ phát triển.</string>
+    <string name="cupthread_feedback_send_more">Gửi thêm phản hồi</string>
+    <string name="cupthread_feedback_generic_error">Đã xảy ra lỗi</string>
+    <string name="cupthread_feedback_attachments_title">Tệp đính kèm</string>
+    <string name="cupthread_feedback_add_attachment">Thêm ảnh chụp màn hình hoặc hình ảnh</string>
+    <string name="cupthread_feedback_uploading_attachment">Đang tải tệp đính kèm lên…</string>
+    <string name="cupthread_feedback_remove_attachment">Xóa tệp đính kèm</string>
+    <string name="cupthread_feedback_upload_failed">Tải tệp đính kèm lên thất bại</string>
+
+    <!-- Feature Requests -->
+    <string name="cupthread_features_title">Yêu cầu tính năng</string>
+    <string name="cupthread_features_search_placeholder">Tìm kiếm yêu cầu tính năng</string>
+    <string name="cupthread_features_all_versions">Tất cả phiên bản</string>
+    <string name="cupthread_features_filter_by_version">Lọc theo phiên bản</string>
+    <string name="cupthread_features_request_feature">Đề xuất tính năng</string>
+    <string name="cupthread_features_empty_title">Chưa có yêu cầu tính năng nào</string>
+    <string name="cupthread_features_empty_body">Ý tưởng từ những người dùng như bạn sẽ hiển thị ở đây.</string>
+    <string name="cupthread_features_empty_search_title">Không có kết quả</string>
+    <string name="cupthread_features_empty_search_body">Không có kết quả cho “%1$s”.</string>
+    <string name="cupthread_features_submitted_banner">Yêu cầu đã được gửi — yêu cầu sẽ hiển thị sau khi đội ngũ phê duyệt.</string>
+    <string name="cupthread_features_pending_review">Đang chờ xét duyệt</string>
+    <string name="cupthread_features_anonymous">Ẩn danh</string>
+    <string name="cupthread_features_your_name_optional">Tên của bạn (không bắt buộc)</string>
+    <string name="cupthread_features_compose_title">Đề xuất tính năng</string>
+    <string name="cupthread_features_compose_submit">Gửi</string>
+    <string name="cupthread_features_compose_sending">Đang gửi…</string>
+    <string name="cupthread_features_load_failed">Không thể tải yêu cầu tính năng</string>
+    <string name="cupthread_features_submit_failed">Không thể gửi</string>
+    <string name="cupthread_features_vote_desc">Bình chọn, %1$d</string>
+    <string name="cupthread_features_remove_vote_desc">Hủy bình chọn, %1$d</string>
+
+    <!-- Roadmap -->
+    <string name="cupthread_roadmap_title">Lộ trình</string>
+    <string name="cupthread_roadmap_search_placeholder">Tìm kiếm trong lộ trình</string>
+    <string name="cupthread_roadmap_column_other">Khác</string>
+    <string name="cupthread_roadmap_empty_title">Chưa có lộ trình</string>
+    <string name="cupthread_roadmap_empty_body">Đội ngũ chưa công bố cột lộ trình nào.</string>
+    <string name="cupthread_roadmap_empty_column">Chưa có gì ở đây.</string>
+    <string name="cupthread_roadmap_load_failed">Không thể tải lộ trình</string>
+    <string name="cupthread_roadmap_votes_format">%1$d lượt bình chọn</string>
+
+    <!-- What's New / Changelog -->
+    <string name="cupthread_whatsnew_title">Có gì mới</string>
+    <string name="cupthread_whatsnew_subscribe">Đăng ký</string>
+    <string name="cupthread_whatsnew_empty_title">Chưa có bản cập nhật nào</string>
+    <string name="cupthread_whatsnew_empty_body">Ghi chú phát hành sẽ xuất hiện ở đây khi có phiên bản mới.</string>
+    <string name="cupthread_whatsnew_get_update_emails">Nhận email cập nhật</string>
+    <string name="cupthread_whatsnew_be_notified">Nhận thông báo khi có phiên bản mới.</string>
+    <string name="cupthread_whatsnew_updates_by_email">Cập nhật qua email</string>
+    <string name="cupthread_whatsnew_email_label">you@example.com</string>
+    <string name="cupthread_whatsnew_email_hint">Chúng tôi chỉ gửi email khi ứng dụng này phát hành bản cập nhật mới.</string>
+    <string name="cupthread_whatsnew_already_subscribed">Bạn đã đăng ký</string>
+    <string name="cupthread_whatsnew_subscribed">Đã đăng ký</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Email cập nhật sẽ được gửi đến %1$s.</string>
+    <string name="cupthread_whatsnew_unsubscribed">Đã hủy đăng ký</string>
+    <string name="cupthread_whatsnew_unsubscribed_sub">Bạn sẽ không còn nhận email cập nhật tại %1$s.</string>
+    <string name="cupthread_whatsnew_subscribing">Đang đăng ký…</string>
+    <string name="cupthread_whatsnew_unsubscribing">Đang hủy đăng ký…</string>
+    <string name="cupthread_whatsnew_unsubscribe">Hủy đăng ký</string>
+    <string name="cupthread_whatsnew_done">Xong</string>
+
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Bình luận</string>
+    <string name="cupthread_comments_empty_title">Chưa có bình luận nào</string>
+    <string name="cupthread_comments_empty_body">Hãy là người đầu tiên để lại bình luận hoặc chia sẻ ý kiến của bạn.</string>
+    <string name="cupthread_comments_reply">Trả lời</string>
+    <string name="cupthread_comments_replying_to">Đang trả lời @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Hủy</string>
+    <string name="cupthread_comments_add_placeholder">Thêm bình luận…</string>
+    <string name="cupthread_comments_name_placeholder">Tên của bạn (không bắt buộc)</string>
+    <string name="cupthread_comments_submit">Đăng</string>
+    <string name="cupthread_comments_submitting">Đang đăng…</string>
+    <string name="cupthread_comments_load_failed">Không thể tải bình luận</string>
+    <string name="cupthread_comments_post_failed">Không thể đăng bình luận</string>
+    <string name="cupthread_comments_more_commenters">Xem thêm người bình luận</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Hồ sơ</string>
+    <string name="cupthread_profile_apps_title">Ứng dụng công khai</string>
+    <string name="cupthread_profile_requests_count">%1$d yêu cầu</string>
+    <string name="cupthread_profile_recent_comments">Bình luận gần đây</string>
+    <string name="cupthread_profile_comments_hidden">Bình luận đã bị ẩn</string>
+    <string name="cupthread_profile_no_apps">Không có ứng dụng công khai</string>
+    <string name="cupthread_profile_no_comments">Không có bình luận gần đây</string>
+    <string name="cupthread_profile_load_failed">Không thể tải hồ sơ</string>
+
+    <!-- Common -->
+    <string name="cupthread_common_could_not_load">Không thể tải</string>
+    <string name="cupthread_common_retry">Thử lại</string>
+</resources>

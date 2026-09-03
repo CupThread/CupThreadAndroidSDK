@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Annulla iscrizione</string>
     <string name="cupthread_whatsnew_done">Fine</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Commenti</string>
+    <string name="cupthread_comments_empty_title">Nessun commento</string>
+    <string name="cupthread_comments_empty_body">Sii il primo a lasciare un commento o a condividere la tua opinione.</string>
+    <string name="cupthread_comments_reply">Rispondi</string>
+    <string name="cupthread_comments_replying_to">Risposta a @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Annulla</string>
+    <string name="cupthread_comments_add_placeholder">Aggiungi un commento…</string>
+    <string name="cupthread_comments_name_placeholder">Il tuo nome (opzionale)</string>
+    <string name="cupthread_comments_submit">Pubblica</string>
+    <string name="cupthread_comments_submitting">Pubblicazione in corso…</string>
+    <string name="cupthread_comments_load_failed">Impossibile caricare i commenti</string>
+    <string name="cupthread_comments_post_failed">Impossibile pubblicare il commento</string>
+    <string name="cupthread_comments_more_commenters">Altri utenti che hanno commentato</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profilo</string>
+    <string name="cupthread_profile_apps_title">App pubbliche</string>
+    <string name="cupthread_profile_requests_count">%1$d richieste</string>
+    <string name="cupthread_profile_recent_comments">Commenti recenti</string>
+    <string name="cupthread_profile_comments_hidden">I commenti sono nascosti</string>
+    <string name="cupthread_profile_no_apps">Nessuna app pubblica</string>
+    <string name="cupthread_profile_no_comments">Nessun commento recente</string>
+    <string name="cupthread_profile_load_failed">Impossibile caricare il profilo</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Impossibile caricare</string>
     <string name="cupthread_common_retry">Riprova</string>

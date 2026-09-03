@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Abbestellen</string>
     <string name="cupthread_whatsnew_done">Fertig</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Kommentare</string>
+    <string name="cupthread_comments_empty_title">Noch keine Kommentare</string>
+    <string name="cupthread_comments_empty_body">Seien Sie die/der Erste, die/der einen Kommentar hinterlässt oder ihre/seine Gedanken teilt.</string>
+    <string name="cupthread_comments_reply">Antworten</string>
+    <string name="cupthread_comments_replying_to">Antwort an @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Abbrechen</string>
+    <string name="cupthread_comments_add_placeholder">Kommentar hinzufügen…</string>
+    <string name="cupthread_comments_name_placeholder">Ihr Name (optional)</string>
+    <string name="cupthread_comments_submit">Posten</string>
+    <string name="cupthread_comments_submitting">Wird gepostet…</string>
+    <string name="cupthread_comments_load_failed">Kommentare konnten nicht geladen werden</string>
+    <string name="cupthread_comments_post_failed">Kommentar konnte nicht gepostet werden</string>
+    <string name="cupthread_comments_more_commenters">Weitere Kommentatoren</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profil</string>
+    <string name="cupthread_profile_apps_title">Öffentliche Apps</string>
+    <string name="cupthread_profile_requests_count">%1$d Anfragen</string>
+    <string name="cupthread_profile_recent_comments">Letzte Kommentare</string>
+    <string name="cupthread_profile_comments_hidden">Kommentare sind ausgeblendet</string>
+    <string name="cupthread_profile_no_apps">Keine öffentlichen Apps</string>
+    <string name="cupthread_profile_no_comments">Keine aktuellen Kommentare</string>
+    <string name="cupthread_profile_load_failed">Profil konnte nicht geladen werden</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Laden fehlgeschlagen</string>
     <string name="cupthread_common_retry">Wiederholen</string>

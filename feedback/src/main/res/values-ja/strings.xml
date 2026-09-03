@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">購読解除</string>
     <string name="cupthread_whatsnew_done">完了</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">コメント</string>
+    <string name="cupthread_comments_empty_title">まだコメントはありません</string>
+    <string name="cupthread_comments_empty_body">最初のコメントを投稿して、ご意見をお聞かせください。</string>
+    <string name="cupthread_comments_reply">返信</string>
+    <string name="cupthread_comments_replying_to">@%1$s に返信中</string>
+    <string name="cupthread_comments_cancel_reply">キャンセル</string>
+    <string name="cupthread_comments_add_placeholder">コメントを追加…</string>
+    <string name="cupthread_comments_name_placeholder">お名前（任意）</string>
+    <string name="cupthread_comments_submit">投稿</string>
+    <string name="cupthread_comments_submitting">投稿中…</string>
+    <string name="cupthread_comments_load_failed">コメントの読み込みに失敗しました</string>
+    <string name="cupthread_comments_post_failed">コメントの投稿に失敗しました</string>
+    <string name="cupthread_comments_more_commenters">その他のコメント投稿者</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">プロフィール</string>
+    <string name="cupthread_profile_apps_title">公開アプリ</string>
+    <string name="cupthread_profile_requests_count">リクエスト %1$d 件</string>
+    <string name="cupthread_profile_recent_comments">最近のコメント</string>
+    <string name="cupthread_profile_comments_hidden">コメントは非表示です</string>
+    <string name="cupthread_profile_no_apps">公開アプリはありません</string>
+    <string name="cupthread_profile_no_comments">最近のコメントはありません</string>
+    <string name="cupthread_profile_load_failed">プロフィールの読み込みに失敗しました</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">読み込めませんでした</string>
     <string name="cupthread_common_retry">再試行</string>

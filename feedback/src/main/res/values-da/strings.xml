@@ -31,7 +31,7 @@
     <string name="cupthread_features_empty_title">Ingen funktionsønsker</string>
     <string name="cupthread_features_empty_body">Forslag fra brugere som dig vises her.</string>
     <string name="cupthread_features_empty_search_title">Ingen resultater</string>
-    <string name="cupthread_features_empty_search_body">Ingen resultater for "%1$s".</string>
+    <string name="cupthread_features_empty_search_body">Ingen resultater for ”%1$s”.</string>
     <string name="cupthread_features_submitted_banner">Ønske indsendt — det vises, så snart teamet har godkendt det.</string>
     <string name="cupthread_features_pending_review">Afventer vurdering</string>
     <string name="cupthread_features_anonymous">Anonym</string>
@@ -73,6 +73,31 @@
     <string name="cupthread_whatsnew_unsubscribing">Afmelder…</string>
     <string name="cupthread_whatsnew_unsubscribe">Afmeld abonnement</string>
     <string name="cupthread_whatsnew_done">Færdig</string>
+
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Kommentarer</string>
+    <string name="cupthread_comments_empty_title">Ingen kommentarer endnu</string>
+    <string name="cupthread_comments_empty_body">Vær den første til at skrive en kommentar eller dele dine tanker.</string>
+    <string name="cupthread_comments_reply">Svar</string>
+    <string name="cupthread_comments_replying_to">Svarer til @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Annuller</string>
+    <string name="cupthread_comments_add_placeholder">Tilføj en kommentar…</string>
+    <string name="cupthread_comments_name_placeholder">Dit navn (valgfrit)</string>
+    <string name="cupthread_comments_submit">Send</string>
+    <string name="cupthread_comments_submitting">Sender…</string>
+    <string name="cupthread_comments_load_failed">Kunne ikke indlæse kommentarer</string>
+    <string name="cupthread_comments_post_failed">Kunne ikke sende kommentar</string>
+    <string name="cupthread_comments_more_commenters">Flere kommentatorer</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profil</string>
+    <string name="cupthread_profile_apps_title">Offentlige apps</string>
+    <string name="cupthread_profile_requests_count">%1$d ønsker</string>
+    <string name="cupthread_profile_recent_comments">Seneste kommentarer</string>
+    <string name="cupthread_profile_comments_hidden">Kommentarer er skjulte</string>
+    <string name="cupthread_profile_no_apps">Ingen offentlige apps</string>
+    <string name="cupthread_profile_no_comments">Ingen seneste kommentarer</string>
+    <string name="cupthread_profile_load_failed">Kunne ikke indlæse profil</string>
 
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Kunne ikke indlæse</string>

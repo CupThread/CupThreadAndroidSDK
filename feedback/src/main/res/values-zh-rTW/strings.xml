@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">退訂</string>
     <string name="cupthread_whatsnew_done">完成</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">留言</string>
+    <string name="cupthread_comments_empty_title">尚無留言</string>
+    <string name="cupthread_comments_empty_body">成為第一個留言或分享想法的人吧。</string>
+    <string name="cupthread_comments_reply">回覆</string>
+    <string name="cupthread_comments_replying_to">正在回覆 @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">取消</string>
+    <string name="cupthread_comments_add_placeholder">新增留言…</string>
+    <string name="cupthread_comments_name_placeholder">您的姓名（選填）</string>
+    <string name="cupthread_comments_submit">發佈</string>
+    <string name="cupthread_comments_submitting">發佈中…</string>
+    <string name="cupthread_comments_load_failed">載入留言失敗</string>
+    <string name="cupthread_comments_post_failed">發佈留言失敗</string>
+    <string name="cupthread_comments_more_commenters">更多留言者</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">個人資料</string>
+    <string name="cupthread_profile_apps_title">公開應用程式</string>
+    <string name="cupthread_profile_requests_count">%1$d 則建議</string>
+    <string name="cupthread_profile_recent_comments">最近留言</string>
+    <string name="cupthread_profile_comments_hidden">留言已隱藏</string>
+    <string name="cupthread_profile_no_apps">尚無公開應用程式</string>
+    <string name="cupthread_profile_no_comments">尚無最近留言</string>
+    <string name="cupthread_profile_load_failed">載入個人資料失敗</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">載入失敗</string>
     <string name="cupthread_common_retry">重試</string>

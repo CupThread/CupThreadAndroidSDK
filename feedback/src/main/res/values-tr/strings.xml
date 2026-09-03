@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Abonelikten Çık</string>
     <string name="cupthread_whatsnew_done">Tamam</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Yorumlar</string>
+    <string name="cupthread_comments_empty_title">Henüz Yorum Yok</string>
+    <string name="cupthread_comments_empty_body">İlk yorumu yapan veya düşüncelerinizi paylaşan siz olun.</string>
+    <string name="cupthread_comments_reply">Yanıtla</string>
+    <string name="cupthread_comments_replying_to">@%1$s kullanıcısına yanıt veriliyor</string>
+    <string name="cupthread_comments_cancel_reply">İptal</string>
+    <string name="cupthread_comments_add_placeholder">Yorum ekle…</string>
+    <string name="cupthread_comments_name_placeholder">Adınız (isteğe bağlı)</string>
+    <string name="cupthread_comments_submit">Gönder</string>
+    <string name="cupthread_comments_submitting">Gönderiliyor…</string>
+    <string name="cupthread_comments_load_failed">Yorumlar yüklenemedi</string>
+    <string name="cupthread_comments_post_failed">Yorum gönderilemedi</string>
+    <string name="cupthread_comments_more_commenters">Diğer yorumcular</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Profil</string>
+    <string name="cupthread_profile_apps_title">Herkese Açık Uygulamalar</string>
+    <string name="cupthread_profile_requests_count">%1$d talep</string>
+    <string name="cupthread_profile_recent_comments">Son Yorumlar</string>
+    <string name="cupthread_profile_comments_hidden">Yorumlar gizli</string>
+    <string name="cupthread_profile_no_apps">Herkese açık uygulama yok</string>
+    <string name="cupthread_profile_no_comments">Son yorum yok</string>
+    <string name="cupthread_profile_load_failed">Profil yüklenemedi</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Yüklenemedi</string>
     <string name="cupthread_common_retry">Yeniden Dene</string>

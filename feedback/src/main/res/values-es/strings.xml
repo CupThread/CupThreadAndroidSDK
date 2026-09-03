@@ -74,6 +74,31 @@
     <string name="cupthread_whatsnew_unsubscribe">Darse de baja</string>
     <string name="cupthread_whatsnew_done">Hecho</string>
 
+    <!-- Comments & Replies -->
+    <string name="cupthread_comments_title">Comentarios</string>
+    <string name="cupthread_comments_empty_title">Aún no hay comentarios</string>
+    <string name="cupthread_comments_empty_body">Sé el primero en dejar un comentario o compartir tu opinión.</string>
+    <string name="cupthread_comments_reply">Responder</string>
+    <string name="cupthread_comments_replying_to">Respondiendo a @%1$s</string>
+    <string name="cupthread_comments_cancel_reply">Cancelar</string>
+    <string name="cupthread_comments_add_placeholder">Añadir un comentario…</string>
+    <string name="cupthread_comments_name_placeholder">Tu nombre (opcional)</string>
+    <string name="cupthread_comments_submit">Publicar</string>
+    <string name="cupthread_comments_submitting">Publicando…</string>
+    <string name="cupthread_comments_load_failed">Error al cargar los comentarios</string>
+    <string name="cupthread_comments_post_failed">No se pudo publicar el comentario</string>
+    <string name="cupthread_comments_more_commenters">Más comentaristas</string>
+
+    <!-- User Profile -->
+    <string name="cupthread_profile_title">Perfil</string>
+    <string name="cupthread_profile_apps_title">Aplicaciones públicas</string>
+    <string name="cupthread_profile_requests_count">%1$d solicitudes</string>
+    <string name="cupthread_profile_recent_comments">Comentarios recientes</string>
+    <string name="cupthread_profile_comments_hidden">Los comentarios están ocultos</string>
+    <string name="cupthread_profile_no_apps">No hay aplicaciones públicas</string>
+    <string name="cupthread_profile_no_comments">No hay comentarios recientes</string>
+    <string name="cupthread_profile_load_failed">Error al cargar el perfil</string>
+
     <!-- Common -->
     <string name="cupthread_common_could_not_load">No se pudo cargar</string>
     <string name="cupthread_common_retry">Reintentar</string>
