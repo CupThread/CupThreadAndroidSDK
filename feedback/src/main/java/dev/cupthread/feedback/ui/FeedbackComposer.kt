@@ -297,7 +297,8 @@ private fun FeedbackFormBody(
                         data = bytes,
                         filename = filename,
                         mimeType = mimeType,
-                        preferredKind = FeedbackAttachment.Kind.IMAGE
+                        preferredKind = FeedbackAttachment.Kind.IMAGE,
+                        userToken = userToken
                     )
                     draft = draft.copy(attachments = draft.attachments + uploaded)
                 } catch (ex: Exception) {

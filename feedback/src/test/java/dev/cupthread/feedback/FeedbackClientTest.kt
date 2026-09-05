@@ -127,6 +127,152 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentSendsUserTokenHeaderWhenProvided() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "usr_tok_${UUID.randomUUID()}"
+        val json = """
+            {
+              "kind": "image",
+              "key": "uploads/img-123.png",
+              "url": "https://cdn.example.com/uploads/img-123.png",
+              "filename": "screenshot.png",
+              "mimeType": "image/png",
+              "size": 1024
+            }
+        """.trimIndent()
+
+        val attachment = client { request ->
+            capturedRequest = request
+            HttpResponse(201, json)
+        }.uploadAttachment(
+            data = "fake-image-bytes".toByteArray(),
+            filename = "screenshot.png",
+            mimeType = "image/png",
+            userToken = token
+        )
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals(token, req.headers["X-User-Token"])
+        assertTrue(req.headers["Content-Type"]?.startsWith("multipart/form-data; boundary=") == true)
+        assertTrue(req.contentType?.startsWith("multipart/form-data; boundary=") == true)
+        assertFalse(req.headers["Content-Type"] == "application/json")
+        assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
+        assertEquals("uploads/img-123.png", attachment.key)
+        assertEquals("https://cdn.example.com/uploads/img-123.png", attachment.url)
+    }
+
+    @Test
+    fun uploadAttachmentOmitsUserTokenHeaderWhenNullOrBlank() = runTest {
+        val json = """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}"""
+
+        var capturedReq1: HttpRequest? = null
+        client { request ->
+            capturedReq1 = request
+            HttpResponse(200, json)
+        }.uploadAttachment(
+            data = byteArrayOf(1, 2, 3),
+            filename = "file.png",
+            mimeType = "image/png",
+            userToken = null
+        )
+        assertFalse(requireNotNull(capturedReq1).headers.containsKey("X-User-Token"))
+
+        var capturedReq2: HttpRequest? = null
+        client { request ->
+            capturedReq2 = request
+            HttpResponse(200, json)
+        }.uploadAttachment(
+            data = byteArrayOf(1, 2, 3),
+            filename = "file.png",
+            mimeType = "image/png",
+            userToken = "   "
+        )
+        assertFalse(requireNotNull(capturedReq2).headers.containsKey("X-User-Token"))
+    }
+
+    @Test
+    fun uploadAttachmentAcceptsHttp200And201() = runTest {
+        val json = """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}"""
+
+        val res200 = client { HttpResponse(200, json) }.uploadAttachment(
+            data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+        )
+        assertEquals("k1", res200.key)
+
+        val res201 = client { HttpResponse(201, json) }.uploadAttachment(
+            data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+        )
+        assertEquals("k1", res201.key)
+    }
+
+    @Test
+    fun uploadAttachmentThrowsAuthenticationRequiredOnHttp401() = runTest {
+        try {
+            client { HttpResponse(401, """{"error":"unauthorized"}""") }.uploadAttachment(
+                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png", userToken = "invalid_tok"
+            )
+            fail("expected AuthenticationRequired")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+        }
+    }
+
+    @Test
+    fun uploadAttachmentThrowsUnexpectedStatusOnHttp400() = runTest {
+        try {
+            client { HttpResponse(400, "Payload too large") }.uploadAttachment(
+                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+            )
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(400, ex.code)
+            assertEquals("Payload too large", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentThrowsUnreadableUploadResponseOnInvalidJson() = runTest {
+        try {
+            client { HttpResponse(200, """{"random":"payload"}""") }.uploadAttachment(
+                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+            )
+            fail("expected UnreadableUploadResponse")
+        } catch (_: FeedbackException.UnreadableUploadResponse) {
+        }
+    }
+
+    @Test
+    fun uploadAttachmentRoutesEndpointsBasedOnMimeAndPreferredKind() = runTest {
+        val jsonImage = """{"kind":"image","key":"img","url":"https://cdn.example.com/img"}"""
+        val jsonR2 = """{"kind":"r2","key":"doc","url":"https://cdn.example.com/doc"}"""
+
+        var urlImage: String? = null
+        client { request ->
+            urlImage = request.url
+            HttpResponse(200, jsonImage)
+        }.uploadAttachment(data = byteArrayOf(1), filename = "photo.jpg", mimeType = "image/jpeg")
+        assertEquals("https://api.example.com/api/v1/uploads/images", urlImage)
+
+        var urlR2: String? = null
+        client { request ->
+            urlR2 = request.url
+            HttpResponse(200, jsonR2)
+        }.uploadAttachment(data = byteArrayOf(1), filename = "log.txt", mimeType = "text/plain")
+        assertEquals("https://api.example.com/api/v1/uploads/r2", urlR2)
+
+        var urlOverride: String? = null
+        client { request ->
+            urlOverride = request.url
+            HttpResponse(200, jsonImage)
+        }.uploadAttachment(
+            data = byteArrayOf(1),
+            filename = "blob.bin",
+            mimeType = "application/octet-stream",
+            preferredKind = FeedbackAttachment.Kind.IMAGE
+        )
+        assertEquals("https://api.example.com/api/v1/uploads/images", urlOverride)
+    }
+
+    @Test
     fun submitSendsAndroidPlatformAndSdkMetadata() = runTest {
         var body: String? = null
         client { request ->

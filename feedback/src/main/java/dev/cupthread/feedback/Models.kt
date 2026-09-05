@@ -91,7 +91,8 @@ data class FeedbackClientConfig(
  * val attachment = client.uploadAttachment(
  *     data = imageBytes,
  *     filename = "bug_screenshot.png",
- *     mimeType = "image/png"
+ *     mimeType = "image/png",
+ *     userToken = userToken
  * )
  * val draft = FeedbackDraft(
  *     title = "UI Glitch on Pixel 8",
