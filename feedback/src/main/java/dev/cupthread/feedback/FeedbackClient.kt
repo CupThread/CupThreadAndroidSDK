@@ -182,11 +182,16 @@ class FeedbackClient internal constructor(
      * - All other files (e.g. logs, crashes, text) are routed to `POST /api/v1/uploads/r2` object storage.
      * - Use [preferredKind] to explicitly override the destination storage backend.
      *
-     * @param data Raw binary bytes of the file.
-     * @param filename Suggested original filename (e.g. `"screenshot.png"`, `"logcat.txt"`).
-     * @param mimeType Standard MIME type string (e.g. `"image/png"`, `"text/plain"`).
-     * @param preferredKind Optional storage destination override ([FeedbackAttachment.Kind]).
-     * @return [FeedbackAttachment] containing the CDN URL and storage key.
+     * Accepts HTTP 200 OK and 201 Created responses. If [userToken] is provided, it is forwarded
+     * as the `X-User-Token` header to associate the upload with the anonymous user identity.
+     *
+     * @param data Binary payload to upload.
+     * @param filename Display file name including extension (e.g. `screenshot.png`).
+     * @param mimeType MIME content type (e.g. `image/png`, `application/pdf`).
+     * @param preferredKind Optional explicit [FeedbackAttachment.Kind], overriding MIME-based auto-detection.
+     * @param userToken Optional stable user token (from [UserTokenStore]) to attribute the upload.
+     * @return A populated [FeedbackAttachment] containing the persisted URL and storage key.
+     * @throws FeedbackException.AuthenticationRequired on HTTP 401.
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded `maxAttachmentBytes`).
      * @throws FeedbackException.InvalidResponse if a network error occurs.
@@ -197,7 +202,8 @@ class FeedbackClient internal constructor(
      * val attachment = client.uploadAttachment(
      *     data = screenshotBytes,
      *     filename = "device_screenshot.png",
-     *     mimeType = "image/png"
+     *     mimeType = "image/png",
+     *     userToken = userToken
      * )
      * val draft = baseDraft.copy(attachments = listOf(attachment))
      * client.submit(draft, userToken)
@@ -207,7 +213,8 @@ class FeedbackClient internal constructor(
         data: ByteArray,
         filename: String,
         mimeType: String,
-        preferredKind: FeedbackAttachment.Kind? = null
+        preferredKind: FeedbackAttachment.Kind? = null,
+        userToken: String? = null
     ): FeedbackAttachment {
         val kind = preferredKind ?: if (mimeType.startsWith("image/")) {
             FeedbackAttachment.Kind.IMAGE
@@ -221,14 +228,12 @@ class FeedbackClient internal constructor(
         }
         val boundary = "Boundary-${UUID.randomUUID()}"
         val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
-        val json = send(
-            HttpRequest(
-                method = "POST",
-                url = joinUrl(config.baseUrl, path),
-                contentType = "multipart/form-data; boundary=$boundary",
-                body = body
-            ),
-            accepted = setOf(200)
+        val json = sendMultipart(
+            path = path,
+            boundary = boundary,
+            body = body,
+            userToken = userToken,
+            accepted = setOf(200, 201)
         )
         return try {
             parseAttachment(json)
@@ -740,6 +745,14 @@ class FeedbackClient internal constructor(
 
     private suspend fun get(path: String): JSONObject = sendJson("GET", path, body = null)
 
+    private fun buildHeaders(
+        contentType: String?,
+        userToken: String?
+    ): Map<String, String> = buildMap {
+        if (contentType != null) put("Content-Type", contentType)
+        if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
+    }
+
     private suspend fun sendJson(
         method: String,
         path: String,
@@ -747,17 +760,34 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         accepted: Set<Int> = setOf(200)
     ): JSONObject {
-        val headers = buildMap {
-            if (body != null) put("Content-Type", "application/json")
-            if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
-        }
+        val contentType = if (body != null) "application/json" else null
         return send(
             HttpRequest(
                 method = method,
                 url = joinUrl(config.baseUrl, path),
-                headers = headers,
-                contentType = if (body != null) "application/json" else null,
+                headers = buildHeaders(contentType, userToken),
+                contentType = contentType,
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
+            ),
+            accepted
+        )
+    }
+
+    private suspend fun sendMultipart(
+        path: String,
+        boundary: String,
+        body: ByteArray,
+        userToken: String? = null,
+        accepted: Set<Int> = setOf(200, 201)
+    ): JSONObject {
+        val contentType = "multipart/form-data; boundary=$boundary"
+        return send(
+            HttpRequest(
+                method = "POST",
+                url = joinUrl(config.baseUrl, path),
+                headers = buildHeaders(contentType, userToken),
+                contentType = contentType,
+                body = body
             ),
             accepted
         )
