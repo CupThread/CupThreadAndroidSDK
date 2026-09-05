@@ -17,6 +17,9 @@ import java.util.UUID
  * - Generates a new random RFC 4122 UUID v4 on first access and immediately persists it into private `SharedPreferences`.
  * - Subsequent reads reuse the cached token, surviving activity recreations, process death, and app updates.
  * - The token resets only when the user clears app storage or uninstalls the application.
+ * - Concurrency & Durability: Token generation is synchronized and thread-safe. First-time creation
+ *   uses synchronous disk commit to guarantee identity stability across process restarts and prevent
+ *   duplicate identities from being minted under concurrent access.
  *
  * ### Recommended Usage
  * Create a single instance per application process (e.g. via dependency injection or in your `Application` / `ComponentActivity`):
@@ -41,11 +44,18 @@ import java.util.UUID
  * @param prefs [SharedPreferences] instance where the token key is stored.
  */
 class UserTokenStore internal constructor(private val prefs: SharedPreferences) {
+    @Volatile
+    private var cachedToken: String? = null
+
     /**
      * The stable anonymous user token.
      *
-     * Lazily generates a unique UUID string on the first access, stores it to disk, and returns
-     * the persisted value on all subsequent accesses.
+     * Lazily generates a unique UUID string on first access, durably commits it to disk,
+     * and caches it in memory for fast subsequent access.
+     *
+     * This getter is thread-safe and process-safe: concurrent first callers in the same
+     * process receive the identical token, and the token is synchronously committed to disk
+     * to survive immediate process termination.
      *
      * Example:
      * ```kotlin
@@ -55,16 +65,26 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
      */
     val token: String
         get() {
-            val existing = prefs.getString(KEY, null)
-            if (!existing.isNullOrBlank()) return existing
-            val created = UUID.randomUUID().toString()
-            prefs.edit().putString(KEY, created).apply()
-            return created
+            cachedToken?.let { return it }
+            return synchronized(lock) {
+                cachedToken?.let { return it }
+                val existing = prefs.getString(KEY, null)
+                if (!existing.isNullOrBlank()) {
+                    cachedToken = existing
+                    existing
+                } else {
+                    val created = UUID.randomUUID().toString()
+                    prefs.edit().putString(KEY, created).commit()
+                    cachedToken = created
+                    created
+                }
+            }
         }
 
     companion object {
         private const val PREFS = "cupthread_feedback"
         private const val KEY = "user_token"
+        private val lock = Any()
 
         /**
          * Factory method to create a [UserTokenStore] using the application context's private preferences.
