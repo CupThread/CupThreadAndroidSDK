@@ -57,6 +57,8 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
         storeUrl = json.stringOrNull("storeUrl"),
         storeKind = json.stringOrNull("storeKind"),
         iconUrl = json.stringOrNull("iconUrl"),
+        websiteUrl = json.stringOrNull("websiteUrl"),
+        hideSiteBranding = json.booleanOr("hideSiteBranding", false),
         allowPublic = json.booleanOr("allowPublic", true),
         allowedPlatforms = allowed,
         maxAttachmentBytes = json.longOr("maxAttachmentBytes", 20_000_000L),

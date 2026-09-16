@@ -7,6 +7,7 @@ import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -30,6 +31,8 @@ class FeedbackClientTest {
 
         assertEquals("https://api.example.com/api/v1/public/config/$appKey", captured)
         assertEquals("Demo App", result.name)
+        assertNull(result.websiteUrl)
+        assertFalse(result.hideSiteBranding)
         assertEquals(true, result.allowPublic)
         assertEquals(listOf(FeedbackPlatform.IOS, FeedbackPlatform.MACOS), result.allowedPlatforms)
         assertEquals(20_000_000L, result.maxAttachmentBytes)
@@ -37,6 +40,75 @@ class FeedbackClientTest {
         assertEquals(SdkTheme.SYSTEM, result.sdk.theme)
         assertTrue(result.sdk.features.changelog)
         assertEquals(3, result.sdk.changelogOverlay.entryCount)
+    }
+
+    @Test
+    fun fetchAppConfigDecodesWebsiteFields() = runTest {
+        // #2: additive PublicAppConfig fields (websiteUrl, hideSiteBranding).
+        val json = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "websiteUrl":"https://cupthread.com",
+              "hideSiteBranding":true,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000
+            }
+        """.trimIndent()
+        val result = client { HttpResponse(200, json) }.fetchAppConfig()
+        assertEquals("https://cupthread.com", result.websiteUrl)
+        assertTrue(result.hideSiteBranding)
+    }
+
+    @Test
+    fun fetchAppConfigDefaultsWebsiteFieldsWhenAbsent() = runTest {
+        // Older deployments predate the fields; both decode leniently.
+        val json = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000
+            }
+        """.trimIndent()
+        val result = client { HttpResponse(200, json) }.fetchAppConfig()
+        assertNull(result.websiteUrl)
+        assertFalse(result.hideSiteBranding)
+    }
+
+    @Test
+    fun fetchAppConfigHandlesNullWebsiteFields() = runTest {
+        val json = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "websiteUrl":null,
+              "hideSiteBranding":false,
+              "allowPublic":true,
+              "allowedPlatforms":[],
+              "maxAttachmentBytes":10000
+            }
+        """.trimIndent()
+        val result = client { HttpResponse(200, json) }.fetchAppConfig()
+        assertNull(result.websiteUrl)
+        assertFalse(result.hideSiteBranding)
     }
 
     @Test
