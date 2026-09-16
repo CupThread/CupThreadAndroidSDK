@@ -413,6 +413,8 @@ data class SdkAppearance(
  * @property storeUrl Direct URL to the app on Google Play or Apple App Store, or `null`.
  * @property storeKind App store ecosystem (e.g. `"play_store"`, `"app_store"`), or `null`.
  * @property iconUrl Hosted icon image URL, or `null`.
+ * @property websiteUrl The app's public website URL, when configured (Web / Universal apps).
+ * @property hideSiteBranding Whether the public web portal hides CupThread branding (logo/title).
  * @property allowPublic Whether the application's public portal is globally enabled.
  * @property allowedPlatforms List of operating system platforms accepted for feedback.
  * @property maxAttachmentBytes Maximum allowed upload size per attachment in bytes (e.g., `10485760` for 10MB).
@@ -430,6 +432,8 @@ data class PublicAppConfig(
     val storeUrl: String?,
     val storeKind: String?,
     val iconUrl: String?,
+    val websiteUrl: String? = null,
+    val hideSiteBranding: Boolean = false,
     val allowPublic: Boolean,
     val allowedPlatforms: List<FeedbackPlatform>,
     val maxAttachmentBytes: Long,
