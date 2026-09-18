@@ -112,6 +112,13 @@ afterEvaluate {
                     description = "Jetpack Compose feedback surfaces for CupThread: roadmap, " +
                         "What's New, feature requests and in-app feedback."
                     url = "https://cupthread.com"
+                    licenses {
+                        license {
+                            name = "MIT License"
+                            url = "https://opensource.org/licenses/MIT"
+                            distribution = "repo"
+                        }
+                    }
                 }
             }
         }
