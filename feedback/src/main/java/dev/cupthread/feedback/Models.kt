@@ -78,8 +78,7 @@ enum class FeedbackPlatform(val wireValue: String) {
 data class FeedbackClientConfig(
     val baseUrl: String,
     val appKey: String,
-    val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current,
-    val turnstileTokenProvider: (suspend () -> String?)? = null
+    val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current
 )
 
 /**
@@ -116,8 +115,7 @@ data class FeedbackAttachment(
     val url: String,
     val filename: String? = null,
     val mimeType: String? = null,
-    val size: Long? = null,
-    val uploadId: String? = null
+    val size: Long? = null
 ) {
     /**
      * Storage backend category for an attachment.
@@ -445,9 +443,7 @@ data class PublicAppConfig(
     val allowAnonymousVote: Boolean,
     val allowAnonymousFeedback: Boolean,
     val allowAnonymousChangelog: Boolean,
-    val sdk: SdkAppearance = SdkAppearance.defaults,
-    val websiteUrl: String? = null,
-    val hideSiteBranding: Boolean = false
+    val sdk: SdkAppearance = SdkAppearance.defaults
 )
 
 /**
@@ -849,9 +845,7 @@ data class VoteResult(
  */
 data class ListFeatureRequestsResult(
     val requests: List<FeatureRequestItem>,
-    val total: Int,
-    val hasMore: Boolean = false,
-    val nextCursor: String? = null
+    val total: Int
 )
 
 /**
@@ -895,12 +889,12 @@ data class ChangelogEntry(
 /**
  * Result of subscribing an email to product updates via [FeedbackClient.subscribeToChangelog].
  *
- * @property subscribed Whether the email is active or pending confirmation in the subscriber list.
- * @property alreadySubscribed Whether the email was already registered previously (deprecated; omitted in double opt-in).
+ * @property subscribed Whether the email is active in the subscriber list.
+ * @property alreadySubscribed Whether the email was already registered previously.
  */
 data class ChangelogSubscriptionResult(
     val subscribed: Boolean,
-    val alreadySubscribed: Boolean = false
+    val alreadySubscribed: Boolean
 )
 
 /**
@@ -921,62 +915,4 @@ data class ChangelogUnsubscribeResult(
 data class UserAttributesUpdateResult(
     val ok: Boolean,
     val updatedAt: String
-)
-
-/**
- * Result of requesting self-service user data erasure via [FeedbackClient.eraseUserData].
- *
- * @property erased Whether the caller's profile and telemetry records were erased.
- * @property endUserId Application-scoped end user ID that was erased, if matched.
- */
-data class DataErasureResult(
-    val erased: Boolean,
-    val endUserId: String? = null
-)
-
-/**
- * Result of explicitly linking an authenticated user session with an anonymous end-user profile via [FeedbackClient.linkUserAccount].
- *
- * @property linked Whether the link was established.
- * @property endUserId Application-scoped end user ID.
- * @property clerkUserId Authenticated user account ID.
- */
-data class LinkedUserResult(
-    val linked: Boolean,
-    val endUserId: String,
-    val clerkUserId: String
-)
-
-/**
- * Upload session metadata returned by `POST /api/v1/uploads/sessions`.
- *
- * @property sessionId Unique session identifier.
- * @property sessionToken Bearer token used to authenticate file uploads.
- * @property expiresAt ISO 8601 expiration timestamp.
- * @property maxFileSizeBytes Maximum allowed size per file in bytes.
- * @property maxFiles Maximum number of files in this session.
- * @property files Pre-allocated upload slots for the requested files.
- */
-data class UploadSession(
-    val sessionId: String,
-    val sessionToken: String,
-    val expiresAt: String,
-    val maxFileSizeBytes: Long,
-    val maxFiles: Int,
-    val files: List<UploadSessionFileItem> = emptyList()
-)
-
-/**
- * Pre-allocated file upload slot within an [UploadSession].
- *
- * @property clientFileId Client-generated identifier tracking this file.
- * @property uploadId Server-assigned upload ID.
- * @property uploadUrl URL or endpoint path for uploading file bytes.
- * @property maxSizeBytes Maximum byte size for this upload slot.
- */
-data class UploadSessionFileItem(
-    val clientFileId: String,
-    val uploadId: String,
-    val uploadUrl: String,
-    val maxSizeBytes: Long
 )
