@@ -27,6 +27,10 @@ import dev.cupthread.feedback.SdkFeatures
 import dev.cupthread.feedback.SdkTheme
 import dev.cupthread.feedback.UserAttributesUpdateResult
 import dev.cupthread.feedback.VoteResult
+import dev.cupthread.feedback.DataErasureResult
+import dev.cupthread.feedback.LinkedUserResult
+import dev.cupthread.feedback.UploadSession
+import dev.cupthread.feedback.UploadSessionFileItem
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -66,7 +70,9 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
         allowAnonymousVote = json.booleanOr("allowAnonymousVote", true),
         allowAnonymousFeedback = json.booleanOr("allowAnonymousFeedback", true),
         allowAnonymousChangelog = json.booleanOr("allowAnonymousChangelog", true),
-        sdk = parseSdkAppearance(json.optJSONObject("sdk"))
+        sdk = parseSdkAppearance(json.optJSONObject("sdk")),
+        websiteUrl = json.stringOrNull("websiteUrl"),
+        hideSiteBranding = json.booleanOr("hideSiteBranding", false)
     )
 }
 
@@ -151,7 +157,12 @@ internal fun parseListFeatureRequests(json: JSONObject): ListFeatureRequestsResu
             add(parseFeatureRequestItem(array.getJSONObject(i)))
         }
     }
-    return ListFeatureRequestsResult(requests = requests, total = json.intOr("total", requests.size))
+    return ListFeatureRequestsResult(
+        requests = requests,
+        total = json.intOr("total", requests.size),
+        hasMore = json.booleanOr("hasMore", false),
+        nextCursor = json.stringOrNull("nextCursor")
+    )
 }
 
 internal fun parseFeedbackSubmission(json: JSONObject): FeedbackSubmissionResult =
@@ -160,7 +171,8 @@ internal fun parseFeedbackSubmission(json: JSONObject): FeedbackSubmissionResult
         forwardedToGithub = json.booleanOr("forwardedToGithub", false),
         githubDiscussionId = json.stringOrNull("githubDiscussionId"),
         githubDiscussionUrl = json.stringOrNull("githubDiscussionUrl"),
-        warning = json.stringOrNull("warning")
+        warning = json.stringOrNull("warning"),
+        warningCode = json.stringOrNull("warningCode")
     )
 
 internal fun parseAttachment(json: JSONObject): FeedbackAttachment {
@@ -172,7 +184,8 @@ internal fun parseAttachment(json: JSONObject): FeedbackAttachment {
         url = json.getString("url"),
         filename = json.stringOrNull("filename"),
         mimeType = json.stringOrNull("mimeType"),
-        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size")
+        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size"),
+        uploadId = json.stringOrNull("uploadId")
     )
 }
 
@@ -312,4 +325,43 @@ internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileRe
 
 internal fun JSONObject.putOptString(name: String, value: String?) {
     if (value != null) put(name, value)
+}
+
+internal fun parseDataErasureResult(json: JSONObject): DataErasureResult =
+    DataErasureResult(
+        erased = json.booleanOr("erased", false),
+        endUserId = json.stringOrNull("endUserId")
+    )
+
+internal fun parseLinkedUserResult(json: JSONObject): LinkedUserResult =
+    LinkedUserResult(
+        linked = json.booleanOr("linked", true),
+        endUserId = json.getString("endUserId"),
+        clerkUserId = json.getString("clerkUserId")
+    )
+
+internal fun parseUploadSession(json: JSONObject): UploadSession {
+    val sessionObj = json.optJSONObject("session") ?: json
+    val filesArray = json.optJSONArray("files") ?: sessionObj.optJSONArray("files") ?: JSONArray()
+    val files = buildList {
+        for (i in 0 until filesArray.length()) {
+            val f = filesArray.getJSONObject(i)
+            add(
+                UploadSessionFileItem(
+                    clientFileId = f.optString("clientFileId", ""),
+                    uploadId = f.getString("uploadId"),
+                    uploadUrl = f.optString("uploadUrl", ""),
+                    maxSizeBytes = f.longOr("maxSizeBytes", 0L)
+                )
+            )
+        }
+    }
+    return UploadSession(
+        sessionId = sessionObj.getString("sessionId"),
+        sessionToken = sessionObj.getString("sessionToken"),
+        expiresAt = sessionObj.optString("expiresAt", ""),
+        maxFileSizeBytes = sessionObj.longOr("maxFileSizeBytes", 20_000_000L),
+        maxFiles = sessionObj.intOr("maxFiles", 8),
+        files = files
+    )
 }
