@@ -65,6 +65,7 @@ import androidx.compose.material3.ModalBottomSheet
 import dev.cupthread.feedback.PublicUserProfileResult
 import dev.cupthread.feedback.RecentCommenter
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.internal.WebUrlPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -418,18 +419,19 @@ fun UserAvatar(
     var bitmap by remember(url) { mutableStateOf(url?.let { avatarCache[it] }) }
 
     LaunchedEffect(url) {
-        if (url.isNullOrBlank()) {
+        val secureUrl = WebUrlPolicy.normalizeSecureImageUrl(url)
+        if (secureUrl == null) {
             bitmap = null
             return@LaunchedEffect
         }
-        val cached = avatarCache[url]
+        val cached = avatarCache[secureUrl]
         if (cached != null) {
             bitmap = cached
             return@LaunchedEffect
         }
         withContext(Dispatchers.IO) {
             try {
-                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                val connection = (java.net.URL(secureUrl).openConnection() as java.net.HttpURLConnection).apply {
                     connectTimeout = 8_000
                     readTimeout = 8_000
                     doInput = true
@@ -438,7 +440,7 @@ fun UserAvatar(
                     val decoded = android.graphics.BitmapFactory.decodeStream(stream)
                     if (decoded != null) {
                         val imageBitmap = decoded.asImageBitmap()
-                        avatarCache[url] = imageBitmap
+                        avatarCache[secureUrl] = imageBitmap
                         bitmap = imageBitmap
                     }
                 }
@@ -689,18 +691,15 @@ fun UserProfileSheet(
                         )
                     }
 
-                    if (!profile.websiteUrl.isNullOrBlank()) {
-                        val website = profile.websiteUrl
+                    val safeWebsiteUri = WebUrlPolicy.normalizeWebsiteUri(profile.websiteUrl)
+                    if (safeWebsiteUri != null) {
+                        val display = WebUrlPolicy.displayWebsite(safeWebsiteUri.toString())
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.clickable {
                                 try {
-                                    val uri = android.net.Uri.parse(
-                                        if (website.startsWith("http://") || website.startsWith("https://")) website
-                                        else "https://$website"
-                                    )
-                                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, safeWebsiteUri))
                                 } catch (_: Exception) {}
                             }
                         ) {
@@ -711,7 +710,7 @@ fun UserProfileSheet(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = website.removePrefix("https://").removePrefix("http://"),
+                                text = display,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
