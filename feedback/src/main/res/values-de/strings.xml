@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Fehler beim Hochladen des Anhangs</string>
     <string name="cupthread_attachment_oversized">Anhang (%1$s) überschreitet die maximal erlaubte Größe von %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Anhang überschreitet die maximal erlaubte Größe von %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Nicht unterstütztes Bildformat. Bitte wählen Sie ein PNG-, JPEG-, WebP- oder GIF-Bild.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funktionsanfragen</string>

@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import dev.cupthread.feedback.FeedbackException
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -311,6 +312,7 @@ private fun FeedbackFormBody(
 
     val defaultUploadError = stringResource(R.string.cupthread_feedback_upload_failed)
     val defaultGenericError = stringResource(R.string.cupthread_feedback_generic_error)
+    val unsupportedImageTypeError = stringResource(R.string.cupthread_feedback_unsupported_image_type)
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -407,6 +409,15 @@ private fun FeedbackFormBody(
                         name ?: "screenshot_${System.currentTimeMillis()}.${if (mimeType.contains("jpeg") || mimeType.contains("jpg")) "jpg" else "png"}"
                     }
 
+                    if (AttachmentLimits.isSvg(filename, mimeType) || AttachmentLimits.hasSvgContent(bytes)) {
+                        error = unsupportedImageTypeError
+                        return@launch
+                    }
+                    if (!AttachmentLimits.isSupportedImageMime(mimeType)) {
+                        error = unsupportedImageTypeError
+                        return@launch
+                    }
+
                     val uploaded = client.uploadAttachment(
                         data = bytes,
                         filename = filename,
@@ -417,6 +428,8 @@ private fun FeedbackFormBody(
                     draft = draft.copy(attachments = draft.attachments + uploaded)
                 } catch (ce: CancellationException) {
                     throw ce
+                } catch (ex: FeedbackException.UnsupportedMediaType) {
+                    error = unsupportedImageTypeError
                 } catch (ex: Exception) {
                     error = ex.message ?: defaultUploadError
                 } finally {

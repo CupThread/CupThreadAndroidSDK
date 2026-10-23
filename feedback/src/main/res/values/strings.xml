@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Failed to upload attachment</string>
     <string name="cupthread_attachment_oversized">Attachment (%1$s) exceeds the maximum allowed size of %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Attachment exceeds the maximum allowed size of %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Unsupported image type. Please select a PNG, JPEG, WebP, or GIF image.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Feature Requests</string>
