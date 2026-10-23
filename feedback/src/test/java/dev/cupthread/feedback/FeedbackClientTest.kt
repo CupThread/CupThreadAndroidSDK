@@ -1003,6 +1003,100 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun postCommentUnwrapsCommentEnvelopeResponse() = runTest {
+        var header: String? = null
+        var url: String? = null
+        val token = UUID.randomUUID().toString()
+        val responseJson = """
+            {
+              "comment": {
+                "id": "c-enveloped-1",
+                "featureRequestId": "fr-42",
+                "authorName": "Charlie",
+                "authorEmail": "charlie@example.com",
+                "authorAvatarUrl": "https://example.com/charlie.png",
+                "authorClerkId": "u_app_scoped_charlie",
+                "body": "This is wrapped in a comment envelope per OpenAPI spec.",
+                "parentId": "c-root-1",
+                "replyToClerkId": "u_app_scoped_alice",
+                "replyToAuthorName": "Alice",
+                "isHidden": false,
+                "createdAt": "2026-03-15T08:30:00.000Z"
+              }
+            }
+        """.trimIndent()
+
+        val comment = client { request ->
+            url = request.url
+            header = request.headers["X-User-Token"]
+            HttpResponse(201, responseJson)
+        }.postComment(
+            featureRequestId = "fr-42",
+            draft = CommentDraft(
+                body = "This is wrapped in a comment envelope per OpenAPI spec.",
+                authorName = "Charlie",
+                authorEmail = "charlie@example.com",
+                authorAvatarUrl = "https://example.com/charlie.png",
+                parentId = "c-root-1",
+                replyToClerkId = "u_app_scoped_alice",
+                replyToAuthorName = "Alice"
+            ),
+            userToken = token
+        )
+
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-42/comments", url)
+        assertEquals(token, header)
+        assertEquals("c-enveloped-1", comment.id)
+        assertEquals("fr-42", comment.featureRequestId)
+        assertEquals("Charlie", comment.authorName)
+        assertEquals("charlie@example.com", comment.authorEmail)
+        assertEquals("https://example.com/charlie.png", comment.authorAvatarUrl)
+        assertEquals("u_app_scoped_charlie", comment.authorClerkId)
+        assertEquals("This is wrapped in a comment envelope per OpenAPI spec.", comment.body)
+        assertEquals("c-root-1", comment.parentId)
+        assertEquals("u_app_scoped_alice", comment.replyToClerkId)
+        assertEquals("Alice", comment.replyToAuthorName)
+        assertEquals(false, comment.isHidden)
+        assertEquals("2026-03-15T08:30:00.000Z", comment.createdAt)
+    }
+
+    @Test
+    fun parseFeatureRequestCommentHandlesBothEnvelopeAndBareShapes() {
+        val envelopedJson = org.json.JSONObject(
+            """
+            {
+              "comment": {
+                "id": "c-env",
+                "featureRequestId": "fr-1",
+                "authorName": "Dan",
+                "body": "Enveloped comment",
+                "createdAt": "2026-03-16T10:00:00Z"
+              }
+            }
+            """.trimIndent()
+        )
+        val bareJson = org.json.JSONObject(
+            """
+            {
+              "id": "c-bare",
+              "featureRequestId": "fr-1",
+              "authorName": "Dan",
+              "body": "Bare comment",
+              "createdAt": "2026-03-16T10:00:00Z"
+            }
+            """.trimIndent()
+        )
+
+        val parsedEnveloped = dev.cupthread.feedback.internal.parseFeatureRequestComment(envelopedJson)
+        assertEquals("c-env", parsedEnveloped.id)
+        assertEquals("Enveloped comment", parsedEnveloped.body)
+
+        val parsedBare = dev.cupthread.feedback.internal.parseFeatureRequestComment(bareJson)
+        assertEquals("c-bare", parsedBare.id)
+        assertEquals("Bare comment", parsedBare.body)
+    }
+
+    @Test
     fun fetchUserProfileReturnsProfileAppsAndRecentComments() = runTest {
         var url: String? = null
         val profileJson = """
