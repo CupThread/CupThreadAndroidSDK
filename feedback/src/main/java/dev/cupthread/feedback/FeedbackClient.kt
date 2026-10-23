@@ -20,6 +20,7 @@ import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
+import dev.cupthread.feedback.internal.parseListChangelog
 import dev.cupthread.feedback.internal.parseListFeatureRequests
 import dev.cupthread.feedback.internal.parsePublicAppConfig
 import dev.cupthread.feedback.internal.parsePublicUserProfileResult
@@ -532,11 +533,54 @@ class FeedbackClient internal constructor(
     }
 
     /**
+     * Fetches a paginated page of published changelog entries and release notes from
+     * `GET /api/v1/public/apps/{appKey}/changelog`.
+     *
+     * Entries are returned in descending chronological order by [ChangelogEntry.publishedAt] (newest first).
+     *
+     * Responses include [ListChangelogResult.hasMore] and [ListChangelogResult.nextCursor].
+     * Pass [nextCursor][ListChangelogResult.nextCursor] back as [cursor] for keyset paging to load
+     * subsequent pages without building deep offsets.
+     *
+     * @param limit Maximum number of changelog entries to return per page (clamped between 1 and 100; default is 100).
+     * @param cursor Optional opaque keyset cursor from a previous page's [ListChangelogResult.nextCursor].
+     *   Malformed cursors are rejected by the server with HTTP 400.
+     * @return [ListChangelogResult] containing the entries on this page along with pagination metadata.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val page = client.fetchChangelogPage(limit = 50)
+     * println("Fetched ${page.entries.size} entries (hasMore=${page.hasMore})")
+     * if (page.hasMore && page.nextCursor != null) {
+     *     val nextPage = client.fetchChangelogPage(cursor = page.nextCursor)
+     * }
+     * ```
+     */
+    suspend fun fetchChangelogPage(
+        limit: Int = 100,
+        cursor: String? = null
+    ): ListChangelogResult {
+        val clampedLimit = limit.coerceIn(1, 100)
+        val params = mutableListOf(
+            "limit" to clampedLimit.toString()
+        )
+        if (!cursor.isNullOrBlank()) {
+            params += "cursor" to cursor
+        }
+        val json = get("/api/v1/public/apps/${config.appKey}/changelog?${encodeQuery(params)}")
+        return parseListChangelog(json)
+    }
+
+    /**
      * Fetches published changelog entries and release notes from
      * `GET /api/v1/public/apps/{appKey}/changelog`.
      *
      * Entries are returned in descending chronological order by [ChangelogEntry.publishedAt] (newest first).
      *
+     * @param limit Maximum number of changelog entries to return per page (clamped between 1 and 100; default is 100).
+     * @param cursor Optional keyset cursor from a previous page's [ListChangelogResult.nextCursor].
      * @return List of published [ChangelogEntry] objects.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
@@ -550,13 +594,10 @@ class FeedbackClient internal constructor(
      * }
      * ```
      */
-    suspend fun fetchChangelog(): List<ChangelogEntry> {
-        val json = get("/api/v1/public/apps/${config.appKey}/changelog")
-        val array = json.optJSONArray("entries") ?: JSONArray()
-        return buildList {
-            for (i in 0 until array.length()) add(parseChangelogEntry(array.getJSONObject(i)))
-        }.sortedByDescending { it.publishedAt }
-    }
+    suspend fun fetchChangelog(
+        limit: Int = 100,
+        cursor: String? = null
+    ): List<ChangelogEntry> = fetchChangelogPage(limit = limit, cursor = cursor).entries
 
     /**
      * Prepares changelog entries and appearance styling for What's-New presentation overlays
