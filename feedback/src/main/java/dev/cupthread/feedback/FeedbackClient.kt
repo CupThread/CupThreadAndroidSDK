@@ -32,6 +32,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -794,7 +795,11 @@ class FeedbackClient internal constructor(
             bearerToken = sessionToken.trim(),
             accepted = setOf(200)
         )
-        return parseEndUserLinkResult(response)
+        return try {
+            parseEndUserLinkResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
     }
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {

@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.shouldFollowRedirects
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
@@ -557,6 +558,59 @@ class FeedbackClientTest {
         assertTrue(res2.linked)
         assertNull(res2.endUserId)
         assertNull(res2.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserWrapsJsonParsingFailureInInvalidResponse() = runTest {
+        val client = client { _ ->
+            HttpResponse(
+                200,
+                """
+                {
+                    "endUser": {
+                        "id": "u1",
+                        "identityConfirmed": "not-a-boolean"
+                    }
+                }
+                """.trimIndent()
+            )
+        }
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "tok")
+            fail("Expected FeedbackException.InvalidResponse on malformed payload")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun httpRequestShouldFollowRedirectsOnlyWithoutCredentials() {
+        val publicReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/public/config/app_123"
+        )
+        assertTrue(publicReq.shouldFollowRedirects())
+
+        val userTokenReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/feature-requests",
+            headers = mapOf("X-User-Token" to "tok_123")
+        )
+        assertFalse(userTokenReq.shouldFollowRedirects())
+
+        val authReq = HttpRequest(
+            method = "POST",
+            url = "https://api.cupthread.com/api/v1/me/link",
+            headers = mapOf("Authorization" to "Bearer sess_abc")
+        )
+        assertFalse(authReq.shouldFollowRedirects())
+
+        val blankAuthReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/public/config/app_123",
+            headers = mapOf("Authorization" to "   ", "X-User-Token" to "")
+        )
+        assertTrue(blankAuthReq.shouldFollowRedirects())
     }
 
     @Test
