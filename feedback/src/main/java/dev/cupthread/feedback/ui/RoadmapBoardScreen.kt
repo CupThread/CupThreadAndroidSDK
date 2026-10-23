@@ -45,6 +45,7 @@ import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -191,6 +192,8 @@ private fun RoadmapBoardScreenContent(
             val page = pager.loadNextPage() ?: return
             requests = FeatureRequestPager.append(requests, page.requests)
             hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -211,8 +214,8 @@ private fun RoadmapBoardScreenContent(
     val visible = if (search.isBlank()) groups else groups.filter { it.requests.isNotEmpty() }
 
     // Requests can land in later pages only; keep paging while the board has nothing to show.
-    LaunchedEffect(visible.isEmpty(), hasMore, requests.size) {
-        if (groups.isNotEmpty() && visible.isEmpty() && hasMore) loadMore()
+    LaunchedEffect(visible.isEmpty(), hasMore, requests.size, loadingMore, loadMoreFailed) {
+        if (groups.isNotEmpty() && visible.isEmpty() && hasMore && !loadingMore && !loadMoreFailed) loadMore()
     }
 
     Scaffold(
@@ -352,8 +355,8 @@ private fun PagedBoard(
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         val group = groups[page]
         val columnState = rememberLazyListState()
-        LaunchedEffect(columnState, group.id, group.requests.size, hasMore) {
-            if (!hasMore || group.requests.isEmpty()) return@LaunchedEffect
+        LaunchedEffect(columnState, group.id, group.requests.size, hasMore, loadingMore, loadMoreFailed) {
+            if (!hasMore || loadingMore || loadMoreFailed || group.requests.isEmpty()) return@LaunchedEffect
             snapshotFlow { columnState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
                 .collect { lastVisible ->
                     if (lastVisible >= group.requests.size - 3) onLoadMore()

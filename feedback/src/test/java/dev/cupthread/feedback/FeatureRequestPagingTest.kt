@@ -6,7 +6,11 @@ import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.parseListFeatureRequests
+import kotlin.coroutines.resume
+import kotlinx.coroutines.async
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -219,5 +223,42 @@ class FeatureRequestPagingTest {
         assertFalse(pager.hasMore)
         assertNull(pager.loadNextPage())
         assertEquals(1, requests)
+    }
+
+    @Test
+    fun loadNextPageDiscardsStaleResponseWhenResetDuringFlight() = runTest {
+        var completeInFlight: (() -> Unit)? = null
+        val pager = FeatureRequestPager(pageSize = 50) { req ->
+            if (req.offset == 50) {
+                suspendCancellableCoroutine { cont ->
+                    completeInFlight = {
+                        cont.resume(
+                            parseListFeatureRequests(
+                                JSONObject(pageJson(ids("stale", 50), total = 100, hasMore = false, nextCursor = null)),
+                                req.offset
+                            )
+                        )
+                    }
+                }
+            } else {
+                parseListFeatureRequests(
+                    JSONObject(pageJson(ids("initial", 50), total = 100, hasMore = true, nextCursor = "cur-2")),
+                    req.offset
+                )
+            }
+        }
+
+        pager.loadFirstPage()
+        val deferred = async { pager.loadNextPage() }
+        yield()
+
+        // Reset while loadNextPage is in flight
+        pager.reset()
+        completeInFlight?.invoke()
+
+        val staleResult = deferred.await()
+        assertNull(staleResult)
+        assertEquals(0, pager.total)
+        assertFalse(pager.hasMore)
     }
 }

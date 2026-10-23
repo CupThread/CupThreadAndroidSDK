@@ -42,9 +42,11 @@ internal class FeatureRequestPager(
     private var offset = 0
     private var cursor: String? = null
     private var started = false
+    private var generation = 0
 
     /** Forgets loaded pages so the next [loadFirstPage] starts from the beginning again. */
     fun reset() {
+        generation++
         total = 0
         hasMore = false
         offset = 0
@@ -55,17 +57,19 @@ internal class FeatureRequestPager(
     /** Loads the first page from a clean state, replacing any previous paging position. */
     suspend fun loadFirstPage(): ListFeatureRequestsResult {
         reset()
-        return fetch()
+        return fetch(discardIfReset = false)!!
     }
 
     /** Loads the page after the ones already loaded, or returns `null` when the list is exhausted. */
     suspend fun loadNextPage(): ListFeatureRequestsResult? {
         if (started && !hasMore) return null
-        return fetch()
+        return fetch(discardIfReset = true)
     }
 
-    private suspend fun fetch(): ListFeatureRequestsResult {
+    private suspend fun fetch(discardIfReset: Boolean): ListFeatureRequestsResult? {
+        val requestGeneration = generation
         val page = fetchPage(FeatureRequestPageRequest(limit = pageSize, offset = offset, cursor = cursor))
+        if (discardIfReset && requestGeneration != generation) return null
         started = true
         total = page.total
         cursor = page.nextCursor

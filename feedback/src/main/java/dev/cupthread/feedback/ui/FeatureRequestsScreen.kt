@@ -54,6 +54,7 @@ import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -179,6 +180,8 @@ private fun FeatureRequestsScreenContent(
             val page = pager.loadNextPage() ?: return
             items = FeatureRequestPager.append(items, page.requests)
             hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
