@@ -21,6 +21,8 @@
     <string name="cupthread_feedback_uploading_attachment">첨부 파일 업로드 중…</string>
     <string name="cupthread_feedback_remove_attachment">첨부 파일 삭제</string>
     <string name="cupthread_feedback_upload_failed">첨부 파일 업로드에 실패했습니다</string>
+    <string name="cupthread_attachment_oversized">첨부 파일(%1$s)이(가) 최대 허용 크기 %2$s을(를) 초과했습니다。</string>
+    <string name="cupthread_attachment_exceeds_limit">첨부 파일이 최대 허용 크기 %1$s을(를) 초과했습니다。</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">기능 요청</string>
