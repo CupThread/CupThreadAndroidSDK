@@ -289,7 +289,7 @@ private fun FeedbackFormBody(
         mutableStateOf(positiveOverride ?: AttachmentLimits.DEFAULT_MAX_ATTACHMENT_BYTES)
     }
     var isConfigLoaded by remember(client, maxAttachmentBytes) {
-        mutableStateOf(maxAttachmentBytes != null)
+        mutableStateOf(maxAttachmentBytes != null && maxAttachmentBytes > 0)
     }
 
     LaunchedEffect(client, maxAttachmentBytes) {
