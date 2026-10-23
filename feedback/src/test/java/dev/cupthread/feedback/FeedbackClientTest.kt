@@ -3,8 +3,10 @@ package dev.cupthread.feedback
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.shouldFollowRedirects
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -382,6 +384,233 @@ class FeedbackClientTest {
         }.fetchFeatureRequests(userToken = UUID.randomUUID().toString(), query = "dark mode")
         assertTrue(url!!.contains("/api/v1/feature-requests?"))
         assertTrue(url.contains("q=dark%20mode"))
+    }
+
+    @Test
+    fun fetchFeatureRequestsTransmitsUserTokenInHeaderNotQuery() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "anon_user_token_12345"
+        client { request ->
+            capturedRequest = request
+            HttpResponse(200, """{"requests":[],"total":0}""")
+        }.fetchFeatureRequests(userToken = token)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("GET", req.method)
+        assertEquals(token, req.headers["X-User-Token"])
+        assertFalse(req.url.contains("userToken="))
+        assertTrue(req.url.contains("/api/v1/feature-requests?"))
+        assertTrue(req.url.contains("appKey=app_testkey123456"))
+    }
+
+    @Test
+    fun linkEndUserSendsHeadersAndPayload() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val sessionToken = "clerk_sess_xyz"
+        val userToken = "anon_user_token_999"
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(
+                200,
+                """
+                {
+                    "linked": true,
+                    "endUserId": "enduser-42",
+                    "clerkUserId": "user_2abc"
+                }
+                """.trimIndent()
+            )
+        }
+        val result = client.linkEndUser(sessionToken = sessionToken, userToken = userToken)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("POST", req.method)
+        assertTrue(req.url.endsWith("/api/v1/me/link"))
+        assertEquals("Bearer $sessionToken", req.headers["Authorization"])
+        assertEquals(userToken, req.headers["X-User-Token"])
+        assertEquals("application/json", req.headers["Content-Type"])
+
+        val bodyString = req.body?.let { String(it, Charsets.UTF_8) } ?: ""
+        val json = JSONObject(bodyString)
+        assertEquals("app_testkey123456", json.getString("appKey"))
+
+        assertTrue(result.linked)
+        assertEquals("enduser-42", result.endUserId)
+        assertEquals("user_2abc", result.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserDecodesEndUserEnvelopePayload() = runTest {
+        val client = client { _ ->
+            HttpResponse(
+                200,
+                """
+                {
+                    "endUser": {
+                        "id": "enduser-99",
+                        "appId": "app-1",
+                        "anonymousToken": "anon-1",
+                        "clerkUserId": "user_clerk_99",
+                        "identityConfirmed": true,
+                        "createdAt": "2026-10-23T00:00:00.000Z",
+                        "updatedAt": "2026-10-23T00:00:00.000Z"
+                    }
+                }
+                """.trimIndent()
+            )
+        }
+        val result = client.linkEndUser(sessionToken = "sess", userToken = "user")
+        assertTrue(result.linked)
+        assertEquals("enduser-99", result.endUserId)
+        assertEquals("user_clerk_99", result.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserThrowsOnBlankTokens() = runTest {
+        val client = client { HttpResponse(200, "{}") }
+        try {
+            client.linkEndUser(sessionToken = "", userToken = "tok")
+            fail("Expected IllegalArgumentException for blank sessionToken")
+        } catch (_: IllegalArgumentException) {
+        }
+
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "   ")
+            fail("Expected IllegalArgumentException for blank userToken")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun linkEndUserMaps401ToAuthenticationRequired() = runTest {
+        val client = client { HttpResponse(401, """{"error":"Session expired"}""") }
+        try {
+            client.linkEndUser(sessionToken = "expired_sess", userToken = "user_tok")
+            fail("Expected AuthenticationRequired exception")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+        }
+    }
+
+    @Test
+    fun linkEndUserSurfaces409ConflictAsUnexpectedStatus() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Profile already confirmed to another identity","code":"already_confirmed"}"""
+            )
+        }
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "tok")
+            fail("Expected UnexpectedStatus exception on 409 conflict")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(409, ex.code)
+            assertTrue(ex.serverMessage.contains("Profile already confirmed"))
+        }
+    }
+
+    @Test
+    fun linkEndUserRejectsNonHttpsDestination() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://insecure.cupthread.com",
+                appKey = appKey
+            ),
+            transport = HttpTransport { HttpResponse(200, "{}") }
+        )
+        try {
+            insecureClient.linkEndUser(sessionToken = "sess", userToken = "user")
+            fail("Expected IllegalArgumentException when linkEndUser baseUrl is not HTTPS")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("HTTPS"))
+        }
+    }
+
+    @Test
+    fun parseEndUserLinkResultHandlesJsonNullAndEmptyStringsCorrectly() {
+        val envelopeWithNulls = JSONObject(
+            """
+            {
+                "endUser": {
+                    "id": null,
+                    "endUserId": null,
+                    "clerkUserId": null,
+                    "identityConfirmed": false
+                }
+            }
+            """.trimIndent()
+        )
+        val res1 = dev.cupthread.feedback.internal.parseEndUserLinkResult(envelopeWithNulls)
+        assertFalse(res1.linked)
+        assertNull(res1.endUserId)
+        assertNull(res1.clerkUserId)
+
+        val flatWithNulls = JSONObject(
+            """
+            {
+                "linked": true,
+                "endUserId": null,
+                "id": "",
+                "clerkUserId": null
+            }
+            """.trimIndent()
+        )
+        val res2 = dev.cupthread.feedback.internal.parseEndUserLinkResult(flatWithNulls)
+        assertTrue(res2.linked)
+        assertNull(res2.endUserId)
+        assertNull(res2.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserWrapsJsonParsingFailureInInvalidResponse() = runTest {
+        val client = client { _ ->
+            HttpResponse(
+                200,
+                """
+                {
+                    "endUser": {
+                        "id": "u1",
+                        "identityConfirmed": "not-a-boolean"
+                    }
+                }
+                """.trimIndent()
+            )
+        }
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "tok")
+            fail("Expected FeedbackException.InvalidResponse on malformed payload")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun httpRequestShouldFollowRedirectsOnlyWithoutCredentials() {
+        val publicReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/public/config/app_123"
+        )
+        assertTrue(publicReq.shouldFollowRedirects())
+
+        val userTokenReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/feature-requests",
+            headers = mapOf("X-User-Token" to "tok_123")
+        )
+        assertFalse(userTokenReq.shouldFollowRedirects())
+
+        val authReq = HttpRequest(
+            method = "POST",
+            url = "https://api.cupthread.com/api/v1/me/link",
+            headers = mapOf("Authorization" to "Bearer sess_abc")
+        )
+        assertFalse(authReq.shouldFollowRedirects())
+
+        val blankAuthReq = HttpRequest(
+            method = "GET",
+            url = "https://api.cupthread.com/api/v1/public/config/app_123",
+            headers = mapOf("Authorization" to "   ", "X-User-Token" to "")
+        )
+        assertTrue(blankAuthReq.shouldFollowRedirects())
     }
 
     @Test
