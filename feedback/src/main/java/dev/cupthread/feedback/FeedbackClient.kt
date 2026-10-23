@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import android.content.Context
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.AttachmentLimits
 import dev.cupthread.feedback.internal.encodeQuery
@@ -279,8 +280,11 @@ class FeedbackClient internal constructor(
      * println("Theme: ${appConfig.sdk.theme}")
      * ```
      */
-    suspend fun fetchAppConfig(): PublicAppConfig =
-        parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
+    suspend fun fetchAppConfig(): PublicAppConfig {
+        val appConfig = parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
+        SdkAppearanceCache.put(config.appKey, appConfig.sdk)
+        return appConfig
+    }
 
     /**
      * Fetches the roadmap kanban columns from `GET /api/v1/public/columns/{appKey}`.
