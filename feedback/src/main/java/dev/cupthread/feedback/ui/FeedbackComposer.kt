@@ -284,23 +284,26 @@ private fun FeedbackFormBody(
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<FeedbackSubmissionResult?>(null) }
 
-    var effectiveMaxBytes by remember(maxAttachmentBytes) {
-        mutableStateOf(maxAttachmentBytes ?: AttachmentLimits.DEFAULT_MAX_ATTACHMENT_BYTES)
+    var effectiveMaxBytes by remember(client, maxAttachmentBytes) {
+        val positiveOverride = maxAttachmentBytes?.takeIf { it > 0 }
+        mutableStateOf(positiveOverride ?: AttachmentLimits.DEFAULT_MAX_ATTACHMENT_BYTES)
     }
-    var isConfigLoaded by remember(maxAttachmentBytes) {
+    var isConfigLoaded by remember(client, maxAttachmentBytes) {
         mutableStateOf(maxAttachmentBytes != null)
     }
 
     LaunchedEffect(client, maxAttachmentBytes) {
-        if (maxAttachmentBytes == null) {
+        if (maxAttachmentBytes == null || maxAttachmentBytes <= 0) {
             try {
                 val config = client.fetchAppConfig()
                 if (config.maxAttachmentBytes > 0) {
                     effectiveMaxBytes = config.maxAttachmentBytes
                 }
+                isConfigLoaded = true
+            } catch (c: CancellationException) {
+                throw c
             } catch (_: Exception) {
                 // Fall back to default or last-known limit on network failure
-            } finally {
                 isConfigLoaded = true
             }
         }
@@ -361,26 +364,33 @@ private fun FeedbackFormBody(
                                 output.write(buffer, 0, read)
                             }
                             if (isOverLimit) {
-                                null to totalRead
+                                null to null
                             } else {
                                 output.toByteArray() to totalRead
                             }
                         }
                     }
 
-                    if (bytes == null || !AttachmentLimits.isWithinSizeLimit(totalSize, effectiveMaxBytes)) {
-                        val formattedSize = AttachmentLimits.formatFileSize(totalSize)
+                    if (bytes == null) {
                         val formattedLimit = AttachmentLimits.formatFileSize(effectiveMaxBytes)
-                        val displaySize = if (formattedSize == formattedLimit && totalSize != effectiveMaxBytes) {
-                            "$formattedSize ($totalSize bytes)"
+                        error = if (totalSize != null) {
+                            val formattedSize = AttachmentLimits.formatFileSize(totalSize)
+                            val displaySize = if (formattedSize == formattedLimit && totalSize != effectiveMaxBytes) {
+                                "$formattedSize ($totalSize bytes)"
+                            } else {
+                                formattedSize
+                            }
+                            context.getString(
+                                R.string.cupthread_attachment_oversized,
+                                displaySize,
+                                formattedLimit
+                            )
                         } else {
-                            formattedSize
+                            context.getString(
+                                R.string.cupthread_attachment_exceeds_limit,
+                                formattedLimit
+                            )
                         }
-                        error = context.getString(
-                            R.string.cupthread_attachment_oversized,
-                            displaySize,
-                            formattedLimit
-                        )
                         return@launch
                     }
 
@@ -529,7 +539,7 @@ private fun FeedbackFormBody(
                         )
                     }
                 },
-                enabled = !submitting && !uploadingAttachment && isConfigLoaded,
+                enabled = !submitting && !uploadingAttachment && (onPickAttachment != null || isConfigLoaded),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(

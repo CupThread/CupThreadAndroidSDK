@@ -22,6 +22,7 @@
     <string name="cupthread_feedback_remove_attachment">Eliminar archivo adjunto</string>
     <string name="cupthread_feedback_upload_failed">Error al subir archivo adjunto</string>
     <string name="cupthread_attachment_oversized">El adjunto (%1$s) supera el tamaño máximo permitido de %2$s.</string>
+    <string name="cupthread_attachment_exceeds_limit">El adjunto supera el tamaño máximo permitido de %1$s.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Solicitudes de funciones</string>

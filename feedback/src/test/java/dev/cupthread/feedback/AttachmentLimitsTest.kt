@@ -110,9 +110,27 @@ class AttachmentLimitsTest {
             platform = FeedbackPlatform.ANDROID,
             attachments = List(5) { dummyAttachment }
         )
-        assertTrue(validDraft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT)
+        // 5 attachments allows submission, but prevents starting a 6th attachment pick/upload
+        val canSubmitWith5 = validDraft.title.isNotBlank() &&
+            validDraft.description.isNotBlank() &&
+            validDraft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT
+        assertTrue(canSubmitWith5)
+        assertFalse(AttachmentLimits.canAddAttachment(validDraft.attachments.size))
 
+        // 6 attachments disables submission
         val invalidDraft = validDraft.copy(attachments = List(6) { dummyAttachment })
-        assertFalse(invalidDraft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT)
+        val canSubmitWith6 = invalidDraft.title.isNotBlank() &&
+            invalidDraft.description.isNotBlank() &&
+            invalidDraft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT
+        assertFalse(canSubmitWith6)
+        assertFalse(AttachmentLimits.canAddAttachment(invalidDraft.attachments.size))
+
+        // 4 attachments allows both submission and adding another attachment
+        val underLimitDraft = validDraft.copy(attachments = List(4) { dummyAttachment })
+        val canSubmitWith4 = underLimitDraft.title.isNotBlank() &&
+            underLimitDraft.description.isNotBlank() &&
+            underLimitDraft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT
+        assertTrue(canSubmitWith4)
+        assertTrue(AttachmentLimits.canAddAttachment(underLimitDraft.attachments.size))
     }
 }

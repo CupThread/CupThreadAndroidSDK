@@ -22,6 +22,7 @@
     <string name="cupthread_feedback_remove_attachment">Supprimer la pièce jointe</string>
     <string name="cupthread_feedback_upload_failed">Échec du téléversement de la pièce jointe</string>
     <string name="cupthread_attachment_oversized">La pièce jointe (%1$s) dépasse la taille maximale autorisée de %2$s.</string>
+    <string name="cupthread_attachment_exceeds_limit">La pièce jointe dépasse la taille maximale autorisée de %1$s.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Demandes de fonctionnalités</string>
