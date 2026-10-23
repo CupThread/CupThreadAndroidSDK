@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">上傳附件失敗</string>
     <string name="cupthread_attachment_oversized">附件（%1$s）超過了允許的大小上限 %2$s。</string>
     <string name="cupthread_attachment_exceeds_limit">附件超過了允許的大小上限 %1$s。</string>
+    <string name="cupthread_feedback_unsupported_image_type">不支援的圖片格式。請選擇 PNG、JPEG、WebP 或 GIF 圖片。</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">功能建議</string>

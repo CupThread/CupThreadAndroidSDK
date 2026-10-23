@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Ek yüklenemedi</string>
     <string name="cupthread_attachment_oversized">Ek (%1$s), izin verilen en büyük %2$s boyutunu aşıyor.</string>
     <string name="cupthread_attachment_exceeds_limit">Ek, izin verilen en büyük %1$s boyutunu aşıyor.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Desteklenmeyen görsel biçimi. Lütfen bir PNG, JPEG, WebP veya GIF görseli seçin.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Özellik Talepleri</string>

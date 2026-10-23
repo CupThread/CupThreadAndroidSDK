@@ -362,6 +362,64 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentMapsHttp415ToUnsupportedMediaTypeWithServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    415,
+                    """
+                    {
+                      "error": "Uploaded file content does not match declared image/png format",
+                      "code": "unsupported_media_type"
+                    }
+                    """.trimIndent()
+                )
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertEquals("Uploaded file content does not match declared image/png format", ex.serverMessage)
+            assertEquals("Uploaded file content does not match declared image/png format", ex.message)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentRejectsSvgClientSide() = runTest {
+        try {
+            client {
+                HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")
+            }.uploadAttachment(
+                data = "<svg></svg>".toByteArray(),
+                filename = "logo.svg",
+                mimeType = "image/svg+xml"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertTrue(ex.message?.contains("SVG") == true)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentRejectsMismatchedMagicBytesClientSide() = runTest {
+        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        try {
+            client {
+                HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")
+            }.uploadAttachment(
+                data = jpegBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertTrue(ex.message?.contains("does not match") == true)
+        }
+    }
+
+    @Test
     fun submitSendsAndroidPlatformAndSdkMetadata() = runTest {
         var body: String? = null
         client { request ->
