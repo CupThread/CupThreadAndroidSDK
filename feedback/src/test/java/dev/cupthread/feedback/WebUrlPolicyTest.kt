@@ -85,6 +85,8 @@ class WebUrlPolicyTest {
         assertEquals("https://sub.example.co.uk", WebUrlPolicy.normalizeWebsiteUrl("sub.example.co.uk"))
         assertEquals("https://example.com", WebUrlPolicy.normalizeWebsiteUrl("   example.com   "))
         assertEquals("https://example.com:8080", WebUrlPolicy.normalizeWebsiteUrl("example.com:8080"))
+        assertEquals("https://example.com/?next=https://example.org", WebUrlPolicy.normalizeWebsiteUrl("example.com/?next=https://example.org"))
+        assertEquals("https://example.com/path?redirect=http://other.org", WebUrlPolicy.normalizeWebsiteUrl("example.com/path?redirect=http://other.org"))
     }
 
     @Test

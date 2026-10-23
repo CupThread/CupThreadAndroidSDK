@@ -134,10 +134,9 @@ internal object WebUrlPolicy {
         if (string.isNullOrBlank()) return null
         val trimmed = string.trim()
 
-        // 1. Explicit hierarchical scheme with ://
-        if (trimmed.contains("://")) {
-            val scheme = trimmed.substringBefore("://").lowercase(Locale.ROOT)
-            if (scheme != "http" && scheme != "https") return null
+        // 1. Explicit http:// or https:// scheme
+        if (trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true)) {
             val uri = try {
                 URI(trimmed)
             } catch (_: Exception) {
