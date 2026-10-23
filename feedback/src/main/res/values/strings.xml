@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Couldn\'t load</string>
     <string name="cupthread_common_retry">Retry</string>
+    <string name="cupthread_common_load_more">Load more</string>
+    <string name="cupthread_common_load_more_failed">Couldn\'t load more</string>
 </resources>

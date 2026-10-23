@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Kunne ikke indlæse</string>
     <string name="cupthread_common_retry">Prøv igen</string>
+    <string name="cupthread_common_load_more">Indlæs flere</string>
+    <string name="cupthread_common_load_more_failed">Kunne ikke indlæse flere</string>
 </resources>

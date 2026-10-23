@@ -144,14 +144,26 @@ internal fun parseFeatureRequestItem(json: JSONObject): FeatureRequestItem = Fea
     updatedAt = json.optString("updatedAt", "")
 )
 
-internal fun parseListFeatureRequests(json: JSONObject): ListFeatureRequestsResult {
+internal fun parseListFeatureRequests(json: JSONObject, offset: Int = 0): ListFeatureRequestsResult {
     val array = json.optJSONArray("requests") ?: JSONArray()
     val requests = buildList {
         for (i in 0 until array.length()) {
             add(parseFeatureRequestItem(array.getJSONObject(i)))
         }
     }
-    return ListFeatureRequestsResult(requests = requests, total = json.intOr("total", requests.size))
+    val total = json.intOr("total", requests.size)
+    // Older deployments answer {requests,total} only; derive hasMore from the page offset then.
+    val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
+        json.getBoolean("hasMore")
+    } else {
+        offset + requests.size < total
+    }
+    return ListFeatureRequestsResult(
+        requests = requests,
+        total = total,
+        hasMore = hasMore,
+        nextCursor = json.stringOrNull("nextCursor")
+    )
 }
 
 internal fun parseFeedbackSubmission(json: JSONObject): FeedbackSubmissionResult =

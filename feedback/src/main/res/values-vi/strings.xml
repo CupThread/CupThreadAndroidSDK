@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Không thể tải</string>
     <string name="cupthread_common_retry">Thử lại</string>
+    <string name="cupthread_common_load_more">Tải thêm</string>
+    <string name="cupthread_common_load_more_failed">Không tải thêm được</string>
 </resources>

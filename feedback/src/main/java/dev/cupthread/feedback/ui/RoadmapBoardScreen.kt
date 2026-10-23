@@ -44,6 +44,8 @@ import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
+import dev.cupthread.feedback.internal.FeatureRequestPager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -87,6 +89,8 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
  *
  * ### Key Features
  * - **Horizontal Pager & Synchronized Chip Bar**: Swipe smoothly between columns or tap chips with badge counts.
+ * - **Global Paging**: Loads further pages as a column approaches its end and regroups them, so
+ *   column membership and chip counts include requests beyond the first page.
  * - **Debounced Search**: Filters requests in real-time (~350 ms debounce). During search, empty columns are hidden.
  * - **Pull-to-Refresh**: Refreshes both columns and feature requests concurrently.
  * - **Optimistic Voting & Detail Sheet**: Tapping a request opens the interactive [FeatureRequestDetailSheet]
@@ -135,9 +139,13 @@ private fun RoadmapBoardScreenContent(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    var groups by remember { mutableStateOf<List<RoadmapGroup>>(emptyList()) }
+    var columns by remember { mutableStateOf<List<BoardColumn>>(emptyList()) }
+    var requests by remember { mutableStateOf<List<FeatureRequestItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var hasLoaded by remember { mutableStateOf(false) }
+    var hasMore by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
+    var loadMoreFailed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
@@ -145,21 +153,51 @@ private fun RoadmapBoardScreenContent(
     var votingIds by remember { mutableStateOf(setOf<String>()) }
     val defaultLoadError = stringResource(R.string.cupthread_roadmap_load_failed)
 
+    // Reads the current search filter on every request, so one pager serves all queries.
+    val pager = remember(client) {
+        FeatureRequestPager { request ->
+            client.fetchFeatureRequests(
+                userToken = userToken,
+                limit = request.limit,
+                offset = request.offset,
+                query = search.trim().ifEmpty { null },
+                cursor = request.cursor
+            )
+        }
+    }
+
     suspend fun load() {
         loading = true
         error = null
+        loadMoreFailed = false
         try {
-            val columns = client.fetchColumns()
-            val requests = client.fetchFeatureRequests(
-                userToken = userToken,
-                query = search.trim().ifEmpty { null }
-            ).requests
-            groups = makeGroups(columns, requests)
+            val fetchedColumns = client.fetchColumns()
+            val page = pager.loadFirstPage()
+            columns = fetchedColumns
+            requests = page.requests
+            hasMore = pager.hasMore
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
             loading = false
             hasLoaded = true
+        }
+    }
+
+    suspend fun loadMore() {
+        if (loading || loadingMore || !hasMore) return
+        loadingMore = true
+        loadMoreFailed = false
+        try {
+            val page = pager.loadNextPage() ?: return
+            requests = FeatureRequestPager.append(requests, page.requests)
+            hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            loadMoreFailed = true
+        } finally {
+            loadingMore = false
         }
     }
 
@@ -172,7 +210,13 @@ private fun RoadmapBoardScreenContent(
             }
     }
 
+    val groups = remember(columns, requests) { makeGroups(columns, requests) }
     val visible = if (search.isBlank()) groups else groups.filter { it.requests.isNotEmpty() }
+
+    // Requests can land in later pages only; keep paging while the board has nothing to show.
+    LaunchedEffect(visible.isEmpty(), hasMore, requests.size, loadingMore, loadMoreFailed) {
+        if (groups.isNotEmpty() && visible.isEmpty() && hasMore && !loadingMore && !loadMoreFailed) loadMore()
+    }
 
     Scaffold(
         modifier = modifier,
@@ -194,14 +238,25 @@ private fun RoadmapBoardScreenContent(
                 when {
                     loading && !hasLoaded -> BoxPad { SkeletonCardList() }
                     error != null -> LoadErrorState(error!!) { scope.launch { load() } }
-                    visible.isEmpty() -> EmptyState(
+                    visible.isEmpty() && (!hasMore || groups.isEmpty()) -> EmptyState(
                         title = if (search.isBlank()) stringResource(R.string.cupthread_roadmap_empty_title) else stringResource(R.string.cupthread_features_empty_search_title),
                         body = if (search.isBlank()) stringResource(R.string.cupthread_roadmap_empty_body)
                         else stringResource(R.string.cupthread_features_empty_search_body, search)
                     )
+                    visible.isEmpty() -> BoxPad {
+                        PagingFooter(
+                            loading = loadingMore,
+                            failed = loadMoreFailed,
+                            onLoadMore = { scope.launch { loadMore() } }
+                        )
+                    }
                     else -> PagedBoard(
                         groups = visible,
                         query = search,
+                        hasMore = hasMore,
+                        loadingMore = loadingMore,
+                        loadMoreFailed = loadMoreFailed,
+                        onLoadMore = { scope.launch { loadMore() } },
                         onCardClick = { selectedItem = it },
                         onOpenProfile = { selectedProfileUserId = it }
                     )
@@ -225,20 +280,16 @@ private fun RoadmapBoardScreenContent(
                     val previous = currentItem
                     val newVoted = !currentItem.hasVoted
                     val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
-                    groups = groups.map { grp ->
-                        grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it })
-                    }
+                    requests = requests.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it }
                     selectedItem = currentItem.withVoteState(newVoted, newCount)
                     try {
                         val result = client.toggleVote(currentItem.id, userToken)
-                        groups = groups.map { grp ->
-                            grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it })
+                        requests = requests.map {
+                            if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it
                         }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
                     } catch (_: Exception) {
-                        groups = groups.map { grp ->
-                            grp.copy(requests = grp.requests.map { if (it.id == currentItem.id) previous else it })
-                        }
+                        requests = requests.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
                     } finally {
                         votingIds = votingIds - currentItem.id
@@ -267,6 +318,10 @@ private fun BoxPad(content: @Composable () -> Unit) {
 private fun PagedBoard(
     groups: List<RoadmapGroup>,
     query: String,
+    hasMore: Boolean,
+    loadingMore: Boolean,
+    loadMoreFailed: Boolean,
+    onLoadMore: () -> Unit,
     onCardClick: (FeatureRequestItem) -> Unit,
     onOpenProfile: (String) -> Unit
 ) {
@@ -299,19 +354,30 @@ private fun PagedBoard(
 
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         val group = groups[page]
+        val columnState = rememberLazyListState()
+        LaunchedEffect(columnState, group.id, group.requests.size, hasMore, loadingMore, loadMoreFailed) {
+            if (!hasMore || loadingMore || loadMoreFailed || group.requests.isEmpty()) return@LaunchedEffect
+            snapshotFlow { columnState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                .collect { lastVisible ->
+                    if (lastVisible >= group.requests.size - 3) onLoadMore()
+                }
+        }
         LazyColumn(
+            state = columnState,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             if (group.requests.isEmpty()) {
-                item {
-                    Text(
-                        stringResource(R.string.cupthread_roadmap_empty_column),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(24.dp)
-                    )
+                if (!hasMore) {
+                    item {
+                        Text(
+                            stringResource(R.string.cupthread_roadmap_empty_column),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(24.dp)
+                        )
+                    }
                 }
             } else {
                 items(group.requests, key = { it.id }) { item ->
@@ -320,6 +386,15 @@ private fun PagedBoard(
                         query = query,
                         onClick = { onCardClick(item) },
                         onOpenProfile = onOpenProfile
+                    )
+                }
+            }
+            if (hasMore || loadingMore || loadMoreFailed) {
+                item(key = "paging-footer") {
+                    PagingFooter(
+                        loading = loadingMore,
+                        failed = loadMoreFailed,
+                        onLoadMore = onLoadMore
                     )
                 }
             }

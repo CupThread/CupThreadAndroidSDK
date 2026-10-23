@@ -319,11 +319,18 @@ class FeedbackClient internal constructor(
      * Each returned [FeatureRequestItem] is annotated with the caller's vote status ([FeatureRequestItem.hasVoted])
      * and creator status ([FeatureRequestItem.isOwnRequest]), derived from the provided [userToken].
      *
+     * Responses include [ListFeatureRequestsResult.hasMore] and [ListFeatureRequestsResult.nextCursor].
+     * Pass [nextCursor][ListFeatureRequestsResult.nextCursor] back as [cursor] for keyset paging, or
+     * advance [offset] by the number of returned requests. Keyset paging avoids deep offsets, which
+     * scan and discard rows server-side.
+     *
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @param limit Maximum number of requests to return per page; default is 50.
      * @param offset Number of requests to skip for pagination; default is 0.
      * @param versionId Optional [AppVersion.id] to restrict results to a specific release target.
      * @param query Optional free-text search query matching against titles and descriptions.
+     * @param cursor Optional opaque keyset cursor from a previous page's
+     *   [ListFeatureRequestsResult.nextCursor]. Malformed cursors are rejected with HTTP 400.
      * @return [ListFeatureRequestsResult] containing the list of requests and total match count.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
@@ -346,7 +353,8 @@ class FeedbackClient internal constructor(
         limit: Int = 50,
         offset: Int = 0,
         versionId: String? = null,
-        query: String? = null
+        query: String? = null,
+        cursor: String? = null
     ): ListFeatureRequestsResult {
         val params = mutableListOf(
             "appKey" to config.appKey,
@@ -356,7 +364,8 @@ class FeedbackClient internal constructor(
         )
         if (!versionId.isNullOrBlank()) params += "versionId" to versionId
         if (!query.isNullOrBlank()) params += "q" to query
-        return parseListFeatureRequests(get("/api/v1/feature-requests?${encodeQuery(params)}"))
+        if (!cursor.isNullOrBlank()) params += "cursor" to cursor
+        return parseListFeatureRequests(get("/api/v1/feature-requests?${encodeQuery(params)}"), offset)
     }
 
     /**

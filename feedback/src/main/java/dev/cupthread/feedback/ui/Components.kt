@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -293,6 +294,32 @@ internal fun SkeletonCard() {
             Box(Modifier.fillMaxWidth(0.7f).height(16.dp).clip(RoundedCornerShape(4.dp)).background(wash))
             Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(4.dp)).background(wash))
             Box(Modifier.fillMaxWidth(0.4f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(wash))
+        }
+    }
+}
+
+/**
+ * Footer for a paged list: a spinner while the next page loads, a retry action after a failure,
+ * and a manual "Load more" button for users who cannot trigger the automatic scroll loading.
+ *
+ * @param loading Whether a page request is in flight.
+ * @param failed Whether the last page request failed.
+ * @param onLoadMore Invoked when the user taps the footer.
+ */
+@Composable
+internal fun PagingFooter(loading: Boolean, failed: Boolean, onLoadMore: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            loading -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            failed -> TextButton(onClick = onLoadMore) {
+                Text(stringResource(R.string.cupthread_common_load_more_failed))
+            }
+            else -> TextButton(onClick = onLoadMore) {
+                Text(stringResource(R.string.cupthread_common_load_more))
+            }
         }
     }
 }
