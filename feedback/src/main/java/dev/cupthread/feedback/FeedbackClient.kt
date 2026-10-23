@@ -778,15 +778,13 @@ class FeedbackClient internal constructor(
             "Either userToken or sessionToken must be non-blank for eraseEndUser"
         }
         val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/erase")
-        if (!sessionToken.isNullOrBlank()) {
-            val parsedUri = try {
-                java.net.URI(targetUrl)
-            } catch (_: Exception) {
-                null
-            }
-            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
-                "eraseEndUser destination must use HTTPS when transmitting sessionToken: $targetUrl"
-            }
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "eraseEndUser destination must use HTTPS when transmitting credentials: $targetUrl"
         }
 
         val payload = JSONObject().apply {
@@ -805,12 +803,12 @@ class FeedbackClient internal constructor(
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()
-        val sanitized = MetadataSanitizer.sanitize(draft.metadata)
-        return sanitized + mapOf(
+        val defaults = mapOf(
             "sdk" to "cupthread-android",
             "platform" to draft.platform.wireValue,
             "submittedAt" to submittedAt
         )
+        return MetadataSanitizer.sanitize(draft.metadata, defaults)
     }
 
     private suspend fun get(

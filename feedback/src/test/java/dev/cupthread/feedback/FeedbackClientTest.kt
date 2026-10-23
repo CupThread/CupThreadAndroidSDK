@@ -728,7 +728,7 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun eraseEndUserRejectsNonHttpsWhenTransmittingSessionToken() = runTest {
+    fun eraseEndUserRejectsNonHttpsWhenTransmittingCredentials() = runTest {
         val insecureClient = FeedbackClient(
             config = FeedbackClientConfig(
                 baseUrl = "http://insecure.example.com",
@@ -739,6 +739,13 @@ class FeedbackClientTest {
         try {
             insecureClient.eraseEndUser(sessionToken = "secret_session")
             fail("Expected IllegalArgumentException when sessionToken is sent to non-HTTPS URL")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("HTTPS"))
+        }
+
+        try {
+            insecureClient.eraseEndUser(userToken = "secret_user_token")
+            fail("Expected IllegalArgumentException when userToken is sent to non-HTTPS URL")
         } catch (ex: IllegalArgumentException) {
             assertTrue(ex.message.orEmpty().contains("HTTPS"))
         }
@@ -818,6 +825,34 @@ class FeedbackClientTest {
         assertEquals("[redacted]", meta.getString("app_token"))
         assertEquals("Pixel 8 Pro", meta.getString("device_model"))
         assertFalse(meta.has("invalid key with spaces"))
+        assertEquals("cupthread-android", meta.getString("sdk"))
+        assertEquals("android", meta.getString("platform"))
+        assertTrue(meta.has("submittedAt"))
+    }
+
+    @Test
+    fun submitFeedbackCapsTotalMetadataKeysAt24IncludingDefaults() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(201, """{"submissionId":"s-2","forwardedToGithub":false}""")
+        }
+        val customMeta = (1..30).associate { i ->
+            String.format(java.util.Locale.ROOT, "k_%02d", i) to "v_$i"
+        }
+        val draft = FeedbackDraft(
+            title = "Test",
+            description = "Desc",
+            platform = FeedbackPlatform.ANDROID,
+            metadata = customMeta
+        )
+        client.submit(draft, userToken = "tok")
+
+        val req = requireNotNull(capturedRequest)
+        val body = req.body?.let { String(it, Charsets.UTF_8) } ?: ""
+        val json = JSONObject(body)
+        val meta = json.getJSONObject("metadata")
+        assertEquals(24, meta.length())
         assertEquals("cupthread-android", meta.getString("sdk"))
         assertEquals("android", meta.getString("platform"))
         assertTrue(meta.has("submittedAt"))

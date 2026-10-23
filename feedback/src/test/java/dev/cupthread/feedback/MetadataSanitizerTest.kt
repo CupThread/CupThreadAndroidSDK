@@ -1,6 +1,8 @@
 package dev.cupthread.feedback
 
 import dev.cupthread.feedback.internal.MetadataSanitizer
+import java.util.Locale
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -74,7 +76,7 @@ class MetadataSanitizerTest {
     @Test
     fun capsAt24KeysSortedAlphabetically() {
         val input = (1..30).associate { i ->
-            String.format("key_%02d", i) to "val_$i"
+            String.format(Locale.ROOT, "key_%02d", i) to "val_$i"
         }
 
         val result = MetadataSanitizer.sanitize(input)
@@ -89,16 +91,38 @@ class MetadataSanitizerTest {
     fun capsTotalSerializedSizeAt8Kilobytes() {
         // Create 20 keys with 500-char values (~10 KB total)
         val input = (1..20).associate { i ->
-            String.format("big_entry_%02d", i) to "X".repeat(500)
+            String.format(Locale.ROOT, "big_entry_%02d", i) to "X".repeat(500)
         }
 
         val result = MetadataSanitizer.sanitize(input)
-        var totalBytes = 0
-        for ((k, v) in result) {
-            totalBytes += k.toByteArray(Charsets.UTF_8).size + v.toByteArray(Charsets.UTF_8).size
+        val jsonBytes = JSONObject(result).toString().toByteArray(Charsets.UTF_8).size
+
+        assertTrue("Serialized JSONObject bytes must be <= 8192, but was $jsonBytes", jsonBytes <= 8192)
+        assertTrue("Result should keep as many sorted entries as fit within 8 KB", result.isNotEmpty())
+    }
+
+    @Test
+    fun reservesSlotsAndPreservesDefaultsWithinCaps() {
+        val defaults = mapOf(
+            "sdk" to "cupthread-android",
+            "platform" to "android",
+            "submittedAt" to "2026-10-24T00:00:00.000Z"
+        )
+        val input = (1..30).associate { i ->
+            String.format(Locale.ROOT, "custom_%02d", i) to "val_$i"
         }
 
-        assertTrue("Total bytes must be <= 8192, but was $totalBytes", totalBytes <= 8192)
-        assertTrue("Result should keep as many sorted entries as fit within 8 KB", result.isNotEmpty())
+        val result = MetadataSanitizer.sanitize(input, defaults)
+        assertEquals(24, result.size)
+        assertEquals("cupthread-android", result["sdk"])
+        assertEquals("android", result["platform"])
+        assertEquals("2026-10-24T00:00:00.000Z", result["submittedAt"])
+        // 21 custom keys + 3 defaults = 24
+        assertEquals("val_1", result["custom_01"])
+        assertEquals("val_21", result["custom_21"])
+        assertNull(result["custom_22"])
+
+        val jsonBytes = JSONObject(result).toString().toByteArray(Charsets.UTF_8).size
+        assertTrue("Serialized JSONObject bytes must be <= 8192, but was $jsonBytes", jsonBytes <= 8192)
     }
 }

@@ -1,5 +1,7 @@
 package dev.cupthread.feedback.internal
 
+import org.json.JSONObject
+
 /**
  * Sanitizes feedback metadata according to the CupThread feedback intake contract.
  *
@@ -7,8 +9,8 @@ package dev.cupthread.feedback.internal
  * - Valid key names conforming to `^[A-Za-z0-9_.:-]{1,64}$`
  * - Replacement of credential-looking keys (token, secret, password, apiKey, authorization, cookie, session, etc.) with `"[redacted]"`
  * - Truncation of values to a maximum of 512 characters
- * - Capping total keys at 24, sorted deterministically
- * - Capping total serialized bytes to 8 KB (8192 bytes) by dropping trailing keys in sorted order
+ * - Capping total keys at 24 (including default metadata entries like sdk, platform, submittedAt), sorted deterministically
+ * - Capping total serialized bytes to 8 KB (8192 bytes) of the fully serialized final JSONObject by dropping trailing custom keys in sorted order
  */
 internal object MetadataSanitizer {
     val KEY_REGEX = Regex("^[A-Za-z0-9_.:-]{1,64}$")
@@ -20,12 +22,17 @@ internal object MetadataSanitizer {
     const val MAX_TOTAL_BYTES = 8192
     const val REDACTED = "[redacted]"
 
-    fun sanitize(metadata: Map<String, String>): Map<String, String> {
-        if (metadata.isEmpty()) return emptyMap()
+    fun sanitize(
+        metadata: Map<String, String>,
+        defaults: Map<String, String> = emptyMap()
+    ): Map<String, String> {
+        val reservedSlots = defaults.size
+        val maxCustomKeys = (MAX_KEYS - reservedSlots).coerceAtLeast(0)
 
         val sanitizedEntries = mutableListOf<Pair<String, String>>()
         for ((key, value) in metadata) {
             val trimmedKey = key.trim()
+            if (defaults.containsKey(trimmedKey)) continue
             if (!KEY_REGEX.matches(trimmedKey)) continue
 
             val sanitizedValue = if (SENSITIVE_KEY_REGEX.matches(trimmedKey)) {
@@ -36,25 +43,30 @@ internal object MetadataSanitizer {
             sanitizedEntries.add(trimmedKey to sanitizedValue)
         }
 
-        // Sort deterministically and cap at max 24 keys
-        val sortedEntries = sanitizedEntries
+        // Sort deterministically and cap at available slots (accounting for defaults)
+        val sortedCustomEntries = sanitizedEntries
             .sortedBy { it.first }
-            .take(MAX_KEYS)
+            .take(maxCustomKeys)
             .toMutableList()
 
-        // Enforce 8 KB total size
-        fun totalByteSize(entries: List<Pair<String, String>>): Int {
-            var sum = 0
-            for ((k, v) in entries) {
-                sum += k.toByteArray(Charsets.UTF_8).size + v.toByteArray(Charsets.UTF_8).size
+        // Enforce 8 KB total size on the fully serialized final JSONObject
+        fun totalJsonByteSize(custom: List<Pair<String, String>>): Int {
+            val json = JSONObject()
+            for ((k, v) in custom) {
+                json.put(k, v)
             }
-            return sum
+            for ((k, v) in defaults) {
+                json.put(k, v)
+            }
+            return json.toString().toByteArray(Charsets.UTF_8).size
         }
 
-        while (sortedEntries.isNotEmpty() && totalByteSize(sortedEntries) > MAX_TOTAL_BYTES) {
-            sortedEntries.removeAt(sortedEntries.lastIndex)
+        while (sortedCustomEntries.isNotEmpty() && totalJsonByteSize(sortedCustomEntries) > MAX_TOTAL_BYTES) {
+            sortedCustomEntries.removeAt(sortedCustomEntries.lastIndex)
         }
 
-        return sortedEntries.toMap()
+        val result = sortedCustomEntries.toMap().toMutableMap()
+        result.putAll(defaults)
+        return result
     }
 }
