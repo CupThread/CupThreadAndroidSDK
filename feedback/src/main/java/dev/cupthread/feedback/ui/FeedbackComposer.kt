@@ -40,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +60,8 @@ import dev.cupthread.feedback.FeedbackSubmissionResult
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
+import dev.cupthread.feedback.internal.AttachmentLimits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,6 +115,7 @@ import java.util.Locale
  * @param initialDraft Optional pre-populated [FeedbackDraft]; defaults to an auto-filled draft for the current package.
  * @param onSubmit Callback invoked with the [FeedbackSubmissionResult] upon successful submission.
  * @param onPickAttachment Optional callback to override image attachment selection; if null, uses system PhotoPicker.
+ * @param maxAttachmentBytes Optional client-side upload size cap in bytes. Takes precedence over console configuration.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,10 +126,11 @@ fun FeedbackComposer(
     initialDraft: FeedbackDraft? = null,
     onSubmit: (FeedbackSubmissionResult) -> Unit = {},
     onPickAttachment: (() -> Unit)? = null,
+    maxAttachmentBytes: Long? = null,
     modifier: Modifier = Modifier
 ) {
     SdkSurface(client, SdkFeature.FEEDBACK) {
-        FeedbackComposerContent(client, userToken, initialDraft, onSubmit, onPickAttachment, modifier)
+        FeedbackComposerContent(client, userToken, initialDraft, onSubmit, onPickAttachment, maxAttachmentBytes, modifier)
     }
 }
 
@@ -161,6 +166,7 @@ fun FeedbackComposer(
  * @param onDismiss Callback invoked when the sheet is dismissed.
  * @param onSubmit Callback invoked with [FeedbackSubmissionResult] on successful submission.
  * @param onPickAttachment Optional custom attachment picker callback.
+ * @param maxAttachmentBytes Optional client-side upload size cap in bytes. Takes precedence over console configuration.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,7 +176,8 @@ fun FeedbackComposerSheet(
     initialDraft: FeedbackDraft? = null,
     onDismiss: () -> Unit,
     onSubmit: (FeedbackSubmissionResult) -> Unit = {},
-    onPickAttachment: (() -> Unit)? = null
+    onPickAttachment: (() -> Unit)? = null,
+    maxAttachmentBytes: Long? = null
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         FeedbackFormBody(
@@ -180,6 +187,7 @@ fun FeedbackComposerSheet(
             onSubmit = onSubmit,
             onPickAttachment = onPickAttachment,
             onCloseSheet = onDismiss,
+            maxAttachmentBytes = maxAttachmentBytes,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
@@ -197,6 +205,7 @@ private fun FeedbackComposerContent(
     initialDraft: FeedbackDraft?,
     onSubmit: (FeedbackSubmissionResult) -> Unit,
     onPickAttachment: (() -> Unit)?,
+    maxAttachmentBytes: Long?,
     modifier: Modifier = Modifier
 ) {
     var result by remember { mutableStateOf<FeedbackSubmissionResult?>(null) }
@@ -222,6 +231,7 @@ private fun FeedbackComposerContent(
                 },
                 onPickAttachment = onPickAttachment,
                 onCloseSheet = null,
+                maxAttachmentBytes = maxAttachmentBytes,
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
@@ -240,6 +250,7 @@ private fun FeedbackFormBody(
     onSubmit: (FeedbackSubmissionResult) -> Unit,
     onPickAttachment: (() -> Unit)?,
     onCloseSheet: (() -> Unit)?,
+    maxAttachmentBytes: Long?,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -265,6 +276,23 @@ private fun FeedbackFormBody(
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<FeedbackSubmissionResult?>(null) }
 
+    var effectiveMaxBytes by remember(maxAttachmentBytes) {
+        mutableStateOf(maxAttachmentBytes ?: AttachmentLimits.DEFAULT_MAX_ATTACHMENT_BYTES)
+    }
+
+    LaunchedEffect(client, maxAttachmentBytes) {
+        if (maxAttachmentBytes == null) {
+            try {
+                val config = client.fetchAppConfig()
+                if (config.maxAttachmentBytes > 0) {
+                    effectiveMaxBytes = config.maxAttachmentBytes
+                }
+            } catch (_: Exception) {
+                // Fall back to default or last-known limit on network failure
+            }
+        }
+    }
+
     val defaultUploadError = stringResource(R.string.cupthread_feedback_upload_failed)
     val defaultGenericError = stringResource(R.string.cupthread_feedback_generic_error)
 
@@ -272,6 +300,9 @@ private fun FeedbackFormBody(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
+            if (!AttachmentLimits.canAddAttachment(draft.attachments.size)) {
+                return@rememberLauncherForActivityResult
+            }
             scope.launch {
                 uploadingAttachment = true
                 error = null
@@ -279,6 +310,17 @@ private fun FeedbackFormBody(
                     val bytes = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     } ?: throw IllegalStateException("Could not read image file")
+
+                    if (!AttachmentLimits.isWithinSizeLimit(bytes.size.toLong(), effectiveMaxBytes)) {
+                        val formattedSize = AttachmentLimits.formatFileSize(bytes.size.toLong())
+                        val formattedLimit = AttachmentLimits.formatFileSize(effectiveMaxBytes)
+                        error = context.getString(
+                            R.string.cupthread_attachment_oversized,
+                            formattedSize,
+                            formattedLimit
+                        )
+                        return@launch
+                    }
 
                     val mimeType = context.contentResolver.getType(uri) ?: "image/png"
                     val filename = withContext(Dispatchers.IO) {
@@ -301,6 +343,8 @@ private fun FeedbackFormBody(
                         userToken = userToken
                     )
                     draft = draft.copy(attachments = draft.attachments + uploaded)
+                } catch (ce: CancellationException) {
+                    throw ce
                 } catch (ex: Exception) {
                     error = ex.message ?: defaultUploadError
                 } finally {
@@ -310,7 +354,9 @@ private fun FeedbackFormBody(
         }
     }
 
-    val canSubmit = draft.title.trim().length >= 3 && draft.description.trim().length >= 5
+    val canSubmit = draft.title.trim().length >= 3 &&
+        draft.description.trim().length >= 5 &&
+        draft.attachments.size <= AttachmentLimits.MAX_ATTACHMENT_COUNT
 
     if (result != null) {
         FeedbackSent(
@@ -410,26 +456,28 @@ private fun FeedbackFormBody(
             }
         }
 
-        OutlinedButton(
-            onClick = {
-                if (onPickAttachment != null) {
-                    onPickAttachment()
-                } else {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
-            },
-            enabled = !submitting && !uploadingAttachment,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                Icons.Outlined.AddPhotoAlternate,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.cupthread_feedback_add_attachment))
+        if (draft.attachments.size < AttachmentLimits.MAX_ATTACHMENT_COUNT) {
+            OutlinedButton(
+                onClick = {
+                    if (onPickAttachment != null) {
+                        onPickAttachment()
+                    } else {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                },
+                enabled = !submitting && !uploadingAttachment,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Outlined.AddPhotoAlternate,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.cupthread_feedback_add_attachment))
+            }
         }
 
         AnimatedVisibility(error != null) {
@@ -451,6 +499,8 @@ private fun FeedbackFormBody(
                         val sent = client.submit(draft, userToken)
                         result = sent
                         onSubmit(sent)
+                    } catch (ce: CancellationException) {
+                        throw ce
                     } catch (ex: Exception) {
                         error = ex.message ?: defaultGenericError
                     } finally {

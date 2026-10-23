@@ -21,6 +21,7 @@
     <string name="cupthread_feedback_uploading_attachment">Enviando anexo…</string>
     <string name="cupthread_feedback_remove_attachment">Remover anexo</string>
     <string name="cupthread_feedback_upload_failed">Falha ao enviar anexo</string>
+    <string name="cupthread_attachment_oversized">O anexo (%1$s) excede o tamanho máximo permitido de %2$s.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Sugestões de recursos</string>
