@@ -14,6 +14,7 @@ import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
+import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
@@ -31,6 +32,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -173,7 +175,8 @@ class FeedbackClient internal constructor(
                 path = "/api/v1/feedback",
                 body = payload,
                 userToken = userToken,
-                accepted = setOf(200, 201, 202)
+                accepted = setOf(200, 201, 202),
+                mapSubmissionQuotaErrors = true
             )
         )
     }
@@ -362,14 +365,16 @@ class FeedbackClient internal constructor(
     ): ListFeatureRequestsResult {
         val params = mutableListOf(
             "appKey" to config.appKey,
-            "userToken" to userToken,
             "limit" to limit.toString(),
             "offset" to offset.toString()
         )
         if (!versionId.isNullOrBlank()) params += "versionId" to versionId
         if (!query.isNullOrBlank()) params += "q" to query
         if (!cursor.isNullOrBlank()) params += "cursor" to cursor
-        return parseListFeatureRequests(get("/api/v1/feature-requests?${encodeQuery(params)}"), offset)
+        return parseListFeatureRequests(
+            get("/api/v1/feature-requests?${encodeQuery(params)}", userToken = userToken),
+            offset
+        )
     }
 
     /**
@@ -414,7 +419,14 @@ class FeedbackClient internal constructor(
             put("requesterToken", userToken)
         }
         return parseFeatureRequestSubmission(
-            sendJson("POST", "/api/v1/feature-requests", payload, userToken = null, accepted = setOf(200, 201))
+            sendJson(
+                method = "POST",
+                path = "/api/v1/feature-requests",
+                body = payload,
+                userToken = null,
+                accepted = setOf(200, 201),
+                mapSubmissionQuotaErrors = true
+            )
         )
     }
 
@@ -749,6 +761,61 @@ class FeedbackClient internal constructor(
         parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
 
 
+    /**
+     * Links an anonymous end-user profile to an authenticated user session via `POST /api/v1/me/link`.
+     *
+     * Enables explicit linking of an anonymous end-user profile (and its historical feedback, votes,
+     * and comments) to an authenticated account identity.
+     *
+     * @param sessionToken Bearer authentication token representing the signed-in user session.
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [EndUserLinkResult] containing the linking status and profile identifiers.
+     * @throws IllegalArgumentException if [sessionToken] or [userToken] is blank.
+     * @throws FeedbackException.AuthenticationRequired if the session token is missing or expired (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on HTTP 400, 404, 409 (conflict), or other server rejections.
+     * @throws FeedbackException.InvalidResponse on network failure or invalid response JSON.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.linkEndUser(
+     *     sessionToken = "sess_abc123",
+     *     userToken = userToken
+     * )
+     * println("Linked: ${result.linked}, User ID: ${result.clerkUserId}")
+     * ```
+     */
+    suspend fun linkEndUser(sessionToken: String, userToken: String): EndUserLinkResult {
+        require(sessionToken.isNotBlank()) { "sessionToken cannot be blank" }
+        require(userToken.isNotBlank()) { "userToken cannot be blank" }
+
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/link")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "linkEndUser destination must use HTTPS to protect sessionToken: $targetUrl"
+        }
+
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+        }
+        val response = sendJson(
+            method = "POST",
+            path = "/api/v1/me/link",
+            body = payload,
+            userToken = userToken.trim(),
+            bearerToken = sessionToken.trim(),
+            accepted = setOf(200)
+        )
+        return try {
+            parseEndUserLinkResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
+    }
+
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()
         return draft.metadata + mapOf(
@@ -758,14 +825,20 @@ class FeedbackClient internal constructor(
         )
     }
 
-    private suspend fun get(path: String): JSONObject = sendJson("GET", path, body = null)
+    private suspend fun get(
+        path: String,
+        userToken: String? = null,
+        bearerToken: String? = null
+    ): JSONObject = sendJson("GET", path, body = null, userToken = userToken, bearerToken = bearerToken)
 
     private fun buildHeaders(
         contentType: String?,
-        userToken: String?
+        userToken: String?,
+        bearerToken: String? = null
     ): Map<String, String> = buildMap {
         if (contentType != null) put("Content-Type", contentType)
         if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
+        if (!bearerToken.isNullOrBlank()) put("Authorization", "Bearer $bearerToken")
     }
 
     private suspend fun sendJson(
@@ -773,18 +846,21 @@ class FeedbackClient internal constructor(
         path: String,
         body: JSONObject?,
         userToken: String? = null,
-        accepted: Set<Int> = setOf(200)
+        bearerToken: String? = null,
+        accepted: Set<Int> = setOf(200),
+        mapSubmissionQuotaErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
             HttpRequest(
                 method = method,
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken),
+                headers = buildHeaders(contentType, userToken, bearerToken),
                 contentType = contentType,
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
-            accepted
+            accepted,
+            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors
         )
     }
 
@@ -793,6 +869,7 @@ class FeedbackClient internal constructor(
         boundary: String,
         body: ByteArray,
         userToken: String? = null,
+        bearerToken: String? = null,
         accepted: Set<Int> = setOf(200, 201)
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
@@ -800,7 +877,7 @@ class FeedbackClient internal constructor(
             HttpRequest(
                 method = "POST",
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken),
+                headers = buildHeaders(contentType, userToken, bearerToken),
                 contentType = contentType,
                 body = body
             ),
@@ -808,7 +885,11 @@ class FeedbackClient internal constructor(
         )
     }
 
-    private suspend fun send(request: HttpRequest, accepted: Set<Int>): JSONObject =
+    private suspend fun send(
+        request: HttpRequest,
+        accepted: Set<Int>,
+        mapSubmissionQuotaErrors: Boolean = false
+    ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
                 transport.execute(request)
@@ -819,7 +900,7 @@ class FeedbackClient internal constructor(
             }
             if (response.code !in accepted) {
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired()
-                if (response.code == 402) {
+                if (response.code == 402 && mapSubmissionQuotaErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     when (errorPayload?.first) {
                         "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second)
