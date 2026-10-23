@@ -773,6 +773,16 @@ class FeedbackClient internal constructor(
         require(sessionToken.isNotBlank()) { "sessionToken cannot be blank" }
         require(userToken.isNotBlank()) { "userToken cannot be blank" }
 
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/link")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "linkEndUser destination must use HTTPS to protect sessionToken: $targetUrl"
+        }
+
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
         }

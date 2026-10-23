@@ -508,6 +508,58 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun linkEndUserRejectsNonHttpsDestination() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://insecure.cupthread.com",
+                appKey = appKey
+            ),
+            transport = HttpTransport { HttpResponse(200, "{}") }
+        )
+        try {
+            insecureClient.linkEndUser(sessionToken = "sess", userToken = "user")
+            fail("Expected IllegalArgumentException when linkEndUser baseUrl is not HTTPS")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("HTTPS"))
+        }
+    }
+
+    @Test
+    fun parseEndUserLinkResultHandlesJsonNullAndEmptyStringsCorrectly() {
+        val envelopeWithNulls = JSONObject(
+            """
+            {
+                "endUser": {
+                    "id": null,
+                    "endUserId": null,
+                    "clerkUserId": null,
+                    "identityConfirmed": false
+                }
+            }
+            """.trimIndent()
+        )
+        val res1 = dev.cupthread.feedback.internal.parseEndUserLinkResult(envelopeWithNulls)
+        assertFalse(res1.linked)
+        assertNull(res1.endUserId)
+        assertNull(res1.clerkUserId)
+
+        val flatWithNulls = JSONObject(
+            """
+            {
+                "linked": true,
+                "endUserId": null,
+                "id": "",
+                "clerkUserId": null
+            }
+            """.trimIndent()
+        )
+        val res2 = dev.cupthread.feedback.internal.parseEndUserLinkResult(flatWithNulls)
+        assertTrue(res2.linked)
+        assertNull(res2.endUserId)
+        assertNull(res2.clerkUserId)
+    }
+
+    @Test
     fun fetchChangelogMaps401ToAuthenticationRequired() = runTest {
         try {
             client { HttpResponse(401, """{"code":"authentication_required"}""") }.fetchChangelog()

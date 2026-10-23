@@ -327,18 +327,24 @@ internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileRe
 internal fun parseEndUserLinkResult(json: JSONObject): EndUserLinkResult {
     val endUser = json.optJSONObject("endUser")
     if (endUser != null) {
-        val id = endUser.optString("id").ifEmpty { endUser.optString("endUserId").ifEmpty { null } }
-        val clerkUserId = endUser.optString("clerkUserId").ifEmpty { null }
-        val confirmed = if (endUser.has("identityConfirmed")) endUser.optBoolean("identityConfirmed", true) else true
+        val id = endUser.stringOrNull("id")?.takeIf { it.isNotEmpty() }
+            ?: endUser.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
+        val clerkUserId = endUser.stringOrNull("clerkUserId")?.takeIf { it.isNotEmpty() }
+        val confirmed = if (endUser.has("identityConfirmed") && !endUser.isNull("identityConfirmed")) {
+            endUser.getBoolean("identityConfirmed")
+        } else {
+            true
+        }
         return EndUserLinkResult(
             linked = confirmed,
             endUserId = id,
             clerkUserId = clerkUserId
         )
     }
-    val linked = json.optBoolean("linked", true)
-    val endUserId = json.optString("endUserId").ifEmpty { json.optString("id").ifEmpty { null } }
-    val clerkUserId = json.optString("clerkUserId").ifEmpty { null }
+    val linked = json.booleanOr("linked", true)
+    val endUserId = json.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
+        ?: json.stringOrNull("id")?.takeIf { it.isNotEmpty() }
+    val clerkUserId = json.stringOrNull("clerkUserId")?.takeIf { it.isNotEmpty() }
     return EndUserLinkResult(
         linked = linked,
         endUserId = endUserId,
