@@ -53,6 +53,30 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         FeedbackException("These updates are only available to signed-in users.")
 
     /**
+     * Raised when the server responds with HTTP 402 `tier_limit_submissions`, indicating
+     * that the application's workspace has reached its monthly submission quota.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     */
+    class SubmissionQuotaExceeded(val serverMessage: String? = null) :
+        FeedbackException(
+            serverMessage?.ifBlank { null }
+                ?: "This app has reached its submission limit for this month. Please try again later."
+        )
+
+    /**
+     * Raised when the server responds with HTTP 402 `subscription_inactive`, indicating
+     * that the application's workspace subscription is inactive or canceled.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     */
+    class SubscriptionInactive(val serverMessage: String? = null) :
+        FeedbackException(
+            serverMessage?.ifBlank { null }
+                ?: "Submissions are unavailable for this app right now. Please try again later."
+        )
+
+    /**
      * Raised when the server responds with an HTTP status code outside the accepted success range
      * for the specific endpoint.
      *

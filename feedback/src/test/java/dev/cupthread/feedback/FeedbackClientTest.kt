@@ -896,6 +896,170 @@ class FeedbackClientTest {
         assertEquals(token1, token2)
     }
 
+    @Test
+    fun submitFeatureRequestSubmitsPayloadAndParsesResult() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "anon_user_token_123"
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(201, """{"featureRequestId":"fr_new_1","pending":false}""")
+        }
+        val draft = FeatureRequestDraft(
+            title = "Custom Keyboard Shortcuts",
+            description = "Allow users to bind custom hotkeys.",
+            requesterName = "Alice"
+        )
+        val result = client.submitFeatureRequest(draft, userToken = token)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("POST", req.method)
+        assertTrue(req.url.endsWith("/api/v1/feature-requests"))
+        val bodyJson = JSONObject(String(req.body!!, Charsets.UTF_8))
+        assertEquals("app_testkey123456", bodyJson.getString("appKey"))
+        assertEquals("Custom Keyboard Shortcuts", bodyJson.getString("title"))
+        assertEquals("Allow users to bind custom hotkeys.", bodyJson.getString("description"))
+        assertEquals("Alice", bodyJson.getString("requesterName"))
+        assertEquals(token, bodyJson.getString("requesterToken"))
+
+        assertEquals("fr_new_1", result.featureRequestId)
+        assertFalse(result.pending)
+    }
+
+    @Test
+    fun submitFeatureRequestMaps402SubmissionQuotaExceeded() = runTest {
+        val client = client {
+            HttpResponse(
+                402,
+                """{"error":"Workspace monthly submission quota reached","code":"tier_limit_submissions"}"""
+            )
+        }
+        val draft = FeatureRequestDraft(title = "Idea", description = "More details")
+        try {
+            client.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected SubmissionQuotaExceeded exception")
+        } catch (ex: FeedbackException.SubmissionQuotaExceeded) {
+            assertEquals("Workspace monthly submission quota reached", ex.serverMessage)
+            assertEquals("Workspace monthly submission quota reached", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeatureRequestMaps402SubscriptionInactive() = runTest {
+        val client = client {
+            HttpResponse(
+                402,
+                """{"error":"Workspace subscription is inactive","code":"subscription_inactive"}"""
+            )
+        }
+        val draft = FeatureRequestDraft(title = "Idea", description = "More details")
+        try {
+            client.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected SubscriptionInactive exception")
+        } catch (ex: FeedbackException.SubscriptionInactive) {
+            assertEquals("Workspace subscription is inactive", ex.serverMessage)
+            assertEquals("Workspace subscription is inactive", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps402SubmissionQuotaExceeded() = runTest {
+        val client = client {
+            HttpResponse(
+                402,
+                """{"error":"Monthly feedback quota exceeded","code":"tier_limit_submissions"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected SubmissionQuotaExceeded exception")
+        } catch (ex: FeedbackException.SubmissionQuotaExceeded) {
+            assertEquals("Monthly feedback quota exceeded", ex.serverMessage)
+            assertEquals("Monthly feedback quota exceeded", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps402SubscriptionInactive() = runTest {
+        val client = client {
+            HttpResponse(
+                402,
+                """{"error":"Subscription has expired","code":"subscription_inactive"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected SubscriptionInactive exception")
+        } catch (ex: FeedbackException.SubscriptionInactive) {
+            assertEquals("Subscription has expired", ex.serverMessage)
+            assertEquals("Subscription has expired", ex.message)
+        }
+    }
+
+    @Test
+    fun submissionsMapUnknownOrMissing402CodeToUnexpectedStatus() = runTest {
+        val clientUnknown = client {
+            HttpResponse(
+                402,
+                """{"error":"Unknown billing issue","code":"some_other_code"}"""
+            )
+        }
+        val draft = FeatureRequestDraft(title = "Idea", description = "Details")
+        try {
+            clientUnknown.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected UnexpectedStatus for unknown 402 code")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(402, ex.code)
+            assertTrue(ex.serverMessage.contains("some_other_code"))
+        }
+
+        val clientNoCode = client {
+            HttpResponse(402, """{"error":"Payment required"}""")
+        }
+        try {
+            clientNoCode.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected UnexpectedStatus for 402 without code")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(402, ex.code)
+            assertTrue(ex.serverMessage.contains("Payment required"))
+        }
+    }
+
+    @Test
+    fun nonSubmissionRequestsDoNotMap402ToQuotaExceptions() = runTest {
+        val client = client {
+            HttpResponse(
+                402,
+                """{"error":"Workspace monthly submission quota reached","code":"tier_limit_submissions"}"""
+            )
+        }
+        try {
+            client.fetchColumns()
+            fail("Expected UnexpectedStatus for non-submission 402")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(402, ex.code)
+            assertTrue(ex.serverMessage.contains("tier_limit_submissions"))
+        }
+    }
+
+    @Test
+    fun submissionQuotaExceptionsUseDefaultMessagesWhenServerMessageIsOmitted() {
+        val quotaEx = FeedbackException.SubmissionQuotaExceeded(null)
+        assertNull(quotaEx.serverMessage)
+        assertEquals(
+            "This app has reached its submission limit for this month. Please try again later.",
+            quotaEx.message
+        )
+
+        val inactiveEx = FeedbackException.SubscriptionInactive("")
+        assertEquals("", inactiveEx.serverMessage)
+        assertEquals(
+            "Submissions are unavailable for this app right now. Please try again later.",
+            inactiveEx.message
+        )
+    }
+
     companion object {
         private val CONFIG_JSON = """
             {
