@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Nie udało się przesłać załącznika</string>
     <string name="cupthread_attachment_oversized">Załącznik (%1$s) przekracza maksymalny dozwolony rozmiar %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Załącznik przekracza maksymalny dozwolony rozmiar %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Nieobsługiwany format obrazu. Wybierz obraz PNG, JPEG, WebP lub GIF.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Propozycje funkcji</string>

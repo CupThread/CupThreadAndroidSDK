@@ -5,6 +5,7 @@ import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.internal.UrlConnectionTransport
+import dev.cupthread.feedback.internal.AttachmentLimits
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
@@ -64,6 +65,7 @@ import org.json.JSONObject
  * - [FeedbackException.AuthenticationRequired]: Endpoint requires an authenticated or permitted user session (HTTP 401).
  * - [FeedbackException.SubmissionQuotaExceeded]: Workspace monthly submission quota reached (HTTP 402 `tier_limit_submissions`).
  * - [FeedbackException.SubscriptionInactive]: Workspace subscription is inactive or canceled (HTTP 402 `subscription_inactive`).
+ * - [FeedbackException.UnsupportedMediaType]: File format or image media type is unsupported (HTTP 415 `unsupported_media_type`).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
@@ -203,6 +205,7 @@ class FeedbackClient internal constructor(
      * @param userToken Optional stable user token (from [UserTokenStore]) to attribute the upload.
      * @return A populated [FeedbackAttachment] containing the persisted URL and storage key.
      * @throws FeedbackException.AuthenticationRequired on HTTP 401.
+     * @throws FeedbackException.UnsupportedMediaType on HTTP 415 or when an unsupported image format (e.g. SVG) is uploaded.
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded `maxAttachmentBytes`).
      * @throws FeedbackException.InvalidResponse if a network error occurs.
@@ -232,6 +235,9 @@ class FeedbackClient internal constructor(
         } else {
             FeedbackAttachment.Kind.R2
         }
+        if (kind == FeedbackAttachment.Kind.IMAGE) {
+            AttachmentLimits.validateImageAttachment(data, filename, mimeType)
+        }
         val path = if (kind == FeedbackAttachment.Kind.IMAGE) {
             "/api/v1/uploads/images"
         } else {
@@ -239,12 +245,14 @@ class FeedbackClient internal constructor(
         }
         val boundary = "Boundary-${UUID.randomUUID()}"
         val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
+        val isImageUpload = (kind == FeedbackAttachment.Kind.IMAGE)
         val json = sendMultipart(
             path = path,
             boundary = boundary,
             body = body,
             userToken = userToken,
-            accepted = setOf(200, 201)
+            accepted = setOf(200, 201),
+            mapUnsupportedMediaType = isImageUpload
         )
         return try {
             parseAttachment(json)
@@ -978,7 +986,8 @@ class FeedbackClient internal constructor(
         body: ByteArray,
         userToken: String? = null,
         bearerToken: String? = null,
-        accepted: Set<Int> = setOf(200, 201)
+        accepted: Set<Int> = setOf(200, 201),
+        mapUnsupportedMediaType: Boolean = false
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
         return send(
@@ -989,14 +998,16 @@ class FeedbackClient internal constructor(
                 contentType = contentType,
                 body = body
             ),
-            accepted
+            accepted,
+            mapUnsupportedMediaType = mapUnsupportedMediaType
         )
     }
 
     private suspend fun send(
         request: HttpRequest,
         accepted: Set<Int>,
-        mapSubmissionQuotaErrors: Boolean = false
+        mapSubmissionQuotaErrors: Boolean = false,
+        mapUnsupportedMediaType: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1014,6 +1025,10 @@ class FeedbackClient internal constructor(
                         "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second)
                         "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second)
                     }
+                }
+                if (response.code == 415 && mapUnsupportedMediaType) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null })
                 }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
             }

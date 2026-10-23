@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Impossibile caricare l\'allegato</string>
     <string name="cupthread_attachment_oversized">L\'allegato (%1$s) supera la dimensione massima consentita di %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">L\'allegato supera la dimensione massima consentita di %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Formato immagine non supportato. Seleziona un\'immagine PNG, JPEG, WebP o GIF.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Richieste funzionalità</string>

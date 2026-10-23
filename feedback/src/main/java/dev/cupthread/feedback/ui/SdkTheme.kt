@@ -23,6 +23,7 @@ import dev.cupthread.feedback.SdkAppearance
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.SdkTheme
 import dev.cupthread.feedback.internal.SdkAppearanceCache
+import kotlinx.coroutines.CancellationException
 
 internal val LocalSdkAppearance = staticCompositionLocalOf<SdkAppearance?> { null }
 
@@ -203,6 +204,8 @@ fun rememberSdkAppearanceState(
             val remoteSdk = client.fetchAppConfig().sdk
             SdkAppearanceCache.put(client.config.appKey, remoteSdk)
             state = SdkAppearanceState.Success(remoteSdk)
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (t: Throwable) {
             onFetchError?.invoke(t)
             state = SdkAppearanceState.Error(t, currentCached)

@@ -133,4 +133,114 @@ class AttachmentLimitsTest {
         assertTrue(canSubmitWith4)
         assertTrue(AttachmentLimits.canAddAttachment(underLimitDraft.attachments.size))
     }
+
+    @Test
+    fun isSupportedImageMimeValidatesAllowedImageTypes() {
+        assertTrue(AttachmentLimits.isSupportedImageMime("image/png"))
+        assertTrue(AttachmentLimits.isSupportedImageMime("image/jpeg"))
+        assertTrue(AttachmentLimits.isSupportedImageMime("image/jpg"))
+        assertTrue(AttachmentLimits.isSupportedImageMime("image/webp"))
+        assertTrue(AttachmentLimits.isSupportedImageMime("image/gif"))
+        assertTrue(AttachmentLimits.isSupportedImageMime("IMAGE/PNG"))
+
+        assertFalse(AttachmentLimits.isSupportedImageMime("image/svg+xml"))
+        assertFalse(AttachmentLimits.isSupportedImageMime("image/bmp"))
+        assertFalse(AttachmentLimits.isSupportedImageMime("application/pdf"))
+        assertFalse(AttachmentLimits.isSupportedImageMime("text/plain"))
+    }
+
+    @Test
+    fun isSvgIdentifiesSvgFilenamesAndMimes() {
+        assertTrue(AttachmentLimits.isSvg("icon.svg", "image/png"))
+        assertTrue(AttachmentLimits.isSvg("icon.SVG", "image/png"))
+        assertTrue(AttachmentLimits.isSvg("photo.png", "image/svg+xml"))
+        assertTrue(AttachmentLimits.isSvg("chart.svg", "image/svg+xml"))
+
+        assertFalse(AttachmentLimits.isSvg("photo.png", "image/png"))
+        assertFalse(AttachmentLimits.isSvg("photo.jpg", "image/jpeg"))
+        assertFalse(AttachmentLimits.isSvg("logo.webp", "image/webp"))
+        assertFalse(AttachmentLimits.isSvg("anim.gif", "image/gif"))
+        assertFalse(AttachmentLimits.isSvg(null, null))
+    }
+
+    @Test
+    fun sniffImageMimeTypeDetectsMagicBytes() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        assertEquals("image/png", AttachmentLimits.sniffImageMimeType(pngBytes))
+
+        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        assertEquals("image/jpeg", AttachmentLimits.sniffImageMimeType(jpegBytes))
+
+        val gifBytes = "GIF89aSomeImageData".toByteArray()
+        assertEquals("image/gif", AttachmentLimits.sniffImageMimeType(gifBytes))
+
+        val webpBytes = "RIFF\u0000\u0000\u0000\u0000WEBPVP8 ".toByteArray(Charsets.US_ASCII)
+        assertEquals("image/webp", AttachmentLimits.sniffImageMimeType(webpBytes))
+
+        val randomBytes = byteArrayOf(1, 2, 3, 4, 5)
+        assertEquals(null, AttachmentLimits.sniffImageMimeType(randomBytes))
+    }
+
+    @Test
+    fun hasSvgContentDetectsXmlAndSvgTags() {
+        val svgXml = "<?xml version=\"1.0\"?><svg width=\"100\"></svg>".toByteArray()
+        assertTrue(AttachmentLimits.hasSvgContent(svgXml))
+
+        val rawSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>".toByteArray()
+        assertTrue(AttachmentLimits.hasSvgContent(rawSvg))
+
+        val binaryData = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        assertFalse(AttachmentLimits.hasSvgContent(binaryData))
+
+        val pngWithSvgPayload = binaryData + "<svg xmlns='...'>".toByteArray()
+        assertFalse(AttachmentLimits.hasSvgContent(pngWithSvgPayload))
+    }
+
+    @Test
+    fun validateImageAttachmentAcceptsValidImages() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "screenshot.png", "image/png")
+
+        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        AttachmentLimits.validateImageAttachment(jpegBytes, "photo.jpg", "image/jpeg")
+
+        val pngWithSvgComment = pngBytes + "<svg>embedded metadata</svg>".toByteArray()
+        AttachmentLimits.validateImageAttachment(pngWithSvgComment, "screenshot.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsSvgFilename() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "vector.svg", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsSvgMime() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "vector.png", "image/svg+xml")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsSvgContentDisguisedAsPng() {
+        val svgBytes = "<svg width=\"100\" height=\"100\"></svg>".toByteArray()
+        AttachmentLimits.validateImageAttachment(svgBytes, "vector.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsMagicByteMismatch() {
+        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        AttachmentLimits.validateImageAttachment(jpegBytes, "screenshot.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsArbitraryBytesWithPngMime() {
+        val arbitraryBytes = byteArrayOf(1, 2, 3, 4, 5)
+        AttachmentLimits.validateImageAttachment(arbitraryBytes, "screenshot.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsUnsupportedDeclaredMime() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "doc.pdf", "application/pdf")
+    }
 }

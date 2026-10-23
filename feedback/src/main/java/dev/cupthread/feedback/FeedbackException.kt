@@ -14,6 +14,8 @@ package dev.cupthread.feedback
  *     showSuccessToast("Submitted: ${result.submissionId}")
  * } catch (e: FeedbackException.AuthenticationRequired) {
  *     showLoginPrompt("Please sign in to submit feedback.")
+ * } catch (e: FeedbackException.UnsupportedMediaType) {
+ *     showErrorSnackbar("Unsupported file format: ${e.message}")
  * } catch (e: FeedbackException.UnexpectedStatus) {
  *     Log.e("Feedback", "Server error code: ${e.code}, message: ${e.serverMessage}")
  *     showErrorSnackbar("Submission failed: ${e.serverMessage}")
@@ -51,6 +53,19 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      */
     class AuthenticationRequired :
         FeedbackException("These updates are only available to signed-in users.")
+
+    /**
+     * Raised when an attachment upload HTTP request is rejected because the file media type
+     * is unsupported (HTTP 415 `unsupported_media_type`), such as SVG images or files whose
+     * content does not match the accepted image formats (PNG, JPEG, WebP, GIF).
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     */
+    class UnsupportedMediaType(val serverMessage: String? = null) :
+        FeedbackException(
+            serverMessage?.ifBlank { null }
+                ?: "This image format is not supported. Please upload a PNG, JPEG, WebP, or GIF image."
+        )
 
     /**
      * Raised when the server responds with HTTP 402 `tier_limit_submissions`, indicating

@@ -215,6 +215,14 @@ class FeedbackClientTest {
         assertEquals("attachment_signing_unconfigured", result.warningCode)
     }
 
+    private val validPngBytes = byteArrayOf(
+        0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(),
+        0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte()
+    )
+    private val validJpegBytes = byteArrayOf(
+        0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte()
+    )
+
     @Test
     fun uploadAttachmentSendsUserTokenHeaderWhenProvided() = runTest {
         var capturedRequest: HttpRequest? = null
@@ -234,7 +242,7 @@ class FeedbackClientTest {
             capturedRequest = request
             HttpResponse(201, json)
         }.uploadAttachment(
-            data = "fake-image-bytes".toByteArray(),
+            data = validPngBytes,
             filename = "screenshot.png",
             mimeType = "image/png",
             userToken = token
@@ -259,7 +267,7 @@ class FeedbackClientTest {
             capturedReq1 = request
             HttpResponse(200, json)
         }.uploadAttachment(
-            data = byteArrayOf(1, 2, 3),
+            data = validPngBytes,
             filename = "file.png",
             mimeType = "image/png",
             userToken = null
@@ -271,7 +279,7 @@ class FeedbackClientTest {
             capturedReq2 = request
             HttpResponse(200, json)
         }.uploadAttachment(
-            data = byteArrayOf(1, 2, 3),
+            data = validPngBytes,
             filename = "file.png",
             mimeType = "image/png",
             userToken = "   "
@@ -284,12 +292,12 @@ class FeedbackClientTest {
         val json = """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}"""
 
         val res200 = client { HttpResponse(200, json) }.uploadAttachment(
-            data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+            data = validPngBytes, filename = "f.png", mimeType = "image/png"
         )
         assertEquals("k1", res200.key)
 
         val res201 = client { HttpResponse(201, json) }.uploadAttachment(
-            data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+            data = validPngBytes, filename = "f.png", mimeType = "image/png"
         )
         assertEquals("k1", res201.key)
     }
@@ -298,7 +306,7 @@ class FeedbackClientTest {
     fun uploadAttachmentThrowsAuthenticationRequiredOnHttp401() = runTest {
         try {
             client { HttpResponse(401, """{"error":"unauthorized"}""") }.uploadAttachment(
-                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png", userToken = "invalid_tok"
+                data = validPngBytes, filename = "f.png", mimeType = "image/png", userToken = "invalid_tok"
             )
             fail("expected AuthenticationRequired")
         } catch (_: FeedbackException.AuthenticationRequired) {
@@ -309,7 +317,7 @@ class FeedbackClientTest {
     fun uploadAttachmentThrowsUnexpectedStatusOnHttp400() = runTest {
         try {
             client { HttpResponse(400, "Payload too large") }.uploadAttachment(
-                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+                data = validPngBytes, filename = "f.png", mimeType = "image/png"
             )
             fail("expected UnexpectedStatus")
         } catch (ex: FeedbackException.UnexpectedStatus) {
@@ -322,7 +330,7 @@ class FeedbackClientTest {
     fun uploadAttachmentThrowsUnreadableUploadResponseOnInvalidJson() = runTest {
         try {
             client { HttpResponse(200, """{"random":"payload"}""") }.uploadAttachment(
-                data = byteArrayOf(1), filename = "f.png", mimeType = "image/png"
+                data = validPngBytes, filename = "f.png", mimeType = "image/png"
             )
             fail("expected UnreadableUploadResponse")
         } catch (_: FeedbackException.UnreadableUploadResponse) {
@@ -338,7 +346,7 @@ class FeedbackClientTest {
         client { request ->
             urlImage = request.url
             HttpResponse(200, jsonImage)
-        }.uploadAttachment(data = byteArrayOf(1), filename = "photo.jpg", mimeType = "image/jpeg")
+        }.uploadAttachment(data = validJpegBytes, filename = "photo.jpg", mimeType = "image/jpeg")
         assertEquals("https://api.example.com/api/v1/uploads/images", urlImage)
 
         var urlR2: String? = null
@@ -351,14 +359,115 @@ class FeedbackClientTest {
         var urlOverride: String? = null
         client { request ->
             urlOverride = request.url
-            HttpResponse(200, jsonImage)
+            HttpResponse(200, jsonR2)
         }.uploadAttachment(
-            data = byteArrayOf(1),
-            filename = "blob.bin",
-            mimeType = "application/octet-stream",
-            preferredKind = FeedbackAttachment.Kind.IMAGE
+            data = validPngBytes,
+            filename = "photo.png",
+            mimeType = "image/png",
+            preferredKind = FeedbackAttachment.Kind.R2
         )
-        assertEquals("https://api.example.com/api/v1/uploads/images", urlOverride)
+        assertEquals("https://api.example.com/api/v1/uploads/r2", urlOverride)
+    }
+
+    @Test
+    fun uploadAttachmentMapsHttp415ToUnsupportedMediaTypeWithServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    415,
+                    """
+                    {
+                      "error": "Uploaded file content does not match declared image/png format",
+                      "code": "unsupported_media_type"
+                    }
+                    """.trimIndent()
+                )
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertEquals("Uploaded file content does not match declared image/png format", ex.serverMessage)
+            assertEquals("Uploaded file content does not match declared image/png format", ex.message)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentMapsHttp415WithBlankBodyToUnsupportedMediaTypeDefaultMessage() = runTest {
+        try {
+            client {
+                HttpResponse(415, "   ")
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertNull(ex.serverMessage)
+            assertEquals(
+                "This image format is not supported. Please upload a PNG, JPEG, WebP, or GIF image.",
+                ex.message
+            )
+        }
+    }
+
+    @Test
+    fun nonUploadRequestsDoNotMapHttp415ToUnsupportedMediaType() = runTest {
+        try {
+            client {
+                HttpResponse(415, "Unsupported")
+            }.submit(FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID))
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(415, ex.code)
+            assertEquals("Unsupported", ex.serverMessage)
+        }
+
+        try {
+            client {
+                HttpResponse(415, "")
+            }.fetchAppConfig()
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(415, ex.code)
+            assertEquals("Unknown error", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentRejectsSvgClientSide() = runTest {
+        try {
+            client {
+                HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")
+            }.uploadAttachment(
+                data = "<svg></svg>".toByteArray(),
+                filename = "logo.svg",
+                mimeType = "image/svg+xml"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertTrue(ex.message?.contains("SVG") == true)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentRejectsMismatchedMagicBytesClientSide() = runTest {
+        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        try {
+            client {
+                HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")
+            }.uploadAttachment(
+                data = jpegBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (ex: FeedbackException.UnsupportedMediaType) {
+            assertTrue(ex.message?.contains("does not match") == true)
+        }
     }
 
     @Test

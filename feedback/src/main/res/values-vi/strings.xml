@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Tải tệp đính kèm lên thất bại</string>
     <string name="cupthread_attachment_oversized">Tệp đính kèm (%1$s) vượt quá kích thước tối đa cho phép là %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Tệp đính kèm vượt quá kích thước tối đa cho phép là %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Định dạng hình ảnh không được hỗ trợ. Vui lòng chọn hình ảnh PNG, JPEG, WebP hoặc GIF.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Yêu cầu tính năng</string>

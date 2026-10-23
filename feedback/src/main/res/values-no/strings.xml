@@ -23,6 +23,7 @@
     <string name="cupthread_feedback_upload_failed">Kunne ikke laste opp vedlegg</string>
     <string name="cupthread_attachment_oversized">Vedlegg (%1$s) overskrider maksimal tillatt størrelse på %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Vedlegg overskrider maksimal tillatt størrelse på %1$s.</string>
+    <string name="cupthread_feedback_unsupported_image_type">Ikke-støttet bildeformat. Vennligst velg et PNG-, JPEG-, WebP- eller GIF-bilde.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funksjonsønsker</string>
