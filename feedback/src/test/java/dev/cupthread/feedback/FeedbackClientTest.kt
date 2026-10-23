@@ -5,6 +5,7 @@ import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -382,6 +383,128 @@ class FeedbackClientTest {
         }.fetchFeatureRequests(userToken = UUID.randomUUID().toString(), query = "dark mode")
         assertTrue(url!!.contains("/api/v1/feature-requests?"))
         assertTrue(url.contains("q=dark%20mode"))
+    }
+
+    @Test
+    fun fetchFeatureRequestsTransmitsUserTokenInHeaderNotQuery() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "anon_user_token_12345"
+        client { request ->
+            capturedRequest = request
+            HttpResponse(200, """{"requests":[],"total":0}""")
+        }.fetchFeatureRequests(userToken = token)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("GET", req.method)
+        assertEquals(token, req.headers["X-User-Token"])
+        assertFalse(req.url.contains("userToken="))
+        assertTrue(req.url.contains("/api/v1/feature-requests?"))
+        assertTrue(req.url.contains("appKey=app_testkey123456"))
+    }
+
+    @Test
+    fun linkEndUserSendsHeadersAndPayload() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val sessionToken = "clerk_sess_xyz"
+        val userToken = "anon_user_token_999"
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(
+                200,
+                """
+                {
+                    "linked": true,
+                    "endUserId": "enduser-42",
+                    "clerkUserId": "user_2abc"
+                }
+                """.trimIndent()
+            )
+        }
+        val result = client.linkEndUser(sessionToken = sessionToken, userToken = userToken)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("POST", req.method)
+        assertTrue(req.url.endsWith("/api/v1/me/link"))
+        assertEquals("Bearer $sessionToken", req.headers["Authorization"])
+        assertEquals(userToken, req.headers["X-User-Token"])
+        assertEquals("application/json", req.headers["Content-Type"])
+
+        val bodyString = req.body?.let { String(it, Charsets.UTF_8) } ?: ""
+        val json = JSONObject(bodyString)
+        assertEquals("app_testkey123456", json.getString("appKey"))
+
+        assertTrue(result.linked)
+        assertEquals("enduser-42", result.endUserId)
+        assertEquals("user_2abc", result.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserDecodesEndUserEnvelopePayload() = runTest {
+        val client = client { _ ->
+            HttpResponse(
+                200,
+                """
+                {
+                    "endUser": {
+                        "id": "enduser-99",
+                        "appId": "app-1",
+                        "anonymousToken": "anon-1",
+                        "clerkUserId": "user_clerk_99",
+                        "identityConfirmed": true,
+                        "createdAt": "2026-10-23T00:00:00.000Z",
+                        "updatedAt": "2026-10-23T00:00:00.000Z"
+                    }
+                }
+                """.trimIndent()
+            )
+        }
+        val result = client.linkEndUser(sessionToken = "sess", userToken = "user")
+        assertTrue(result.linked)
+        assertEquals("enduser-99", result.endUserId)
+        assertEquals("user_clerk_99", result.clerkUserId)
+    }
+
+    @Test
+    fun linkEndUserThrowsOnBlankTokens() = runTest {
+        val client = client { HttpResponse(200, "{}") }
+        try {
+            client.linkEndUser(sessionToken = "", userToken = "tok")
+            fail("Expected IllegalArgumentException for blank sessionToken")
+        } catch (_: IllegalArgumentException) {
+        }
+
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "   ")
+            fail("Expected IllegalArgumentException for blank userToken")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun linkEndUserMaps401ToAuthenticationRequired() = runTest {
+        val client = client { HttpResponse(401, """{"error":"Session expired"}""") }
+        try {
+            client.linkEndUser(sessionToken = "expired_sess", userToken = "user_tok")
+            fail("Expected AuthenticationRequired exception")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+        }
+    }
+
+    @Test
+    fun linkEndUserSurfaces409ConflictAsUnexpectedStatus() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Profile already confirmed to another identity","code":"already_confirmed"}"""
+            )
+        }
+        try {
+            client.linkEndUser(sessionToken = "sess", userToken = "tok")
+            fail("Expected UnexpectedStatus exception on 409 conflict")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(409, ex.code)
+            assertTrue(ex.serverMessage.contains("Profile already confirmed"))
+        }
     }
 
     @Test

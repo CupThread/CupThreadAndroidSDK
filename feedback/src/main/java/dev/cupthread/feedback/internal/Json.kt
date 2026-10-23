@@ -21,6 +21,7 @@ import dev.cupthread.feedback.FeedbackPlatform
 import dev.cupthread.feedback.FeedbackSubmissionResult
 import dev.cupthread.feedback.ListFeatureRequestsResult
 import dev.cupthread.feedback.ChangelogOverlayConfig
+import dev.cupthread.feedback.EndUserLinkResult
 import dev.cupthread.feedback.PublicAppConfig
 import dev.cupthread.feedback.SdkAppearance
 import dev.cupthread.feedback.SdkFeatures
@@ -320,6 +321,28 @@ internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileRe
             for (i in 0 until commentsArray.length()) add(parseUserProfileComment(commentsArray.getJSONObject(i)))
         },
         hideComments = json.booleanOr("hideComments", false)
+    )
+}
+
+internal fun parseEndUserLinkResult(json: JSONObject): EndUserLinkResult {
+    val endUser = json.optJSONObject("endUser")
+    if (endUser != null) {
+        val id = endUser.optString("id").ifEmpty { endUser.optString("endUserId").ifEmpty { null } }
+        val clerkUserId = endUser.optString("clerkUserId").ifEmpty { null }
+        val confirmed = if (endUser.has("identityConfirmed")) endUser.optBoolean("identityConfirmed", true) else true
+        return EndUserLinkResult(
+            linked = confirmed,
+            endUserId = id,
+            clerkUserId = clerkUserId
+        )
+    }
+    val linked = json.optBoolean("linked", true)
+    val endUserId = json.optString("endUserId").ifEmpty { json.optString("id").ifEmpty { null } }
+    val clerkUserId = json.optString("clerkUserId").ifEmpty { null }
+    return EndUserLinkResult(
+        linked = linked,
+        endUserId = endUserId,
+        clerkUserId = clerkUserId
     )
 }
 
