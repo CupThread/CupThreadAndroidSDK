@@ -351,6 +351,14 @@ data class SdkFeatures(
     companion object {
         /** Default configuration with all SDK surfaces enabled. */
         val allEnabled = SdkFeatures()
+
+        /** Fail-closed configuration with all SDK surfaces disabled. */
+        val allDisabled = SdkFeatures(
+            feedback = false,
+            featureRequests = false,
+            roadmap = false,
+            changelog = false
+        )
     }
 }
 
@@ -393,6 +401,13 @@ data class SdkAppearance(
     companion object {
         /** Default appearance parameters applied when network configuration is unavailable. */
         val defaults = SdkAppearance()
+
+        /** Fail-closed appearance with features disabled to prevent failing open when remote config cannot be loaded. */
+        val failClosed = SdkAppearance(
+            theme = SdkTheme.SYSTEM,
+            features = SdkFeatures.allDisabled,
+            changelogOverlay = ChangelogOverlayConfig()
+        )
     }
 }
 

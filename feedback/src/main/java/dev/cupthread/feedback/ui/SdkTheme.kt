@@ -3,6 +3,7 @@ package dev.cupthread.feedback.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -21,6 +22,8 @@ import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.SdkAppearance
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.SdkTheme
+import dev.cupthread.feedback.internal.SdkAppearanceCache
+import kotlinx.coroutines.CancellationException
 
 internal val LocalSdkAppearance = staticCompositionLocalOf<SdkAppearance?> { null }
 
@@ -97,18 +100,137 @@ internal fun sdkColorScheme(theme: SdkTheme, systemDark: Boolean) =
  * ```
  *
  * @param client The [FeedbackClient] used to retrieve remote app appearance and features.
+ * @param onFetchError Optional callback invoked if fetching remote configuration fails.
  * @return The resolved [SdkAppearance] state.
  */
 @Composable
-fun rememberSdkAppearance(client: FeedbackClient): SdkAppearance {
+fun rememberSdkAppearance(
+    client: FeedbackClient,
+    onFetchError: ((Throwable) -> Unit)? = null
+): SdkAppearance {
+    val holder = rememberSdkAppearanceState(client, onFetchError = onFetchError)
+    return holder.appearance
+}
+
+/**
+ * Observable lifecycle state for remote [SdkAppearance] fetching.
+ */
+sealed class SdkAppearanceState {
+    /** The active [SdkAppearance] resolving cache or fail-closed fallback. */
+    abstract val appearance: SdkAppearance
+
+    /**
+     * Appearance instance suitable for downstream injection into [LocalSdkAppearance].
+     * Returns null if loading or failed without a cached appearance, allowing child composables
+     * to observe loading/error states without being poisoned by fail-closed fallback defaults.
+     */
+    internal val providedAppearance: SdkAppearance?
+        get() = when (this) {
+            is Success -> appearance
+            is Loading -> cachedAppearance
+            is Error -> cachedAppearance
+        }
+
+    /** Configuration is currently being retrieved from the remote endpoint. */
+    data class Loading(val cachedAppearance: SdkAppearance? = null) : SdkAppearanceState() {
+        override val appearance: SdkAppearance get() = cachedAppearance ?: SdkAppearance.failClosed
+    }
+
+    /** Remote configuration was successfully fetched. */
+    data class Success(override val appearance: SdkAppearance, val isFromCache: Boolean = false) : SdkAppearanceState()
+
+    /**
+     * Remote configuration failed to load.
+     *
+     * @property error The exception thrown during config retrieval.
+     * @property cachedAppearance The last successful appearance, if available.
+     */
+    data class Error(val error: Throwable, val cachedAppearance: SdkAppearance? = null) : SdkAppearanceState() {
+        /**
+         * The effective appearance to use: falls back to [cachedAppearance], or [SdkAppearance.failClosed]
+         * to avoid failing open when remote kill-switches cannot be loaded.
+         */
+        val effectiveAppearance: SdkAppearance
+            get() = cachedAppearance ?: SdkAppearance.failClosed
+
+        override val appearance: SdkAppearance
+            get() = effectiveAppearance
+    }
+}
+
+/**
+ * Holder managing the current [SdkAppearanceState] and providing a [retry] action.
+ *
+ * @property state The active [SdkAppearanceState].
+ * @property retry Triggers an immediate re-fetch of remote appearance configuration.
+ */
+class SdkAppearanceStateHolder internal constructor(
+    val state: SdkAppearanceState,
+    val retry: () -> Unit
+) {
+    /** Shortcut to access the active [SdkAppearance]. */
+    val appearance: SdkAppearance get() = state.appearance
+
+    internal val providedAppearance: SdkAppearance? get() = state.providedAppearance
+}
+
+/**
+ * Resolves the observable [SdkAppearanceState] for [client] with explicit loading, cached, error,
+ * and retry handling.
+ *
+ * If [LocalSdkAppearance] is provided by an ancestor, it is respected immediately.
+ * Otherwise, checks [SdkAppearanceCache]. If a previous successful fetch exists, that appearance
+ * is used while refreshing in the background. If the fetch throws and no cache exists, the effective
+ * appearance is [SdkAppearance.failClosed] (all features disabled) to prevent console kill-switches
+ * from failing open.
+ *
+ * @param client The [FeedbackClient] used to retrieve remote app appearance and features.
+ * @param onFetchError Optional callback invoked if fetching remote configuration fails.
+ * @return An [SdkAppearanceStateHolder] containing the current [SdkAppearanceState] and a [retry] action.
+ */
+@Composable
+fun rememberSdkAppearanceState(
+    client: FeedbackClient,
+    onFetchError: ((Throwable) -> Unit)? = null
+): SdkAppearanceStateHolder {
     val injected = LocalSdkAppearance.current
-    var fetched by remember(client) { mutableStateOf(injected ?: SdkAppearance.defaults) }
-    LaunchedEffect(client, injected) {
-        if (injected == null) {
-            fetched = runCatching { client.fetchAppConfig().sdk }.getOrDefault(SdkAppearance.defaults)
+    var reloadTrigger by remember(client) { mutableStateOf(0) }
+    var state by remember(client, injected) {
+        mutableStateOf<SdkAppearanceState>(
+            when {
+                injected != null -> SdkAppearanceState.Success(injected)
+                else -> {
+                    val cached = SdkAppearanceCache.get(client.config.appKey)
+                    SdkAppearanceState.Loading(cached)
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(client, injected, reloadTrigger) {
+        if (injected != null) {
+            state = SdkAppearanceState.Success(injected)
+            return@LaunchedEffect
+        }
+        val currentCached = SdkAppearanceCache.get(client.config.appKey)
+        state = SdkAppearanceState.Loading(currentCached)
+        try {
+            val remoteSdk = client.fetchAppConfig().sdk
+            state = SdkAppearanceState.Success(remoteSdk)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            onFetchError?.invoke(t)
+            state = SdkAppearanceState.Error(t, currentCached)
         }
     }
-    return injected ?: fetched
+
+    return remember(state, reloadTrigger) {
+        SdkAppearanceStateHolder(
+            state = state,
+            retry = { reloadTrigger++ }
+        )
+    }
 }
 
 /**
@@ -150,9 +272,10 @@ fun CupThreadTheme(
     client: FeedbackClient,
     content: @Composable () -> Unit
 ) {
-    val appearance = rememberSdkAppearance(client)
+    val holder = rememberSdkAppearanceState(client)
+    val appearance = holder.appearance
     val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalSdkAppearance provides appearance) {
+    CompositionLocalProvider(LocalSdkAppearance provides holder.providedAppearance) {
         MaterialTheme(colorScheme = sdkColorScheme(appearance.theme, dark), content = content)
     }
 }
@@ -189,23 +312,43 @@ fun SdkSurface(
     feature: SdkFeature,
     content: @Composable () -> Unit
 ) {
-    val appearance = rememberSdkAppearance(client)
+    val holder = rememberSdkAppearanceState(client)
+    val state = holder.state
+    val appearance = holder.appearance
     val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalSdkAppearance provides appearance) {
+    CompositionLocalProvider(LocalSdkAppearance provides holder.providedAppearance) {
         MaterialTheme(colorScheme = sdkColorScheme(appearance.theme, dark)) {
-            if (appearance.features.isEnabled(feature)) {
-                content()
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    EmptyState(
-                        title = when (feature) {
-                            SdkFeature.FEEDBACK -> "Feedback Unavailable"
-                            SdkFeature.FEATURE_REQUESTS -> "Requests Unavailable"
-                            SdkFeature.ROADMAP -> "Roadmap Unavailable"
-                            SdkFeature.CHANGELOG -> "Updates Unavailable"
-                        },
-                        body = "This surface is turned off in the CupThread console."
-                    )
+            when {
+                appearance.features.isEnabled(feature) -> {
+                    content()
+                }
+                state is SdkAppearanceState.Error && state.cachedAppearance == null -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            title = "Couldn't load",
+                            body = "Failed to load app configuration. Please check your network and try again.",
+                            actionLabel = "Retry",
+                            onAction = holder.retry
+                        )
+                    }
+                }
+                state is SdkAppearanceState.Loading && state.cachedAppearance == null -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                else -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            title = when (feature) {
+                                SdkFeature.FEEDBACK -> "Feedback Unavailable"
+                                SdkFeature.FEATURE_REQUESTS -> "Requests Unavailable"
+                                SdkFeature.ROADMAP -> "Roadmap Unavailable"
+                                SdkFeature.CHANGELOG -> "Updates Unavailable"
+                            },
+                            body = "This surface is turned off in the CupThread console."
+                        )
+                    }
                 }
             }
         }
