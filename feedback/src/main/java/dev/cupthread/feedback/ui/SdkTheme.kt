@@ -202,7 +202,6 @@ fun rememberSdkAppearanceState(
         state = SdkAppearanceState.Loading(currentCached)
         try {
             val remoteSdk = client.fetchAppConfig().sdk
-            SdkAppearanceCache.put(client.config.appKey, remoteSdk)
             state = SdkAppearanceState.Success(remoteSdk)
         } catch (ce: CancellationException) {
             throw ce
