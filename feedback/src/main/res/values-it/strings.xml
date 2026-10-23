@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">Invio non riuscito</string>
     <string name="cupthread_features_vote_desc">Vota, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Rimuovi voto, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Stai votando troppo velocemente. Riprova tra poco.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Tabella di marcia</string>

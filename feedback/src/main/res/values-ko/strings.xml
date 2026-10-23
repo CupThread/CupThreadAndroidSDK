@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">제출하지 못했습니다</string>
     <string name="cupthread_features_vote_desc">투표, %1$d표</string>
     <string name="cupthread_features_remove_vote_desc">투표 취소, %1$d표</string>
+    <string name="cupthread_features_vote_rate_limited">투표 빈도가 너무 높습니다. 잠시 후 다시 시도해 주세요.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">로드맵</string>

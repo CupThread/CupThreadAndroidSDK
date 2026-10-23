@@ -28,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,6 +52,7 @@ import dev.cupthread.feedback.FeatureRequestDraft
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeatureRequestSubmissionResult
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.FeedbackException
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
@@ -217,8 +220,12 @@ private fun FeatureRequestsScreenContent(
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
+
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.cupthread_features_title)) },
@@ -321,6 +328,12 @@ private fun FeatureRequestsScreenContent(
                                             if (selectedItem?.id == item.id) {
                                                 selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
                                             }
+                                        } catch (e: FeedbackException.RateLimited) {
+                                            items = items.map { if (it.id == item.id) previous else it }
+                                            if (selectedItem?.id == item.id) {
+                                                selectedItem = previous
+                                            }
+                                            snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
                                         } catch (_: Exception) {
                                             items = items.map { if (it.id == item.id) previous else it }
                                             if (selectedItem?.id == item.id) {
@@ -382,6 +395,10 @@ private fun FeatureRequestsScreenContent(
                         val result = client.toggleVote(currentItem.id, userToken)
                         items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                    } catch (e: FeedbackException.RateLimited) {
+                        items = items.map { if (it.id == currentItem.id) previous else it }
+                        selectedItem = previous
+                        snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous

@@ -65,6 +65,7 @@ import org.json.JSONObject
  * - [FeedbackException.SubmissionQuotaExceeded]: Workspace monthly submission quota reached (HTTP 402 `tier_limit_submissions`).
  * - [FeedbackException.SubscriptionInactive]: Workspace subscription is inactive or canceled (HTTP 402 `subscription_inactive`).
  * - [FeedbackException.UnsupportedMediaType]: File format or image media type is unsupported (HTTP 415 `unsupported_media_type`).
+ * - [FeedbackException.RateLimited]: Client exceeded request rate limit, such as voting too frequently (HTTP 429).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
@@ -451,6 +452,7 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @return [VoteResult] containing the updated vote state (`voted`) and current total count (`voteCount`).
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
+     * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
@@ -466,7 +468,42 @@ class FeedbackClient internal constructor(
             put("userToken", userToken)
         }
         return parseVoteResult(
-            sendJson("POST", "/api/v1/feature-requests/$featureRequestId/vote", payload, accepted = setOf(200))
+            sendJson(
+                method = "POST",
+                path = "/api/v1/feature-requests/$featureRequestId/vote",
+                body = payload,
+                userToken = userToken,
+                accepted = setOf(200),
+                mapRateLimitErrors = true
+            )
+        )
+    }
+
+    /**
+     * Removes an upvote from a feature request via `DELETE /api/v1/feature-requests/{id}/vote`.
+     *
+     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [VoteResult] containing the reconciled vote state (`voted = false`) and current total count (`voteCount`).
+     * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
+     * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     */
+    suspend fun deleteVote(featureRequestId: String, userToken: String): VoteResult {
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+            put("userToken", userToken)
+        }
+        return parseVoteResult(
+            sendJson(
+                method = "DELETE",
+                path = "/api/v1/feature-requests/$featureRequestId/vote",
+                body = payload,
+                userToken = userToken,
+                accepted = setOf(200),
+                mapRateLimitErrors = true
+            )
         )
     }
 
@@ -960,7 +997,8 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200),
-        mapSubmissionQuotaErrors: Boolean = false
+        mapSubmissionQuotaErrors: Boolean = false,
+        mapRateLimitErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -972,7 +1010,8 @@ class FeedbackClient internal constructor(
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
             accepted,
-            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors
+            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors,
+            mapRateLimitErrors = mapRateLimitErrors
         )
     }
 
@@ -1003,7 +1042,8 @@ class FeedbackClient internal constructor(
         request: HttpRequest,
         accepted: Set<Int>,
         mapSubmissionQuotaErrors: Boolean = false,
-        mapUnsupportedMediaType: Boolean = false
+        mapUnsupportedMediaType: Boolean = false,
+        mapRateLimitErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1025,6 +1065,10 @@ class FeedbackClient internal constructor(
                 if (response.code == 415 && mapUnsupportedMediaType) {
                     val errorPayload = parseErrorPayload(response.body)
                     throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null })
+                }
+                if (response.code == 429 && mapRateLimitErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    throw FeedbackException.RateLimited(errorPayload?.second ?: response.body.ifBlank { null })
                 }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
             }

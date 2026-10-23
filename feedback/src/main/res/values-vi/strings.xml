@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">Không thể gửi</string>
     <string name="cupthread_features_vote_desc">Bình chọn, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Hủy bình chọn, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Bạn đang bình chọn quá nhanh. Vui lòng thử lại sau giây lát.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Lộ trình</string>

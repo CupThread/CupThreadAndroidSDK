@@ -22,6 +22,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -41,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.FeedbackException
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
@@ -218,8 +221,12 @@ private fun RoadmapBoardScreenContent(
         if (groups.isNotEmpty() && visible.isEmpty() && hasMore && !loadingMore && !loadMoreFailed) loadMore()
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
+
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(title = { Text(stringResource(R.string.cupthread_roadmap_title)) }) }
     ) { padding ->
         PullToRefreshBox(
@@ -288,6 +295,10 @@ private fun RoadmapBoardScreenContent(
                             if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it
                         }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                    } catch (e: FeedbackException.RateLimited) {
+                        requests = requests.map { if (it.id == currentItem.id) previous else it }
+                        selectedItem = previous
+                        snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
                         requests = requests.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
