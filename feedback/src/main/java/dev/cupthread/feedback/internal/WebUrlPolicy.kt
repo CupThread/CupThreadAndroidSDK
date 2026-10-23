@@ -183,7 +183,7 @@ internal object WebUrlPolicy {
     fun normalizeWebsiteUri(string: String?): android.net.Uri? {
         val normalized = normalizeWebsiteUrl(string) ?: return null
         return try {
-            android.net.Uri.parse(normalized)
+            android.net.Uri.parse(normalized).normalizeScheme()
         } catch (_: Exception) {
             null
         }
