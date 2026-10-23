@@ -321,7 +321,11 @@ private fun FeatureRequestsScreenContent(
                                             selectedItem?.withVoteState(!item.hasVoted, if (item.hasVoted) item.voteCount - 1 else item.voteCount + 1)
                                         } else selectedItem
                                         try {
-                                            val result = client.toggleVote(item.id, userToken)
+                                            val result = if (previous.hasVoted) {
+                                                client.deleteVote(item.id, userToken)
+                                            } else {
+                                                client.toggleVote(item.id, userToken)
+                                            }
                                             items = items.map {
                                                 if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
                                             }
@@ -392,12 +396,16 @@ private fun FeatureRequestsScreenContent(
                     items = items.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it }
                     selectedItem = currentItem.withVoteState(newVoted, newCount)
                     try {
-                        val result = client.toggleVote(currentItem.id, userToken)
+                        val result = if (previous.hasVoted) {
+                            client.deleteVote(currentItem.id, userToken)
+                        } else {
+                            client.toggleVote(currentItem.id, userToken)
+                        }
                         items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = null
+                        selectedItem = previous
                         snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
