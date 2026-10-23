@@ -397,7 +397,7 @@ private fun FeatureRequestsScreenContent(
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = previous
+                        selectedItem = null
                         snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
                         items = items.map { if (it.id == currentItem.id) previous else it }

@@ -1068,7 +1068,8 @@ class FeedbackClient internal constructor(
                 }
                 if (response.code == 429 && mapRateLimitErrors) {
                     val errorPayload = parseErrorPayload(response.body)
-                    throw FeedbackException.RateLimited(errorPayload?.second ?: response.body.ifBlank { null })
+                    val message = if (errorPayload != null) errorPayload.second else response.body.ifBlank { null }
+                    throw FeedbackException.RateLimited(message)
                 }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
             }

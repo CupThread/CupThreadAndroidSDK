@@ -874,6 +874,32 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteMapsHttp429WithJsonCodeOnlyToNullServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"code":"too_many_requests"}""")
+            }.toggleVote("fr-11-code", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun toggleVoteMapsHttp429WithPlainTextBodyToServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, "Rate limit reached from client IP")
+            }.toggleVote("fr-11-text", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Rate limit reached from client IP", ex.serverMessage)
+            assertEquals("Rate limit reached from client IP", ex.message)
+        }
+    }
+
+    @Test
     fun deleteVoteHitsDeleteEndpointWithRateLimitMapping() = runTest {
         var method: String? = null
         var url: String? = null
