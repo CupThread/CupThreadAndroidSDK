@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.MailOutline
@@ -34,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -45,6 +47,8 @@ import dev.cupthread.feedback.FeedbackException
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
+import dev.cupthread.feedback.internal.ChangelogPager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -104,9 +108,16 @@ private fun WhatsNewScreenContent(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val pager = remember(client) {
+        ChangelogPager { limit, cursor -> client.fetchChangelogPage(limit, cursor) }
+    }
     var entries by remember { mutableStateOf<List<ChangelogEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var hasLoaded by remember { mutableStateOf(false) }
+    var hasMore by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
+    var loadMoreFailed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var subscribeOpen by remember { mutableStateOf(false) }
     val defaultLoadError = stringResource(R.string.cupthread_whatsnew_empty_body)
@@ -114,8 +125,11 @@ private fun WhatsNewScreenContent(
     suspend fun load() {
         loading = true
         error = null
+        loadMoreFailed = false
         try {
-            entries = client.fetchChangelog()
+            val page = pager.loadFirstPage()
+            entries = page.entries
+            hasMore = pager.hasMore
         } catch (ex: FeedbackException.AuthenticationRequired) {
             error = ex.message
         } catch (ex: Exception) {
@@ -126,7 +140,32 @@ private fun WhatsNewScreenContent(
         }
     }
 
+    suspend fun loadMore() {
+        if (loading || loadingMore || !hasMore) return
+        loadingMore = true
+        loadMoreFailed = false
+        try {
+            val page = pager.loadNextPage() ?: return
+            entries = ChangelogPager.append(entries, page.entries)
+            hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            loadMoreFailed = true
+        } finally {
+            loadingMore = false
+        }
+    }
+
     LaunchedEffect(client) { load() }
+
+    LaunchedEffect(listState, hasMore, entries.size) {
+        if (!hasMore) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { lastVisible ->
+                if (lastVisible >= entries.size - 3) loadMore()
+            }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -150,6 +189,7 @@ private fun WhatsNewScreenContent(
                 loading && !hasLoaded -> androidx.compose.foundation.layout.Box(Modifier.padding(16.dp)) { SkeletonCardList() }
                 error != null -> LoadErrorState(error!!) { scope.launch { load() } }
                 else -> LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
@@ -164,6 +204,15 @@ private fun WhatsNewScreenContent(
                     }
                     items(entries, key = { it.id }) { entry ->
                         ChangelogCard(entry)
+                    }
+                    if (hasMore || loadingMore || loadMoreFailed) {
+                        item(key = "paging-footer") {
+                            PagingFooter(
+                                loading = loadingMore,
+                                failed = loadMoreFailed,
+                                onLoadMore = { scope.launch { loadMore() } }
+                            )
+                        }
                     }
                     item {
                         SubscribeFooter { subscribeOpen = true }

@@ -914,6 +914,26 @@ data class ChangelogEntry(
 )
 
 /**
+ * Result of fetching a page of public changelog entries via [FeedbackClient.fetchChangelogPage].
+ *
+ * Returned by `GET /api/v1/public/apps/{appKey}/changelog`.
+ *
+ * @property entries List of published [ChangelogEntry] release notes on this page, sorted descending by date.
+ * @property hasMore Whether additional changelog entries exist beyond this page.
+ * @property nextCursor Keyset cursor to pass to [FeedbackClient.fetchChangelogPage] to load the next page, or `null` if at the end.
+ */
+data class ListChangelogResult(
+    val entries: List<ChangelogEntry>,
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null
+)
+
+/**
+ * Typealias matching the OpenAPI 3.1 schema name `ListPublicChangelogResponse`.
+ */
+typealias ListPublicChangelogResponse = ListChangelogResult
+
+/**
  * Result of subscribing an email to product updates via [FeedbackClient.subscribeToChangelog].
  *
  * @property subscribed Whether the email is active in the subscriber list.

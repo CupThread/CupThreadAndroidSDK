@@ -636,6 +636,97 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchChangelogPageDefaultsToLimit100AndParsesPaginationMetadata() = runTest {
+        var requestedUrl: String? = null
+        val json = """
+            {
+              "entries": [
+                {"id":"cl-1","title":"Release 1","content":"Details 1","version":"1.0.0","publishedAt":"2026-09-18T12:00:00.000Z"}
+              ],
+              "hasMore": true,
+              "nextCursor": "cursor_page_1"
+            }
+        """.trimIndent()
+        val page = client { req ->
+            requestedUrl = req.url
+            HttpResponse(200, json)
+        }.fetchChangelogPage()
+
+        val url = requireNotNull(requestedUrl)
+        assertTrue(url.contains("/api/v1/public/apps/$appKey/changelog"))
+        assertTrue(url.contains("limit=100"))
+        assertFalse(url.contains("cursor="))
+
+        assertEquals(1, page.entries.size)
+        val entry = page.entries.first()
+        assertEquals("cl-1", entry.id)
+        assertEquals("Release 1", entry.title)
+        assertEquals("Details 1", entry.body)
+        assertEquals("1.0.0", entry.versionLabel)
+        assertTrue(page.hasMore)
+        assertEquals("cursor_page_1", page.nextCursor)
+    }
+
+    @Test
+    fun fetchChangelogPageClampsLimitToBetween1And100() = runTest {
+        val requestedUrls = mutableListOf<String>()
+        val dummyJson = """{"entries":[],"hasMore":false,"nextCursor":null}"""
+        val client = client { req ->
+            requestedUrls.add(req.url)
+            HttpResponse(200, dummyJson)
+        }
+
+        client.fetchChangelogPage(limit = -10, cursor = "cur_123")
+        assertTrue(requestedUrls[0].contains("limit=1"))
+        assertTrue(requestedUrls[0].contains("cursor=cur_123"))
+
+        client.fetchChangelogPage(limit = 250)
+        assertTrue(requestedUrls[1].contains("limit=100"))
+        assertFalse(requestedUrls[1].contains("cursor="))
+
+        client.fetchChangelogPage(limit = 42)
+        assertTrue(requestedUrls[2].contains("limit=42"))
+    }
+
+    @Test
+    fun fetchChangelogPageHandlesMissingPaginationFieldsGracefully() = runTest {
+        val legacyJson = """
+            {
+              "entries": [
+                {"id":"cl-old","title":"Legacy","body":"Legacy notes","publishedAt":"2026-01-01T00:00:00.000Z"}
+              ]
+            }
+        """.trimIndent()
+        val page = client { HttpResponse(200, legacyJson) }.fetchChangelogPage()
+        assertEquals(1, page.entries.size)
+        assertFalse(page.hasMore)
+        assertNull(page.nextCursor)
+    }
+
+    @Test
+    fun fetchChangelogSupportsLimitAndCursorAndReturnsEntries() = runTest {
+        var requestedUrl: String? = null
+        val json = """
+            {
+              "entries": [
+                {"id":"cl-a","title":"A","publishedAt":"2026-02-01T00:00:00.000Z"},
+                {"id":"cl-b","title":"B","publishedAt":"2026-03-01T00:00:00.000Z"}
+              ],
+              "hasMore": false,
+              "nextCursor": null
+            }
+        """.trimIndent()
+        val entries = client { req ->
+            requestedUrl = req.url
+            HttpResponse(200, json)
+        }.fetchChangelog(limit = 20, cursor = "cur_abc")
+
+        assertTrue(requestedUrl!!.contains("limit=20"))
+        assertTrue(requestedUrl!!.contains("cursor=cur_abc"))
+        assertEquals(listOf("cl-b", "cl-a"), entries.map { it.id })
+    }
+
+    @Test
     fun toggleVoteHitsVoteEndpoint() = runTest {
         var url: String? = null
         val result = client { request ->

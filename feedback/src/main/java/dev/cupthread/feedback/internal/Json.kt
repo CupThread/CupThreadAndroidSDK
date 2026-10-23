@@ -20,6 +20,7 @@ import dev.cupthread.feedback.FeatureRequestSubmissionResult
 import dev.cupthread.feedback.FeedbackAttachment
 import dev.cupthread.feedback.FeedbackPlatform
 import dev.cupthread.feedback.FeedbackSubmissionResult
+import dev.cupthread.feedback.ListChangelogResult
 import dev.cupthread.feedback.ListFeatureRequestsResult
 import dev.cupthread.feedback.ChangelogOverlayConfig
 import dev.cupthread.feedback.EndUserLinkResult
@@ -210,13 +211,39 @@ internal fun parseChangelogEntry(json: JSONObject): ChangelogEntry {
             add(ChangelogLinkedRequest(id = item.getString("id"), title = item.getString("title")))
         }
     }
+    val body = if (json.has("body")) {
+        json.optString("body", "")
+    } else {
+        json.optString("content", "")
+    }
+    val versionLabel = json.stringOrNull("versionLabel") ?: json.stringOrNull("version")
     return ChangelogEntry(
         id = json.getString("id"),
         title = json.getString("title"),
-        body = json.optString("body", ""),
-        versionLabel = json.stringOrNull("versionLabel"),
+        body = body,
+        versionLabel = versionLabel,
         publishedAt = json.getString("publishedAt"),
         linkedRequests = requests
+    )
+}
+
+internal fun parseListChangelog(json: JSONObject): ListChangelogResult {
+    val array = json.optJSONArray("entries") ?: JSONArray()
+    val entries = buildList {
+        for (i in 0 until array.length()) {
+            add(parseChangelogEntry(array.getJSONObject(i)))
+        }
+    }.sortedByDescending { it.publishedAt }
+    val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
+        json.getBoolean("hasMore")
+    } else {
+        false
+    }
+    val nextCursor = json.stringOrNull("nextCursor")?.takeIf { it.isNotEmpty() }
+    return ListChangelogResult(
+        entries = entries,
+        hasMore = hasMore,
+        nextCursor = nextCursor
     )
 }
 
