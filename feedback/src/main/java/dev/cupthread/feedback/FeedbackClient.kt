@@ -130,6 +130,7 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
+     * @throws FeedbackException.AttachmentScanRejected if an attachment was rejected during backend content inspection (HTTP 422 `scan_rejected`).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
@@ -181,7 +182,8 @@ class FeedbackClient internal constructor(
                 body = payload,
                 userToken = userToken,
                 accepted = setOf(200, 201, 202),
-                mapSubmissionQuotaErrors = true
+                mapSubmissionQuotaErrors = true,
+                mapAttachmentScanErrors = true
             )
         )
     }
@@ -960,7 +962,8 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200),
-        mapSubmissionQuotaErrors: Boolean = false
+        mapSubmissionQuotaErrors: Boolean = false,
+        mapAttachmentScanErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -972,7 +975,8 @@ class FeedbackClient internal constructor(
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
             accepted,
-            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors
+            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors,
+            mapAttachmentScanErrors = mapAttachmentScanErrors
         )
     }
 
@@ -1003,7 +1007,8 @@ class FeedbackClient internal constructor(
         request: HttpRequest,
         accepted: Set<Int>,
         mapSubmissionQuotaErrors: Boolean = false,
-        mapUnsupportedMediaType: Boolean = false
+        mapUnsupportedMediaType: Boolean = false,
+        mapAttachmentScanErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1025,6 +1030,13 @@ class FeedbackClient internal constructor(
                 if (response.code == 415 && mapUnsupportedMediaType) {
                     val errorPayload = parseErrorPayload(response.body)
                     throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null })
+                }
+                if (response.code == 422 && mapAttachmentScanErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    if (errorPayload?.first == "scan_rejected") {
+                        val message = errorPayload.second
+                        throw FeedbackException.AttachmentScanRejected(message)
+                    }
                 }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
             }

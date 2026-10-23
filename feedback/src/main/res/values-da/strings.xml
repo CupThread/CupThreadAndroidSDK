@@ -24,6 +24,7 @@
     <string name="cupthread_attachment_oversized">Vedhæftet fil (%1$s) overskrider den maksimalt tilladte størrelse på %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Vedhæftet fil overskrider den maksimalt tilladte størrelse på %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Ikke-understøttet billedformat. Vælg venligst et PNG-, JPEG-, WebP- eller GIF-billede.</string>
+    <string name="cupthread_feedback_attachment_scan_rejected">En vedhæftet fil blev afvist af indholdsscanningen og kunne ikke uploades.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funktionsønsker</string>

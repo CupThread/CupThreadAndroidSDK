@@ -1444,6 +1444,76 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeedbackMaps422ScanRejectedToAttachmentScanRejected() = runTest {
+        val client = client {
+            HttpResponse(
+                422,
+                """{"error":"Upload object upl_abc was rejected by content scan: prohibited content","code":"scan_rejected"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentScanRejected exception")
+        } catch (ex: FeedbackException.AttachmentScanRejected) {
+            assertEquals("Upload object upl_abc was rejected by content scan: prohibited content", ex.serverMessage)
+            assertEquals("Upload object upl_abc was rejected by content scan: prohibited content", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps422ScanRejectedWithoutErrorFieldToDefaultMessage() = runTest {
+        val client = client {
+            HttpResponse(
+                422,
+                """{"code":"scan_rejected"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentScanRejected exception")
+        } catch (ex: FeedbackException.AttachmentScanRejected) {
+            assertNull(ex.serverMessage)
+            assertEquals("An attachment could not be uploaded due to content inspection rejection.", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMapsOther422CodesToUnexpectedStatus() = runTest {
+        val client = client {
+            HttpResponse(
+                422,
+                """{"error":"Validation failed","code":"unprocessable_entity"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected UnexpectedStatus exception")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(422, ex.code)
+            assertTrue(ex.serverMessage.contains("Validation failed"))
+        }
+    }
+
+    @Test
+    fun nonSubmitEndpointsDoNotMapHttp422ToAttachmentScanRejected() = runTest {
+        val client = client {
+            HttpResponse(
+                422,
+                """{"error":"Upload object upl_abc was rejected by content scan: prohibited content","code":"scan_rejected"}"""
+            )
+        }
+        try {
+            client.fetchColumns()
+            fail("Expected UnexpectedStatus exception")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(422, ex.code)
+        }
+    }
+
+    @Test
     fun submissionQuotaExceptionsUseDefaultMessagesWhenServerMessageIsOmitted() {
         val quotaEx = FeedbackException.SubmissionQuotaExceeded(null)
         assertNull(quotaEx.serverMessage)
