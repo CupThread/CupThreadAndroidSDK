@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">載入失敗</string>
     <string name="cupthread_common_retry">重試</string>
+    <string name="cupthread_common_load_more">載入更多</string>
+    <string name="cupthread_common_load_more_failed">無法載入更多</string>
 </resources>

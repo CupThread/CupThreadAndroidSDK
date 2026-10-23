@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Yüklenemedi</string>
     <string name="cupthread_common_retry">Yeniden Dene</string>
+    <string name="cupthread_common_load_more">Daha fazla yükle</string>
+    <string name="cupthread_common_load_more_failed">Daha fazlası yüklenemedi</string>
 </resources>

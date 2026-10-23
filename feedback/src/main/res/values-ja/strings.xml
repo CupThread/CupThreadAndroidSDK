@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">読み込めませんでした</string>
     <string name="cupthread_common_retry">再試行</string>
+    <string name="cupthread_common_load_more">さらに読み込む</string>
+    <string name="cupthread_common_load_more_failed">さらに読み込めませんでした</string>
 </resources>

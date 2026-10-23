@@ -840,12 +840,36 @@ data class VoteResult(
 /**
  * Paginated list of feature requests returned by [FeedbackClient.fetchFeatureRequests].
  *
+ * Each page carries enough information to request the following one: pass [nextCursor] back as
+ * `cursor`, or advance `offset` by `requests.size`. The bundled UI screens do this automatically;
+ * this type is exposed for apps that implement their own paging.
+ *
+ * Example:
+ * ```kotlin
+ * var page = client.fetchFeatureRequests(userToken = token, limit = 50)
+ * val all = page.requests.toMutableList()
+ * while (page.hasMore) {
+ *     page = client.fetchFeatureRequests(
+ *         userToken = token,
+ *         limit = 50,
+ *         cursor = page.nextCursor
+ *     )
+ *     all += page.requests
+ * }
+ * ```
+ *
  * @property requests The current page of [FeatureRequestItem] objects.
  * @property total Total number of requests matching the query across all pages.
+ * @property hasMore Whether an additional page exists after [requests]. Deployments that predate
+ *   keyset paging omit the field, in which case the SDK derives it from [total] and the page offset.
+ * @property nextCursor Opaque keyset cursor for the following page, or `null` on the last page and
+ *   on deployments that only support offset paging.
  */
 data class ListFeatureRequestsResult(
     val requests: List<FeatureRequestItem>,
-    val total: Int
+    val total: Int,
+    val hasMore: Boolean = requests.size < total,
+    val nextCursor: String? = null
 )
 
 /**

@@ -131,7 +131,7 @@ lifecycleScope.launch {
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
-| `fetchFeatureRequests(userToken, limit, offset, versionId, query)` | `GET /api/v1/feature-requests` |
+| `fetchFeatureRequests(userToken, limit, offset, versionId, query, cursor)` | `GET /api/v1/feature-requests` (returns `hasMore` / `nextCursor`) |
 | `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` |
 | `toggleVote(featureRequestId, userToken)` | `POST /api/v1/feature-requests/{id}/vote` |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` |
@@ -144,6 +144,14 @@ lifecycleScope.launch {
 | `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
+
+### Paging
+
+`FeatureRequestsScreen` and `RoadmapBoardScreen` load further pages as the user scrolls, so boards
+with more than 50 requests show every item and column counts include the whole board. Search and
+version filter changes restart paging from the first page. For custom surfaces,
+`fetchFeatureRequests` returns `hasMore` / `nextCursor`; pass `nextCursor` back as `cursor`
+(keyset paging) or advance `offset` by the number of returned requests.
 
 ---
 

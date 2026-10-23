@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.FilterList
@@ -52,6 +53,7 @@ import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
+import dev.cupthread.feedback.internal.FeatureRequestPager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -65,6 +67,8 @@ import kotlinx.coroutines.launch
  *
  * ### Key Behaviors & Architecture
  * - **Debounced Search**: Free-text search matching titles and descriptions, debounced at ~350 ms.
+ * - **Incremental Paging**: Requests the next page as the list approaches its end, appending
+ *   without duplicate ids. Search and version changes restart from the first page.
  * - **Version Filter**: Top app bar dropdown menu that filters requests by milestone release ([AppVersion]).
  * - **Optimistic Upvoting**: Vote pill immediately animates count increment/decrement and automatically
  *   reconciles with server response or reverts on failure. Users cannot vote on their own requests ([FeatureRequestItem.isOwnRequest]).
@@ -118,10 +122,14 @@ private fun FeatureRequestsScreenContent(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     var items by remember { mutableStateOf<List<FeatureRequestItem>>(emptyList()) }
     var versions by remember { mutableStateOf<List<AppVersion>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var hasLoaded by remember { mutableStateOf(false) }
+    var hasMore by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
+    var loadMoreFailed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var versionId by remember { mutableStateOf<String?>(null) }
@@ -133,21 +141,57 @@ private fun FeatureRequestsScreenContent(
     var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
     val defaultLoadError = stringResource(R.string.cupthread_features_load_failed)
 
+    // Reads the current search and version filter on every request, so one pager serves all filters.
+    val pager = remember(client) {
+        FeatureRequestPager { request ->
+            client.fetchFeatureRequests(
+                userToken = userToken,
+                limit = request.limit,
+                offset = request.offset,
+                versionId = versionId,
+                query = search.trim().ifEmpty { null },
+                cursor = request.cursor
+            )
+        }
+    }
+
     suspend fun load() {
         loading = true
         error = null
+        loadMoreFailed = false
         try {
-            items = client.fetchFeatureRequests(
-                userToken = userToken,
-                versionId = versionId,
-                query = search.trim().ifEmpty { null }
-            ).requests
+            val page = pager.loadFirstPage()
+            items = page.requests
+            hasMore = pager.hasMore
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
             loading = false
             hasLoaded = true
         }
+    }
+
+    suspend fun loadMore() {
+        if (loading || loadingMore || !hasMore) return
+        loadingMore = true
+        loadMoreFailed = false
+        try {
+            val page = pager.loadNextPage() ?: return
+            items = FeatureRequestPager.append(items, page.requests)
+            hasMore = pager.hasMore
+        } catch (_: Exception) {
+            loadMoreFailed = true
+        } finally {
+            loadingMore = false
+        }
+    }
+
+    LaunchedEffect(listState, hasMore, items.size) {
+        if (!hasMore) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { lastVisible ->
+                if (lastVisible >= items.size - 3) loadMore()
+            }
     }
 
     LaunchedEffect(client) {
@@ -232,6 +276,7 @@ private fun FeatureRequestsScreenContent(
                         onAction = if (search.isBlank()) ({ composeOpen = true }) else null
                     )
                     else -> LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -284,6 +329,15 @@ private fun FeatureRequestsScreenContent(
                                     }
                                 }
                             )
+                        }
+                        if (hasMore || loadingMore || loadMoreFailed) {
+                            item(key = "paging-footer") {
+                                PagingFooter(
+                                    loading = loadingMore,
+                                    failed = loadMoreFailed,
+                                    onLoadMore = { scope.launch { loadMore() } }
+                                )
+                            }
                         }
                     }
                 }

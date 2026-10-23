@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Impossibile caricare</string>
     <string name="cupthread_common_retry">Riprova</string>
+    <string name="cupthread_common_load_more">Carica altro</string>
+    <string name="cupthread_common_load_more_failed">Impossibile caricare altro</string>
 </resources>

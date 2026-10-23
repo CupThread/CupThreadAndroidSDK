@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Échec du chargement</string>
     <string name="cupthread_common_retry">Réessayer</string>
+    <string name="cupthread_common_load_more">Charger plus</string>
+    <string name="cupthread_common_load_more_failed">Impossible de charger la suite</string>
 </resources>

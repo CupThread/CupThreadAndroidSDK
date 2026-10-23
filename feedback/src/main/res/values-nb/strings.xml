@@ -102,4 +102,6 @@
     <!-- Common -->
     <string name="cupthread_common_could_not_load">Kunne ikke laste inn</string>
     <string name="cupthread_common_retry">Prøv igjen</string>
+    <string name="cupthread_common_load_more">Last inn mer</string>
+    <string name="cupthread_common_load_more_failed">Kunne ikke laste inn mer</string>
 </resources>
