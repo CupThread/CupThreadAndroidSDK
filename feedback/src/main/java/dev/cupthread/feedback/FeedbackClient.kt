@@ -7,6 +7,7 @@ import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
+import dev.cupthread.feedback.internal.MetadataSanitizer
 import dev.cupthread.feedback.internal.parseAppVersion
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.parseBoardColumn
@@ -14,6 +15,7 @@ import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
+import dev.cupthread.feedback.internal.parseEndUserEraseResult
 import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
@@ -760,6 +762,66 @@ class FeedbackClient internal constructor(
     suspend fun fetchUserProfile(userId: String): PublicUserProfileResult =
         parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
 
+    /**
+     * Erases the caller's own end-user profile for this application via `POST /api/v1/me/erase`.
+     *
+     * Authenticates with the provided [userToken] transmitted in the `X-User-Token` header,
+     * or an authenticated [sessionToken] in the `Authorization: Bearer` header. At least one
+     * of [userToken] or [sessionToken] must be non-blank.
+     *
+     * Upon success, the caller's stored PII (display name, email, IP, user agent) is removed and
+     * requests/votes are anonymized on the backend. After erasing, call [UserTokenStore.clearToken]
+     * or [UserTokenStore.rotateToken] to prevent subsequent calls from reusing the revoked token.
+     *
+     * @param userToken Anonymous user token identifying the profile to erase.
+     * @param sessionToken Optional authenticated user session token.
+     * @return [EndUserEraseResult] confirming the erasure.
+     * @throws IllegalArgumentException if both [userToken] and [sessionToken] are blank, or if either credential would be sent over cleartext HTTP.
+     * @throws FeedbackException.AuthenticationRequired if the server rejects authentication (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus if the profile is not found (HTTP 404), rate-limited (HTTP 429), or another error occurs.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.eraseEndUser(userToken = userTokenStore.token)
+     * if (result.erased) {
+     *     userTokenStore.clearToken()
+     * }
+     * ```
+     */
+    suspend fun eraseEndUser(
+        userToken: String? = null,
+        sessionToken: String? = null
+    ): EndUserEraseResult {
+        require(!userToken.isNullOrBlank() || !sessionToken.isNullOrBlank()) {
+            "Either userToken or sessionToken must be non-blank for eraseEndUser"
+        }
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/erase")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "eraseEndUser destination must use HTTPS when transmitting credentials: $targetUrl"
+        }
+
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+        }
+        val response = sendJson(
+            method = "POST",
+            path = "/api/v1/me/erase",
+            body = payload,
+            userToken = userToken?.trim()?.takeIf { it.isNotEmpty() },
+            bearerToken = sessionToken?.trim()?.takeIf { it.isNotEmpty() },
+            accepted = setOf(200)
+        )
+        return try {
+            parseEndUserEraseResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
+    }
 
     /**
      * Links an anonymous end-user profile to an authenticated user session via `POST /api/v1/me/link`.
@@ -818,11 +880,12 @@ class FeedbackClient internal constructor(
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()
-        return draft.metadata + mapOf(
+        val defaults = mapOf(
             "sdk" to "cupthread-android",
             "platform" to draft.platform.wireValue,
             "submittedAt" to submittedAt
         )
+        return MetadataSanitizer.sanitize(draft.metadata, defaults)
     }
 
     private suspend fun get(

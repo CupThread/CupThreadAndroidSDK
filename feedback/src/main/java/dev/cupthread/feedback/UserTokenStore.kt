@@ -81,6 +81,35 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
             }
         }
 
+    /**
+     * Clears the cached and persisted anonymous user token from storage.
+     *
+     * Should be called after self-service erasure via [FeedbackClient.eraseEndUser].
+     * The next call to [token] will generate and persist a fresh pseudonymous token.
+     */
+    fun clearToken() {
+        synchronized(lock) {
+            cachedToken = null
+            prefs.edit().remove(KEY).commit()
+        }
+    }
+
+    /**
+     * Rotates the anonymous user token by minting a new UUID v4 and persisting it.
+     *
+     * Useful for self-service erasure flows where a fresh token is immediately required.
+     *
+     * @return The freshly minted anonymous user token.
+     */
+    fun rotateToken(): String {
+        return synchronized(lock) {
+            val created = UUID.randomUUID().toString()
+            prefs.edit().putString(KEY, created).commit()
+            cachedToken = created
+            created
+        }
+    }
+
     companion object {
         private const val PREFS = "cupthread_feedback"
         private const val KEY = "user_token"

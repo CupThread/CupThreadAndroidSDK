@@ -171,6 +171,9 @@ data class FeedbackAttachment(
  * @property buildNumber Internal build code of the host application (e.g., `"42"`).
  * @property metadata Arbitrary key-value diagnostic metadata. The SDK automatically appends
  *   `sdk`, `platform`, and `submittedAt` timestamps upon submission.
+ *   Subject to server-side metadata redaction: keys must match `[A-Za-z0-9_.:-]{1,64}` (max 24 keys),
+ *   values under sensitive keys (`token`, `secret`, `password`, `apiKey`, `authorization`, `cookie`, `session`)
+ *   are redacted, values are truncated to 512 characters, and total serialized size is capped at 8 KB.
  * @property attachments Pre-uploaded files and screenshots returned by [FeedbackClient.uploadAttachment].
  */
 data class FeedbackDraft(
@@ -939,6 +942,19 @@ data class ChangelogUnsubscribeResult(
 data class UserAttributesUpdateResult(
     val ok: Boolean,
     val updatedAt: String
+)
+
+/**
+ * Result of erasing an end-user profile via [FeedbackClient.eraseEndUser].
+ *
+ * Returned by `POST /api/v1/me/erase`.
+ *
+ * @property erased Whether the end-user profile was successfully erased.
+ * @property endUserId Unique identifier of the erased end-user profile, if available.
+ */
+data class EndUserEraseResult(
+    val erased: Boolean,
+    val endUserId: String? = null
 )
 
 /**
