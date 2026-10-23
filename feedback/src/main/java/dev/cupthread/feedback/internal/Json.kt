@@ -327,7 +327,7 @@ internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileRe
 
 internal fun parseEndUserEraseResult(json: JSONObject): EndUserEraseResult {
     return EndUserEraseResult(
-        erased = json.booleanOr("erased", true),
+        erased = json.getBoolean("erased"),
         endUserId = json.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
             ?: json.stringOrNull("id")?.takeIf { it.isNotEmpty() }
     )

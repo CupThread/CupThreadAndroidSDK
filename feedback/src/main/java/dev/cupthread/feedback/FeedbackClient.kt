@@ -762,7 +762,7 @@ class FeedbackClient internal constructor(
      * @param userToken Anonymous user token identifying the profile to erase.
      * @param sessionToken Optional authenticated user session token.
      * @return [EndUserEraseResult] confirming the erasure.
-     * @throws IllegalArgumentException if both [userToken] and [sessionToken] are blank, or if [sessionToken] is sent over cleartext HTTP.
+     * @throws IllegalArgumentException if both [userToken] and [sessionToken] are blank, or if either credential would be sent over cleartext HTTP.
      * @throws FeedbackException.AuthenticationRequired if the server rejects authentication (HTTP 401).
      * @throws FeedbackException.UnexpectedStatus if the profile is not found (HTTP 404), rate-limited (HTTP 429), or another error occurs.
      *

@@ -1014,6 +1014,16 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun eraseEndUserThrowsInvalidResponseWhenErasedFieldMissing() = runTest {
+        val client = client { HttpResponse(200, """{"endUserId":"user-1"}""") }
+        try {
+            client.eraseEndUser(userToken = "valid_tok")
+            fail("Expected FeedbackException.InvalidResponse when erased field is missing")
+        } catch (_: FeedbackException.InvalidResponse) {
+        }
+    }
+
+    @Test
     fun parseEndUserEraseResultHandlesNullAndEmptyEndUserId() {
         val jsonWithNull = JSONObject("""{"erased":true,"endUserId":null}""")
         val res1 = dev.cupthread.feedback.internal.parseEndUserEraseResult(jsonWithNull)
