@@ -7,6 +7,7 @@ import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
+import dev.cupthread.feedback.internal.MetadataSanitizer
 import dev.cupthread.feedback.internal.parseAppVersion
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.parseBoardColumn
@@ -14,6 +15,7 @@ import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
+import dev.cupthread.feedback.internal.parseEndUserEraseResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
@@ -742,24 +744,89 @@ class FeedbackClient internal constructor(
     suspend fun fetchUserProfile(userId: String): PublicUserProfileResult =
         parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
 
+    /**
+     * Erases the caller's own end-user profile for this application via `POST /api/v1/me/erase`.
+     *
+     * Authenticates with the provided [userToken] transmitted in the `X-User-Token` header,
+     * or an authenticated [sessionToken] in the `Authorization: Bearer` header. At least one
+     * of [userToken] or [sessionToken] must be non-blank.
+     *
+     * Upon success, the caller's stored PII (display name, email, IP, user agent) is removed and
+     * requests/votes are anonymized on the backend. After erasing, call [UserTokenStore.clearToken]
+     * or [UserTokenStore.rotateToken] to prevent subsequent calls from reusing the revoked token.
+     *
+     * @param userToken Anonymous user token identifying the profile to erase.
+     * @param sessionToken Optional authenticated user session token.
+     * @return [EndUserEraseResult] confirming the erasure.
+     * @throws IllegalArgumentException if both [userToken] and [sessionToken] are blank, or if [sessionToken] is sent over cleartext HTTP.
+     * @throws FeedbackException.AuthenticationRequired if the server rejects authentication (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus if the profile is not found (HTTP 404), rate-limited (HTTP 429), or another error occurs.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.eraseEndUser(userToken = userTokenStore.token)
+     * if (result.erased) {
+     *     userTokenStore.clearToken()
+     * }
+     * ```
+     */
+    suspend fun eraseEndUser(
+        userToken: String? = null,
+        sessionToken: String? = null
+    ): EndUserEraseResult {
+        require(!userToken.isNullOrBlank() || !sessionToken.isNullOrBlank()) {
+            "Either userToken or sessionToken must be non-blank for eraseEndUser"
+        }
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/erase")
+        if (!sessionToken.isNullOrBlank()) {
+            val parsedUri = try {
+                java.net.URI(targetUrl)
+            } catch (_: Exception) {
+                null
+            }
+            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+                "eraseEndUser destination must use HTTPS when transmitting sessionToken: $targetUrl"
+            }
+        }
+
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+        }
+        val response = sendJson(
+            method = "POST",
+            path = "/api/v1/me/erase",
+            body = payload,
+            userToken = userToken?.trim()?.takeIf { it.isNotEmpty() },
+            bearerToken = sessionToken?.trim()?.takeIf { it.isNotEmpty() },
+            accepted = setOf(200)
+        )
+        return parseEndUserEraseResult(response)
+    }
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {
         val submittedAt = iso8601Now()
-        return draft.metadata + mapOf(
+        val sanitized = MetadataSanitizer.sanitize(draft.metadata)
+        return sanitized + mapOf(
             "sdk" to "cupthread-android",
             "platform" to draft.platform.wireValue,
             "submittedAt" to submittedAt
         )
     }
 
-    private suspend fun get(path: String): JSONObject = sendJson("GET", path, body = null)
+    private suspend fun get(
+        path: String,
+        userToken: String? = null,
+        bearerToken: String? = null
+    ): JSONObject = sendJson("GET", path, body = null, userToken = userToken, bearerToken = bearerToken)
 
     private fun buildHeaders(
         contentType: String?,
-        userToken: String?
+        userToken: String?,
+        bearerToken: String? = null
     ): Map<String, String> = buildMap {
         if (contentType != null) put("Content-Type", contentType)
         if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
+        if (!bearerToken.isNullOrBlank()) put("Authorization", "Bearer $bearerToken")
     }
 
     private suspend fun sendJson(
@@ -767,6 +834,7 @@ class FeedbackClient internal constructor(
         path: String,
         body: JSONObject?,
         userToken: String? = null,
+        bearerToken: String? = null,
         accepted: Set<Int> = setOf(200)
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
@@ -774,7 +842,7 @@ class FeedbackClient internal constructor(
             HttpRequest(
                 method = method,
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken),
+                headers = buildHeaders(contentType, userToken, bearerToken),
                 contentType = contentType,
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
@@ -787,6 +855,7 @@ class FeedbackClient internal constructor(
         boundary: String,
         body: ByteArray,
         userToken: String? = null,
+        bearerToken: String? = null,
         accepted: Set<Int> = setOf(200, 201)
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
@@ -794,7 +863,7 @@ class FeedbackClient internal constructor(
             HttpRequest(
                 method = "POST",
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken),
+                headers = buildHeaders(contentType, userToken, bearerToken),
                 contentType = contentType,
                 body = body
             ),

@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -155,6 +156,37 @@ class UserTokenStoreTest {
 
         assertEquals(token1, token2)
         assertEquals("Should only have committed once during first mint", 1, prefs.commitCount.get())
+    }
+
+    @Test
+    fun clearTokenRemovesPersistedAndCachedToken() {
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val store = UserTokenStore(prefs)
+
+        val firstToken = store.token
+        assertNotNull(firstToken)
+
+        store.clearToken()
+        assertNull(prefs.getString("user_token", null))
+
+        // Next read generates a fresh token
+        val secondToken = store.token
+        assertNotNull(secondToken)
+        assertTrue(firstToken != secondToken)
+        assertEquals(secondToken, prefs.getString("user_token", null))
+    }
+
+    @Test
+    fun rotateTokenMintsAndReturnsFreshTokenImmediately() {
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val store = UserTokenStore(prefs)
+
+        val firstToken = store.token
+        val rotatedToken = store.rotateToken()
+
+        assertTrue(firstToken != rotatedToken)
+        assertEquals(rotatedToken, store.token)
+        assertEquals(rotatedToken, prefs.getString("user_token", null))
     }
 
     /**

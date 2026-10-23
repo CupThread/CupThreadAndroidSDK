@@ -14,6 +14,7 @@ import dev.cupthread.feedback.ChangelogEntry
 import dev.cupthread.feedback.ChangelogLinkedRequest
 import dev.cupthread.feedback.ChangelogSubscriptionResult
 import dev.cupthread.feedback.ChangelogUnsubscribeResult
+import dev.cupthread.feedback.EndUserEraseResult
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeatureRequestSubmissionResult
 import dev.cupthread.feedback.FeedbackAttachment
@@ -320,6 +321,14 @@ internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileRe
             for (i in 0 until commentsArray.length()) add(parseUserProfileComment(commentsArray.getJSONObject(i)))
         },
         hideComments = json.booleanOr("hideComments", false)
+    )
+}
+
+internal fun parseEndUserEraseResult(json: JSONObject): EndUserEraseResult {
+    return EndUserEraseResult(
+        erased = json.booleanOr("erased", true),
+        endUserId = json.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
+            ?: json.stringOrNull("id")?.takeIf { it.isNotEmpty() }
     )
 }
 

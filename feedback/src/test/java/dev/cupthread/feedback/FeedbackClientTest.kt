@@ -5,6 +5,7 @@ import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -665,6 +666,161 @@ class FeedbackClientTest {
         val store2 = UserTokenStore(prefs)
         val token2 = store2.token
         assertEquals(token1, token2)
+    }
+
+    @Test
+    fun eraseEndUserSendsHeadersAndPayloadWithUserToken() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "anon_user_token_12345"
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(200, """{"erased":true,"endUserId":"enduser-777"}""")
+        }
+        val result = client.eraseEndUser(userToken = token)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("POST", req.method)
+        assertTrue(req.url.endsWith("/api/v1/me/erase"))
+        assertEquals(token, req.headers["X-User-Token"])
+        assertNull(req.headers["Authorization"])
+        assertEquals("application/json", req.headers["Content-Type"])
+
+        val bodyString = req.body?.let { String(it, Charsets.UTF_8) } ?: ""
+        val json = JSONObject(bodyString)
+        assertEquals("app_testkey123456", json.getString("appKey"))
+
+        assertTrue(result.erased)
+        assertEquals("enduser-777", result.endUserId)
+    }
+
+    @Test
+    fun eraseEndUserSendsBearerTokenWhenProvided() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val sessionToken = "clerk_session_abc"
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(200, """{"erased":true,"endUserId":"enduser-888"}""")
+        }
+        val result = client.eraseEndUser(sessionToken = sessionToken)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("POST", req.method)
+        assertEquals("Bearer $sessionToken", req.headers["Authorization"])
+        assertNull(req.headers["X-User-Token"])
+        assertTrue(result.erased)
+        assertEquals("enduser-888", result.endUserId)
+    }
+
+    @Test
+    fun eraseEndUserThrowsOnBlankTokens() = runTest {
+        val client = client { HttpResponse(200, "{}") }
+        try {
+            client.eraseEndUser(userToken = "", sessionToken = "")
+            fail("Expected IllegalArgumentException when both tokens are blank")
+        } catch (_: IllegalArgumentException) {
+        }
+
+        try {
+            client.eraseEndUser(userToken = "   ", sessionToken = null)
+            fail("Expected IllegalArgumentException when userToken is whitespace and sessionToken null")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun eraseEndUserRejectsNonHttpsWhenTransmittingSessionToken() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://insecure.example.com",
+                appKey = appKey
+            ),
+            transport = HttpTransport { HttpResponse(200, "{}") }
+        )
+        try {
+            insecureClient.eraseEndUser(sessionToken = "secret_session")
+            fail("Expected IllegalArgumentException when sessionToken is sent to non-HTTPS URL")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("HTTPS"))
+        }
+    }
+
+    @Test
+    fun eraseEndUserMaps401ToAuthenticationRequired() = runTest {
+        val client = client { HttpResponse(401, """{"error":"Authentication required"}""") }
+        try {
+            client.eraseEndUser(userToken = "expired_or_invalid")
+            fail("Expected FeedbackException.AuthenticationRequired on 401")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+        }
+    }
+
+    @Test
+    fun eraseEndUserSurfaces404AsUnexpectedStatus() = runTest {
+        val client = client { HttpResponse(404, """{"erased":false,"error":"Profile not found"}""") }
+        try {
+            client.eraseEndUser(userToken = "unknown_token")
+            fail("Expected FeedbackException.UnexpectedStatus on 404")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(404, ex.code)
+            assertTrue(ex.serverMessage.contains("Profile not found"))
+        }
+    }
+
+    @Test
+    fun eraseEndUserSurfaces429AsUnexpectedStatus() = runTest {
+        val client = client { HttpResponse(429, """{"error":"Too many requests"}""") }
+        try {
+            client.eraseEndUser(userToken = "rate_limited_token")
+            fail("Expected FeedbackException.UnexpectedStatus on 429")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(429, ex.code)
+            assertTrue(ex.serverMessage.contains("Too many requests"))
+        }
+    }
+
+    @Test
+    fun parseEndUserEraseResultHandlesNullAndEmptyEndUserId() {
+        val jsonWithNull = JSONObject("""{"erased":true,"endUserId":null}""")
+        val res1 = dev.cupthread.feedback.internal.parseEndUserEraseResult(jsonWithNull)
+        assertTrue(res1.erased)
+        assertNull(res1.endUserId)
+
+        val jsonWithEmpty = JSONObject("""{"erased":false,"id":""}""")
+        val res2 = dev.cupthread.feedback.internal.parseEndUserEraseResult(jsonWithEmpty)
+        assertFalse(res2.erased)
+        assertNull(res2.endUserId)
+    }
+
+    @Test
+    fun submitFeedbackSanitizesDraftMetadata() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val client = client { request ->
+            capturedRequest = request
+            HttpResponse(201, """{"submissionId":"s-1","forwardedToGithub":false}""")
+        }
+        val draft = FeedbackDraft(
+            title = "Test issue",
+            description = "Detailed test issue",
+            platform = FeedbackPlatform.ANDROID,
+            metadata = mapOf(
+                "app_token" to "secret_token_123",
+                "device_model" to "Pixel 8 Pro",
+                "invalid key with spaces" to "drop_me"
+            )
+        )
+        client.submit(draft, userToken = "tok")
+
+        val req = requireNotNull(capturedRequest)
+        val body = req.body?.let { String(it, Charsets.UTF_8) } ?: ""
+        val json = JSONObject(body)
+        val meta = json.getJSONObject("metadata")
+
+        assertEquals("[redacted]", meta.getString("app_token"))
+        assertEquals("Pixel 8 Pro", meta.getString("device_model"))
+        assertFalse(meta.has("invalid key with spaces"))
+        assertEquals("cupthread-android", meta.getString("sdk"))
+        assertEquals("android", meta.getString("platform"))
+        assertTrue(meta.has("submittedAt"))
     }
 
     companion object {
