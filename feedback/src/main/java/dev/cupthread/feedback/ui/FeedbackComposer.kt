@@ -429,7 +429,7 @@ private fun FeedbackFormBody(
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (ex: FeedbackException.UnsupportedMediaType) {
-                    error = ex.message ?: unsupportedImageTypeError
+                    error = unsupportedImageTypeError
                 } catch (ex: Exception) {
                     error = ex.message ?: defaultUploadError
                 } finally {

@@ -189,8 +189,11 @@ class AttachmentLimitsTest {
         val rawSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>".toByteArray()
         assertTrue(AttachmentLimits.hasSvgContent(rawSvg))
 
-        val binaryData = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte())
+        val binaryData = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
         assertFalse(AttachmentLimits.hasSvgContent(binaryData))
+
+        val pngWithSvgPayload = binaryData + "<svg xmlns='...'>".toByteArray()
+        assertFalse(AttachmentLimits.hasSvgContent(pngWithSvgPayload))
     }
 
     @Test
@@ -200,16 +203,21 @@ class AttachmentLimitsTest {
 
         val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
         AttachmentLimits.validateImageAttachment(jpegBytes, "photo.jpg", "image/jpeg")
+
+        val pngWithSvgComment = pngBytes + "<svg>embedded metadata</svg>".toByteArray()
+        AttachmentLimits.validateImageAttachment(pngWithSvgComment, "screenshot.png", "image/png")
     }
 
     @Test(expected = FeedbackException.UnsupportedMediaType::class)
     fun validateImageAttachmentRejectsSvgFilename() {
-        AttachmentLimits.validateImageAttachment(byteArrayOf(1, 2, 3), "vector.svg", "image/png")
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "vector.svg", "image/png")
     }
 
     @Test(expected = FeedbackException.UnsupportedMediaType::class)
     fun validateImageAttachmentRejectsSvgMime() {
-        AttachmentLimits.validateImageAttachment(byteArrayOf(1, 2, 3), "vector.png", "image/svg+xml")
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "vector.png", "image/svg+xml")
     }
 
     @Test(expected = FeedbackException.UnsupportedMediaType::class)
@@ -222,5 +230,17 @@ class AttachmentLimitsTest {
     fun validateImageAttachmentRejectsMagicByteMismatch() {
         val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
         AttachmentLimits.validateImageAttachment(jpegBytes, "screenshot.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsArbitraryBytesWithPngMime() {
+        val arbitraryBytes = byteArrayOf(1, 2, 3, 4, 5)
+        AttachmentLimits.validateImageAttachment(arbitraryBytes, "screenshot.png", "image/png")
+    }
+
+    @Test(expected = FeedbackException.UnsupportedMediaType::class)
+    fun validateImageAttachmentRejectsUnsupportedDeclaredMime() {
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+        AttachmentLimits.validateImageAttachment(pngBytes, "doc.pdf", "application/pdf")
     }
 }

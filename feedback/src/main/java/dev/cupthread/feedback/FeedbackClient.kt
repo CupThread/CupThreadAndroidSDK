@@ -243,12 +243,14 @@ class FeedbackClient internal constructor(
         }
         val boundary = "Boundary-${UUID.randomUUID()}"
         val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
+        val isImageUpload = (kind == FeedbackAttachment.Kind.IMAGE)
         val json = sendMultipart(
             path = path,
             boundary = boundary,
             body = body,
             userToken = userToken,
-            accepted = setOf(200, 201)
+            accepted = setOf(200, 201),
+            mapUnsupportedMediaType = isImageUpload
         )
         return try {
             parseAttachment(json)
@@ -939,7 +941,8 @@ class FeedbackClient internal constructor(
         body: ByteArray,
         userToken: String? = null,
         bearerToken: String? = null,
-        accepted: Set<Int> = setOf(200, 201)
+        accepted: Set<Int> = setOf(200, 201),
+        mapUnsupportedMediaType: Boolean = false
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
         return send(
@@ -950,14 +953,16 @@ class FeedbackClient internal constructor(
                 contentType = contentType,
                 body = body
             ),
-            accepted
+            accepted,
+            mapUnsupportedMediaType = mapUnsupportedMediaType
         )
     }
 
     private suspend fun send(
         request: HttpRequest,
         accepted: Set<Int>,
-        mapSubmissionQuotaErrors: Boolean = false
+        mapSubmissionQuotaErrors: Boolean = false,
+        mapUnsupportedMediaType: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -976,7 +981,7 @@ class FeedbackClient internal constructor(
                         "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second)
                     }
                 }
-                if (response.code == 415) {
+                if (response.code == 415 && mapUnsupportedMediaType) {
                     val errorPayload = parseErrorPayload(response.body)
                     throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null })
                 }

@@ -87,7 +87,7 @@ internal object AttachmentLimits {
      * Checks if [data] begins with XML or SVG tags.
      */
     fun hasSvgContent(data: ByteArray): Boolean {
-        if (data.isEmpty()) return false
+        if (data.isEmpty() || sniffImageMimeType(data) != null) return false
         val prefix = String(data.take(256).toByteArray(), Charsets.UTF_8).trimStart()
         return prefix.startsWith("<?xml", ignoreCase = true) ||
             prefix.startsWith("<svg", ignoreCase = true) ||
@@ -107,14 +107,20 @@ internal object AttachmentLimits {
             )
         }
         val cleanMime = mimeType.lowercase(Locale.ROOT).trim()
+        if (!isSupportedImageMime(cleanMime)) {
+            throw FeedbackException.UnsupportedMediaType(
+                "Unsupported image media type ($mimeType). Please upload a PNG, JPEG, WebP, or GIF image."
+            )
+        }
         val sniffed = sniffImageMimeType(data)
-        if (sniffed != null) {
-            val normalizedDeclared = if (cleanMime == "image/jpg") "image/jpeg" else cleanMime
-            if (isSupportedImageMime(cleanMime) && sniffed != normalizedDeclared) {
-                throw FeedbackException.UnsupportedMediaType(
-                    "Image content ($sniffed) does not match declared MIME type ($mimeType)."
-                )
-            }
+            ?: throw FeedbackException.UnsupportedMediaType(
+                "Unsupported or unrecognized image content for ($mimeType)."
+            )
+        val normalizedDeclared = if (cleanMime == "image/jpg") "image/jpeg" else cleanMime
+        if (sniffed != normalizedDeclared) {
+            throw FeedbackException.UnsupportedMediaType(
+                "Image content ($sniffed) does not match declared MIME type ($mimeType)."
+            )
         }
     }
 
