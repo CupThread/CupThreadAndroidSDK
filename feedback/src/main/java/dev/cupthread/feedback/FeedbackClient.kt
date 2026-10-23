@@ -60,6 +60,8 @@ import org.json.JSONObject
  * All API and network failures are wrapped in subclasses of [FeedbackException], allowing
  * predictable and uniform exception handling:
  * - [FeedbackException.AuthenticationRequired]: Endpoint requires an authenticated or permitted user session (HTTP 401).
+ * - [FeedbackException.SubmissionQuotaExceeded]: Workspace monthly submission quota reached (HTTP 402 `tier_limit_submissions`).
+ * - [FeedbackException.SubscriptionInactive]: Workspace subscription is inactive or canceled (HTTP 402 `subscription_inactive`).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
@@ -123,6 +125,8 @@ class FeedbackClient internal constructor(
      *   header to attribute submissions.
      * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
      * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
+     * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
+     * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
@@ -173,7 +177,8 @@ class FeedbackClient internal constructor(
                 path = "/api/v1/feedback",
                 body = payload,
                 userToken = userToken,
-                accepted = setOf(200, 201, 202)
+                accepted = setOf(200, 201, 202),
+                mapSubmissionQuotaErrors = true
             )
         )
     }
@@ -384,6 +389,8 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous user token from [UserTokenStore] that owns the request.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
      * @throws FeedbackException.AuthenticationRequired if anonymous requests are disallowed (HTTP 401).
+     * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
+     * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
@@ -414,7 +421,14 @@ class FeedbackClient internal constructor(
             put("requesterToken", userToken)
         }
         return parseFeatureRequestSubmission(
-            sendJson("POST", "/api/v1/feature-requests", payload, userToken = null, accepted = setOf(200, 201))
+            sendJson(
+                method = "POST",
+                path = "/api/v1/feature-requests",
+                body = payload,
+                userToken = null,
+                accepted = setOf(200, 201),
+                mapSubmissionQuotaErrors = true
+            )
         )
     }
 
@@ -896,7 +910,8 @@ class FeedbackClient internal constructor(
         body: JSONObject?,
         userToken: String? = null,
         bearerToken: String? = null,
-        accepted: Set<Int> = setOf(200)
+        accepted: Set<Int> = setOf(200),
+        mapSubmissionQuotaErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -907,7 +922,8 @@ class FeedbackClient internal constructor(
                 contentType = contentType,
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
-            accepted
+            accepted,
+            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors
         )
     }
 
@@ -932,7 +948,11 @@ class FeedbackClient internal constructor(
         )
     }
 
-    private suspend fun send(request: HttpRequest, accepted: Set<Int>): JSONObject =
+    private suspend fun send(
+        request: HttpRequest,
+        accepted: Set<Int>,
+        mapSubmissionQuotaErrors: Boolean = false
+    ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
                 transport.execute(request)
@@ -943,6 +963,13 @@ class FeedbackClient internal constructor(
             }
             if (response.code !in accepted) {
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired()
+                if (response.code == 402 && mapSubmissionQuotaErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    when (errorPayload?.first) {
+                        "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second)
+                        "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second)
+                    }
+                }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
             }
             try {
@@ -951,6 +978,18 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.InvalidResponse(error)
             }
         }
+
+    private fun parseErrorPayload(body: String): Pair<String?, String?>? {
+        if (body.isBlank()) return null
+        return try {
+            val json = JSONObject(body)
+            val code = json.optString("code").takeIf { it.isNotBlank() }
+            val error = json.optString("error").takeIf { it.isNotBlank() }
+            Pair(code, error)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun iso8601Now(): String {
         val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
