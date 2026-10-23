@@ -119,6 +119,18 @@ sealed class SdkAppearanceState {
     /** The active [SdkAppearance] resolving cache or fail-closed fallback. */
     abstract val appearance: SdkAppearance
 
+    /**
+     * Appearance instance suitable for downstream injection into [LocalSdkAppearance].
+     * Returns null if loading or failed without a cached appearance, allowing child composables
+     * to observe loading/error states without being poisoned by fail-closed fallback defaults.
+     */
+    internal val providedAppearance: SdkAppearance?
+        get() = when (this) {
+            is Success -> appearance
+            is Loading -> cachedAppearance
+            is Error -> cachedAppearance
+        }
+
     /** Configuration is currently being retrieved from the remote endpoint. */
     data class Loading(val cachedAppearance: SdkAppearance? = null) : SdkAppearanceState() {
         override val appearance: SdkAppearance get() = cachedAppearance ?: SdkAppearance.failClosed
@@ -158,6 +170,8 @@ class SdkAppearanceStateHolder internal constructor(
 ) {
     /** Shortcut to access the active [SdkAppearance]. */
     val appearance: SdkAppearance get() = state.appearance
+
+    internal val providedAppearance: SdkAppearance? get() = state.providedAppearance
 }
 
 /**
@@ -258,9 +272,10 @@ fun CupThreadTheme(
     client: FeedbackClient,
     content: @Composable () -> Unit
 ) {
-    val appearance = rememberSdkAppearance(client)
+    val holder = rememberSdkAppearanceState(client)
+    val appearance = holder.appearance
     val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalSdkAppearance provides appearance) {
+    CompositionLocalProvider(LocalSdkAppearance provides holder.providedAppearance) {
         MaterialTheme(colorScheme = sdkColorScheme(appearance.theme, dark), content = content)
     }
 }
@@ -301,7 +316,7 @@ fun SdkSurface(
     val state = holder.state
     val appearance = holder.appearance
     val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalSdkAppearance provides appearance) {
+    CompositionLocalProvider(LocalSdkAppearance provides holder.providedAppearance) {
         MaterialTheme(colorScheme = sdkColorScheme(appearance.theme, dark)) {
             when {
                 appearance.features.isEnabled(feature) -> {

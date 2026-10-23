@@ -191,4 +191,36 @@ class SdkAppearanceFailClosedTest {
             assertTrue(cached?.features?.isEnabled(SdkFeature.FEATURE_REQUESTS) == true)
         }
     }
+
+    @Test
+    fun sdkAppearanceStateProvidedAppearanceOnlyExposesNonNullWhenSuccessfulOrCached() {
+        val custom = SdkAppearance(
+            theme = SdkTheme.SUNSET,
+            features = SdkFeatures(feedback = true, featureRequests = true, roadmap = true, changelog = true)
+        )
+
+        // Success state always exposes appearance to LocalSdkAppearance
+        val successState = SdkAppearanceState.Success(custom)
+        assertEquals(custom, successState.providedAppearance)
+
+        // Loading without cache must provide null to avoid poisoning child composables with fail-closed
+        val loadingWithoutCache = SdkAppearanceState.Loading(cachedAppearance = null)
+        assertNull(loadingWithoutCache.providedAppearance)
+        assertEquals(SdkAppearance.failClosed, loadingWithoutCache.appearance)
+
+        // Loading with cache provides cached appearance
+        val loadingWithCache = SdkAppearanceState.Loading(cachedAppearance = custom)
+        assertEquals(custom, loadingWithCache.providedAppearance)
+        assertEquals(custom, loadingWithCache.appearance)
+
+        // Error without cache must provide null to allow error & retry UI observation
+        val errorWithoutCache = SdkAppearanceState.Error(RuntimeException("Failed"), cachedAppearance = null)
+        assertNull(errorWithoutCache.providedAppearance)
+        assertEquals(SdkAppearance.failClosed, errorWithoutCache.appearance)
+
+        // Error with cache provides cached appearance
+        val errorWithCache = SdkAppearanceState.Error(RuntimeException("Failed"), cachedAppearance = custom)
+        assertEquals(custom, errorWithCache.providedAppearance)
+        assertEquals(custom, errorWithCache.appearance)
+    }
 }
