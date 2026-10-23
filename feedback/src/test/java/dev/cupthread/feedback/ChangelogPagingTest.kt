@@ -168,4 +168,58 @@ class ChangelogPagingTest {
         pager.loadFirstPage()
         assertNull(cursorSeen)
     }
+
+    @Test
+    fun nullOrBlankNextCursorEndsPagingEvenIfServerReportsHasMoreTrue() = runTest {
+        val client = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [{"id":"cl-1","title":"R1","body":"","publishedAt":"2026-09-18T12:00:00.000Z"}],
+                  "hasMore": true,
+                  "nextCursor": null
+                }
+                """.trimIndent()
+            )
+        }
+
+        val pager = ChangelogPager { limit, cursor ->
+            client.fetchChangelogPage(limit, cursor)
+        }
+
+        val page = pager.loadFirstPage()
+        assertEquals(1, page.entries.size)
+        assertFalse(pager.hasMore)
+        assertNull(pager.loadNextPage())
+    }
+
+    @Test
+    fun repeatedNextCursorEndsPagingToPreventInfiniteLoops() = runTest {
+        val client = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [{"id":"cl-1","title":"R1","body":"","publishedAt":"2026-09-18T12:00:00.000Z"}],
+                  "hasMore": true,
+                  "nextCursor": "same_cursor"
+                }
+                """.trimIndent()
+            )
+        }
+
+        val pager = ChangelogPager { limit, cursor ->
+            client.fetchChangelogPage(limit, cursor)
+        }
+
+        val first = pager.loadFirstPage()
+        assertEquals("same_cursor", first.nextCursor)
+        assertTrue(pager.hasMore)
+
+        val second = pager.loadNextPage()
+        requireNotNull(second)
+        assertFalse(pager.hasMore)
+        assertNull(pager.loadNextPage())
+    }
 }

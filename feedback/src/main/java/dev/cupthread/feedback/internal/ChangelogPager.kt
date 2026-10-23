@@ -47,8 +47,12 @@ internal class ChangelogPager(
         val page = fetchPage(pageSize, cursor)
         if (discardIfReset && requestGeneration != generation) return null
         started = true
-        cursor = page.nextCursor
-        hasMore = page.hasMore && page.entries.isNotEmpty()
+        val next = page.nextCursor
+        hasMore = page.hasMore &&
+            page.entries.isNotEmpty() &&
+            !next.isNullOrBlank() &&
+            next != cursor
+        cursor = next
         return page
     }
 
