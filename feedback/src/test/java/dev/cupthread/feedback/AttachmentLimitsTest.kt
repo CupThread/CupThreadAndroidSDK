@@ -85,6 +85,8 @@ class AttachmentLimitsTest {
         assertEquals("25 MB", AttachmentLimits.formatFileSize(25_000_000))
         assertEquals("1 GB", AttachmentLimits.formatFileSize(1_000_000_000))
         assertEquals("1.5 GB", AttachmentLimits.formatFileSize(1_500_000_000))
+        // Distinguishable near boundary
+        assertEquals("20.0 MB (20000001 B)", AttachmentLimits.formatFileSize(20_000_001L))
     }
 
     @Test

@@ -115,8 +115,8 @@ import java.util.Locale
  * @param initialDraft Optional pre-populated [FeedbackDraft]; defaults to an auto-filled draft for the current package.
  * @param onSubmit Callback invoked with the [FeedbackSubmissionResult] upon successful submission.
  * @param onPickAttachment Optional callback to override image attachment selection; if null, uses system PhotoPicker.
- * @param maxAttachmentBytes Optional client-side upload size cap in bytes. Takes precedence over console configuration.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
+ * @param maxAttachmentBytes Optional client-side upload size cap in bytes. Takes precedence over console configuration.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,11 +126,19 @@ fun FeedbackComposer(
     initialDraft: FeedbackDraft? = null,
     onSubmit: (FeedbackSubmissionResult) -> Unit = {},
     onPickAttachment: (() -> Unit)? = null,
-    maxAttachmentBytes: Long? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    maxAttachmentBytes: Long? = null
 ) {
     SdkSurface(client, SdkFeature.FEEDBACK) {
-        FeedbackComposerContent(client, userToken, initialDraft, onSubmit, onPickAttachment, maxAttachmentBytes, modifier)
+        FeedbackComposerContent(
+            client = client,
+            userToken = userToken,
+            initialDraft = initialDraft,
+            onSubmit = onSubmit,
+            onPickAttachment = onPickAttachment,
+            maxAttachmentBytes = maxAttachmentBytes,
+            modifier = modifier
+        )
     }
 }
 
@@ -279,6 +287,9 @@ private fun FeedbackFormBody(
     var effectiveMaxBytes by remember(maxAttachmentBytes) {
         mutableStateOf(maxAttachmentBytes ?: AttachmentLimits.DEFAULT_MAX_ATTACHMENT_BYTES)
     }
+    var isConfigLoaded by remember(maxAttachmentBytes) {
+        mutableStateOf(maxAttachmentBytes != null)
+    }
 
     LaunchedEffect(client, maxAttachmentBytes) {
         if (maxAttachmentBytes == null) {
@@ -289,6 +300,8 @@ private fun FeedbackFormBody(
                 }
             } catch (_: Exception) {
                 // Fall back to default or last-known limit on network failure
+            } finally {
+                isConfigLoaded = true
             }
         }
     }
@@ -300,23 +313,72 @@ private fun FeedbackFormBody(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            if (!AttachmentLimits.canAddAttachment(draft.attachments.size)) {
+            if (!AttachmentLimits.canAddAttachment(draft.attachments.size) || !isConfigLoaded) {
                 return@rememberLauncherForActivityResult
             }
             scope.launch {
                 uploadingAttachment = true
                 error = null
                 try {
-                    val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    } ?: throw IllegalStateException("Could not read image file")
+                    val (bytes, totalSize) = withContext(Dispatchers.IO) {
+                        val declaredSize = try {
+                            val cursor = context.contentResolver.query(
+                                uri,
+                                arrayOf(OpenableColumns.SIZE),
+                                null,
+                                null,
+                                null
+                            )
+                            cursor?.use {
+                                if (it.moveToFirst()) {
+                                    val idx = it.getColumnIndex(OpenableColumns.SIZE)
+                                    if (idx >= 0 && !it.isNull(idx)) it.getLong(idx) else null
+                                } else null
+                            }
+                        } catch (_: Exception) {
+                            null
+                        }
 
-                    if (!AttachmentLimits.isWithinSizeLimit(bytes.size.toLong(), effectiveMaxBytes)) {
-                        val formattedSize = AttachmentLimits.formatFileSize(bytes.size.toLong())
+                        if (declaredSize != null && declaredSize > effectiveMaxBytes) {
+                            return@withContext null to declaredSize
+                        }
+
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("Could not read image file")
+                        input.use { stream ->
+                            val buffer = ByteArray(8192)
+                            val output = java.io.ByteArrayOutputStream()
+                            var totalRead = 0L
+                            var isOverLimit = false
+                            while (true) {
+                                val read = stream.read(buffer)
+                                if (read == -1) break
+                                totalRead += read
+                                if (totalRead > effectiveMaxBytes) {
+                                    isOverLimit = true
+                                    break
+                                }
+                                output.write(buffer, 0, read)
+                            }
+                            if (isOverLimit) {
+                                null to totalRead
+                            } else {
+                                output.toByteArray() to totalRead
+                            }
+                        }
+                    }
+
+                    if (bytes == null || !AttachmentLimits.isWithinSizeLimit(totalSize, effectiveMaxBytes)) {
+                        val formattedSize = AttachmentLimits.formatFileSize(totalSize)
                         val formattedLimit = AttachmentLimits.formatFileSize(effectiveMaxBytes)
+                        val displaySize = if (formattedSize == formattedLimit && totalSize != effectiveMaxBytes) {
+                            "$formattedSize ($totalSize bytes)"
+                        } else {
+                            formattedSize
+                        }
                         error = context.getString(
                             R.string.cupthread_attachment_oversized,
-                            formattedSize,
+                            displaySize,
                             formattedLimit
                         )
                         return@launch
@@ -467,7 +529,7 @@ private fun FeedbackFormBody(
                         )
                     }
                 },
-                enabled = !submitting && !uploadingAttachment,
+                enabled = !submitting && !uploadingAttachment && isConfigLoaded,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(

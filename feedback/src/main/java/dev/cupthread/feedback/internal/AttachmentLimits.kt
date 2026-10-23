@@ -43,6 +43,9 @@ internal object AttachmentLimits {
 
     /**
      * Formats raw bytes into a human-readable file size string (e.g. "20 MB", "1.5 MB", "500 KB").
+     *
+     * Preserves sufficient precision so that near-boundary sizes (e.g. 20,000,001 bytes)
+     * are distinguishable from exact threshold limits (e.g. 20 MB).
      */
     fun formatFileSize(bytes: Long): String {
         if (bytes <= 0) return "0 B"
@@ -50,27 +53,30 @@ internal object AttachmentLimits {
         val kb = bytes / 1000.0
         if (kb < 1000) {
             val rounded = (kb * 10).roundToLong()
-            return if (rounded % 10 == 0L) {
-                "${rounded / 10} KB"
-            } else {
-                String.format(Locale.ROOT, "%.1f KB", kb)
+            return when {
+                bytes % 1000L == 0L -> "${bytes / 1000L} KB"
+                rounded % 10 != 0L -> String.format(Locale.ROOT, "%.1f KB", kb)
+                (kb * 100).roundToLong() % 100 != 0L -> String.format(Locale.ROOT, "%.2f KB", kb)
+                else -> String.format(Locale.ROOT, "%.1f KB (%d B)", kb, bytes)
             }
         }
         val mb = bytes / 1_000_000.0
         if (mb < 1000) {
             val rounded = (mb * 10).roundToLong()
-            return if (rounded % 10 == 0L) {
-                "${rounded / 10} MB"
-            } else {
-                String.format(Locale.ROOT, "%.1f MB", mb)
+            return when {
+                bytes % 1_000_000L == 0L -> "${bytes / 1_000_000L} MB"
+                rounded % 10 != 0L -> String.format(Locale.ROOT, "%.1f MB", mb)
+                (mb * 100).roundToLong() % 100 != 0L -> String.format(Locale.ROOT, "%.2f MB", mb)
+                else -> String.format(Locale.ROOT, "%.1f MB (%d B)", mb, bytes)
             }
         }
         val gb = bytes / 1_000_000_000.0
         val rounded = (gb * 10).roundToLong()
-        return if (rounded % 10 == 0L) {
-            "${rounded / 10} GB"
-        } else {
-            String.format(Locale.ROOT, "%.1f GB", gb)
+        return when {
+            bytes % 1_000_000_000L == 0L -> "${bytes / 1_000_000_000L} GB"
+            rounded % 10 != 0L -> String.format(Locale.ROOT, "%.1f GB", gb)
+            (gb * 100).roundToLong() % 100 != 0L -> String.format(Locale.ROOT, "%.2f GB", gb)
+            else -> String.format(Locale.ROOT, "%.1f GB (%d B)", gb, bytes)
         }
     }
 }
