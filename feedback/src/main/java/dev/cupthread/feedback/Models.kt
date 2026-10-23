@@ -956,3 +956,18 @@ data class EndUserEraseResult(
     val erased: Boolean,
     val endUserId: String? = null
 )
+
+/**
+ * Result of linking an anonymous end-user profile to an authenticated identity via [FeedbackClient.linkEndUser].
+ *
+ * Returned by `POST /api/v1/me/link`.
+ *
+ * @property linked Whether the profile was successfully linked to the authenticated identity.
+ * @property endUserId Unique identifier of the linked end-user profile, if available.
+ * @property clerkUserId The authenticated user identifier the profile is now linked to.
+ */
+data class EndUserLinkResult(
+    val linked: Boolean,
+    val endUserId: String? = null,
+    val clerkUserId: String? = null
+)

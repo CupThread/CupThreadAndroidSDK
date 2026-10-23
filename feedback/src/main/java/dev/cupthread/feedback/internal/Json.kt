@@ -22,6 +22,7 @@ import dev.cupthread.feedback.FeedbackPlatform
 import dev.cupthread.feedback.FeedbackSubmissionResult
 import dev.cupthread.feedback.ListFeatureRequestsResult
 import dev.cupthread.feedback.ChangelogOverlayConfig
+import dev.cupthread.feedback.EndUserLinkResult
 import dev.cupthread.feedback.PublicAppConfig
 import dev.cupthread.feedback.SdkAppearance
 import dev.cupthread.feedback.SdkFeatures
@@ -329,6 +330,34 @@ internal fun parseEndUserEraseResult(json: JSONObject): EndUserEraseResult {
         erased = json.booleanOr("erased", true),
         endUserId = json.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
             ?: json.stringOrNull("id")?.takeIf { it.isNotEmpty() }
+    )
+}
+
+internal fun parseEndUserLinkResult(json: JSONObject): EndUserLinkResult {
+    val endUser = json.optJSONObject("endUser")
+    if (endUser != null) {
+        val id = endUser.stringOrNull("id")?.takeIf { it.isNotEmpty() }
+            ?: endUser.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
+        val clerkUserId = endUser.stringOrNull("clerkUserId")?.takeIf { it.isNotEmpty() }
+        val confirmed = if (endUser.has("identityConfirmed") && !endUser.isNull("identityConfirmed")) {
+            endUser.getBoolean("identityConfirmed")
+        } else {
+            true
+        }
+        return EndUserLinkResult(
+            linked = confirmed,
+            endUserId = id,
+            clerkUserId = clerkUserId
+        )
+    }
+    val linked = json.booleanOr("linked", true)
+    val endUserId = json.stringOrNull("endUserId")?.takeIf { it.isNotEmpty() }
+        ?: json.stringOrNull("id")?.takeIf { it.isNotEmpty() }
+    val clerkUserId = json.stringOrNull("clerkUserId")?.takeIf { it.isNotEmpty() }
+    return EndUserLinkResult(
+        linked = linked,
+        endUserId = endUserId,
+        clerkUserId = clerkUserId
     )
 }
 

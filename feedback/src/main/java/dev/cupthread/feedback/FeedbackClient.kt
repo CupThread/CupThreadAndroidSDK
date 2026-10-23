@@ -16,6 +16,7 @@ import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
 import dev.cupthread.feedback.internal.parseEndUserEraseResult
+import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
@@ -33,6 +34,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -360,14 +362,16 @@ class FeedbackClient internal constructor(
     ): ListFeatureRequestsResult {
         val params = mutableListOf(
             "appKey" to config.appKey,
-            "userToken" to userToken,
             "limit" to limit.toString(),
             "offset" to offset.toString()
         )
         if (!versionId.isNullOrBlank()) params += "versionId" to versionId
         if (!query.isNullOrBlank()) params += "q" to query
         if (!cursor.isNullOrBlank()) params += "cursor" to cursor
-        return parseListFeatureRequests(get("/api/v1/feature-requests?${encodeQuery(params)}"), offset)
+        return parseListFeatureRequests(
+            get("/api/v1/feature-requests?${encodeQuery(params)}", userToken = userToken),
+            offset
+        )
     }
 
     /**
@@ -798,7 +802,66 @@ class FeedbackClient internal constructor(
             bearerToken = sessionToken?.trim()?.takeIf { it.isNotEmpty() },
             accepted = setOf(200)
         )
-        return parseEndUserEraseResult(response)
+        return try {
+            parseEndUserEraseResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
+    }
+
+    /**
+     * Links an anonymous end-user profile to an authenticated user session via `POST /api/v1/me/link`.
+     *
+     * Enables explicit linking of an anonymous end-user profile (and its historical feedback, votes,
+     * and comments) to an authenticated account identity.
+     *
+     * @param sessionToken Bearer authentication token representing the signed-in user session.
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [EndUserLinkResult] containing the linking status and profile identifiers.
+     * @throws IllegalArgumentException if [sessionToken] or [userToken] is blank.
+     * @throws FeedbackException.AuthenticationRequired if the session token is missing or expired (HTTP 401).
+     * @throws FeedbackException.UnexpectedStatus on HTTP 400, 404, 409 (conflict), or other server rejections.
+     * @throws FeedbackException.InvalidResponse on network failure or invalid response JSON.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.linkEndUser(
+     *     sessionToken = "sess_abc123",
+     *     userToken = userToken
+     * )
+     * println("Linked: ${result.linked}, User ID: ${result.clerkUserId}")
+     * ```
+     */
+    suspend fun linkEndUser(sessionToken: String, userToken: String): EndUserLinkResult {
+        require(sessionToken.isNotBlank()) { "sessionToken cannot be blank" }
+        require(userToken.isNotBlank()) { "userToken cannot be blank" }
+
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/link")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "linkEndUser destination must use HTTPS to protect sessionToken: $targetUrl"
+        }
+
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+        }
+        val response = sendJson(
+            method = "POST",
+            path = "/api/v1/me/link",
+            body = payload,
+            userToken = userToken.trim(),
+            bearerToken = sessionToken.trim(),
+            accepted = setOf(200)
+        )
+        return try {
+            parseEndUserLinkResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
     }
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {

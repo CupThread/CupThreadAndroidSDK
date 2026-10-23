@@ -23,6 +23,14 @@ internal fun interface HttpTransport {
     fun execute(request: HttpRequest): HttpResponse
 }
 
+internal fun HttpRequest.shouldFollowRedirects(): Boolean {
+    val hasCredentials = headers.any { (key, value) ->
+        (key.equals("X-User-Token", ignoreCase = true) || key.equals("Authorization", ignoreCase = true)) &&
+            value.isNotBlank()
+    }
+    return !hasCredentials
+}
+
 internal class UrlConnectionTransport : HttpTransport {
     override fun execute(request: HttpRequest): HttpResponse {
         val connection = (URL(request.url).openConnection() as HttpURLConnection).apply {
@@ -30,7 +38,7 @@ internal class UrlConnectionTransport : HttpTransport {
             connectTimeout = 15_000
             readTimeout = 20_000
             doInput = true
-            instanceFollowRedirects = true
+            instanceFollowRedirects = request.shouldFollowRedirects()
             request.headers.forEach { (key, value) -> setRequestProperty(key, value) }
             if (request.contentType != null) {
                 setRequestProperty("Content-Type", request.contentType)
