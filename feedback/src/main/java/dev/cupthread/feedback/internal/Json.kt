@@ -278,21 +278,23 @@ internal fun parseRecentCommenters(array: JSONArray?): List<RecentCommenter> {
     }
 }
 
-internal fun parseFeatureRequestComment(json: JSONObject): FeatureRequestComment =
-    FeatureRequestComment(
-        id = json.getString("id"),
-        featureRequestId = json.getString("featureRequestId"),
-        authorName = json.stringOrNull("authorName"),
-        authorEmail = json.stringOrNull("authorEmail"),
-        authorAvatarUrl = json.stringOrNull("authorAvatarUrl"),
-        authorClerkId = json.stringOrNull("authorClerkId"),
-        body = json.getString("body"),
-        parentId = json.stringOrNull("parentId"),
-        replyToClerkId = json.stringOrNull("replyToClerkId"),
-        replyToAuthorName = json.stringOrNull("replyToAuthorName"),
-        isHidden = json.booleanOr("isHidden", false),
-        createdAt = json.optString("createdAt", "")
+internal fun parseFeatureRequestComment(json: JSONObject): FeatureRequestComment {
+    val record = json.optJSONObject("comment") ?: json
+    return FeatureRequestComment(
+        id = record.getString("id"),
+        featureRequestId = record.getString("featureRequestId"),
+        authorName = record.stringOrNull("authorName"),
+        authorEmail = record.stringOrNull("authorEmail"),
+        authorAvatarUrl = record.stringOrNull("authorAvatarUrl"),
+        authorClerkId = record.stringOrNull("authorClerkId"),
+        body = record.getString("body"),
+        parentId = record.stringOrNull("parentId"),
+        replyToClerkId = record.stringOrNull("replyToClerkId"),
+        replyToAuthorName = record.stringOrNull("replyToAuthorName"),
+        isHidden = record.booleanOr("isHidden", false),
+        createdAt = record.optString("createdAt", "")
     )
+}
 
 internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
     val array = json.optJSONArray("comments") ?: JSONArray()

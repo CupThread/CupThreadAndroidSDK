@@ -52,6 +52,7 @@ import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -131,6 +132,8 @@ fun FeatureRequestDetailSheet(
         commentsError = null
         try {
             comments = client.fetchComments(item.id).filter { !it.isHidden }
+        } catch (e: CancellationException) {
+            throw e
         } catch (ex: Exception) {
             commentsError = ex.message ?: defaultLoadError
         } finally {
@@ -373,6 +376,8 @@ fun FeatureRequestDetailSheet(
                                     commentBody = ""
                                     replyTarget = null
                                     loadComments()
+                                } catch (e: CancellationException) {
+                                    throw e
                                 } catch (ex: Exception) {
                                     postError = ex.message ?: defaultPostError
                                 } finally {
