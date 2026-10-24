@@ -24,6 +24,7 @@
     <string name="cupthread_attachment_oversized">O anexo (%1$s) excede o tamanho máximo permitido de %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">O anexo excede o tamanho máximo permitido de %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Formato de imagem não suportado. Selecione uma imagem PNG, JPEG, WebP ou GIF.</string>
+    <string name="cupthread_feedback_attachment_scan_rejected">Um anexo foi rejeitado pela verificação de conteúdo e não pôde ser enviado.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Sugestões de recursos</string>
