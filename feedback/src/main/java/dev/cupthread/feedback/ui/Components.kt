@@ -598,7 +598,7 @@ fun AvatarStack(
  * ```
  *
  * @param client Shared [FeedbackClient] used to load the user profile.
- * @param userId Unique user identifier (e.g. Clerk user ID).
+ * @param userId App-scoped pseudonymous user identifier (`u_*`).
  * @param onDismiss Callback invoked to close the profile bottom sheet.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
