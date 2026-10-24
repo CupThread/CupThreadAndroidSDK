@@ -447,9 +447,9 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Toggles an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
+     * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * If the user has not voted yet, a vote is added; if they have already voted, their vote is removed.
+     * To remove an existing upvote, call [deleteVote] instead.
      * Returns the reconciled server vote state for optimistic UI synchronization.
      *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
@@ -1088,8 +1088,8 @@ class FeedbackClient internal constructor(
         if (body.isBlank()) return null
         return try {
             val json = JSONObject(body)
-            val code = json.optString("code").takeIf { it.isNotBlank() }
-            val error = json.optString("error").takeIf { it.isNotBlank() }
+            val code = if (json.isNull("code")) null else json.optString("code").takeIf { it.isNotBlank() && it != "null" }
+            val error = if (json.isNull("error")) null else json.optString("error").takeIf { it.isNotBlank() && it != "null" }
             Pair(code, error)
         } catch (_: Exception) {
             null

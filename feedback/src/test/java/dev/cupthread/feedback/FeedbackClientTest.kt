@@ -887,6 +887,19 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteMapsHttp429WithJsonNullErrorToNullServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"code":"too_many_requests","error":null}""")
+            }.toggleVote("fr-11-null-error", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
     fun toggleVoteMapsHttp429WithPlainTextBodyToServerMessage() = runTest {
         try {
             client {
