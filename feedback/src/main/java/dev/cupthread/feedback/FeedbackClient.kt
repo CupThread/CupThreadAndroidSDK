@@ -829,15 +829,40 @@ class FeedbackClient internal constructor(
      * Subscribes an email address to product update emails via
      * `POST /api/v1/public/apps/{appKey}/changelog/subscribe`.
      *
+     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken].
+     *
      * @param email Valid email address to subscribe.
      * @param userToken Stable anonymous token from [UserTokenStore].
      * @return [ChangelogSubscriptionResult] indicating subscription success and whether the address was already registered.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     */
+    suspend fun subscribeToChangelog(
+        email: String,
+        userToken: String
+    ): ChangelogSubscriptionResult = subscribeToChangelog(email, userToken, turnstileToken = null)
+
+    /**
+     * Subscribes an email address to product update emails via
+     * `POST /api/v1/public/apps/{appKey}/changelog/subscribe`.
+     *
+     * When human verification is enabled on the server, anonymous subscription requests require
+     * a valid [turnstileToken].
+     *
+     * @param email Valid email address to subscribe.
+     * @param userToken Stable anonymous token from [UserTokenStore].
+     * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
+     * @return [ChangelogSubscriptionResult] indicating subscription success and whether the address was already registered.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as HTTP 403 when human verification is required or fails).
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
      * ```kotlin
-     * val result = client.subscribeToChangelog("user@example.com", userToken = userToken)
+     * val result = client.subscribeToChangelog(
+     *     email = "user@example.com",
+     *     userToken = userToken,
+     *     turnstileToken = "0.test_turnstile_token..."
+     * )
      * if (result.alreadySubscribed) {
      *     println("Already subscribed!")
      * } else {
@@ -845,8 +870,17 @@ class FeedbackClient internal constructor(
      * }
      * ```
      */
-    suspend fun subscribeToChangelog(email: String, userToken: String): ChangelogSubscriptionResult {
-        val payload = JSONObject().put("email", email.trim())
+    suspend fun subscribeToChangelog(
+        email: String,
+        userToken: String,
+        turnstileToken: String?
+    ): ChangelogSubscriptionResult {
+        val payload = JSONObject().apply {
+            put("email", email.trim())
+            turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                put("turnstileToken", it)
+            }
+        }
         return parseChangelogSubscription(
             sendJson(
                 "POST",

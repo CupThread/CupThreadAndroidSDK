@@ -140,7 +140,7 @@ lifecycleScope.launch {
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
-| `subscribeToChangelog(email, userToken)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
+| `subscribeToChangelog(email, userToken, turnstileToken)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
 | `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
