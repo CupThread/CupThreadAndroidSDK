@@ -442,6 +442,7 @@ data class SdkAppearance(
  * @property allowAnonymousVote Whether feature requests can be upvoted by anonymous users.
  * @property allowAnonymousFeedback Whether feedback submissions can be sent anonymously.
  * @property allowAnonymousChangelog Whether changelog release notes can be viewed anonymously.
+ * @property requireAnonymousVoteTurnstile Whether anonymous feature request votes require Cloudflare Turnstile human verification.
  * @property sdk Remote theme and surface appearance bundle ([SdkAppearance]).
  */
 data class PublicAppConfig(
@@ -461,6 +462,7 @@ data class PublicAppConfig(
     val allowAnonymousVote: Boolean,
     val allowAnonymousFeedback: Boolean,
     val allowAnonymousChangelog: Boolean,
+    val requireAnonymousVoteTurnstile: Boolean = false,
     val sdk: SdkAppearance = SdkAppearance.defaults
 )
 
@@ -698,7 +700,7 @@ data class RecentCommenter(
  * @property id Unique comment identifier.
  * @property featureRequestId Parent [FeatureRequestItem.id] this comment belongs to.
  * @property authorName Display name of the commenter, or `null`.
- * @property authorEmail Email address of the author, or `null`.
+ * @property authorEmail Email address of the author (deprecated, no longer served by the server), or `null`.
  * @property authorAvatarUrl Hosted avatar image URL, or `null`.
  * @property authorClerkId Unique user ID if signed in, or `null`.
  * @property body Comment content; supports inline Markdown.
@@ -707,11 +709,14 @@ data class RecentCommenter(
  * @property replyToAuthorName Name of the participant being replied to, or `null`.
  * @property isHidden Whether this comment was moderated and hidden from public view.
  * @property createdAt ISO 8601 creation timestamp.
+ * @property appId Unique identifier of the app tenant, or `null`.
+ * @property updatedAt ISO 8601 last update timestamp, or `null`.
  */
 data class FeatureRequestComment(
     val id: String,
-    val featureRequestId: String,
+    val featureRequestId: String = "",
     val authorName: String? = null,
+    @Deprecated("authorEmail was removed from the OpenAPI schema and is no longer served by the server")
     val authorEmail: String? = null,
     val authorAvatarUrl: String? = null,
     val authorClerkId: String? = null,
@@ -720,7 +725,9 @@ data class FeatureRequestComment(
     val replyToClerkId: String? = null,
     val replyToAuthorName: String? = null,
     val isHidden: Boolean = false,
-    val createdAt: String
+    val createdAt: String,
+    val appId: String? = null,
+    val updatedAt: String? = null
 )
 
 /**
