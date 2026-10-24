@@ -307,21 +307,21 @@ internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
 
 internal fun parsePublicUserProfile(json: JSONObject): PublicUserProfile =
     PublicUserProfile(
-        clerkUserId = json.optString("clerkUserId", ""),
+        clerkUserId = json.stringOrNull("clerkUserId") ?: "",
         displayName = json.stringOrNull("displayName"),
         avatarUrl = json.stringOrNull("avatarUrl"),
         bio = json.stringOrNull("bio"),
         websiteUrl = json.stringOrNull("websiteUrl"),
         hideComments = json.booleanOr("hideComments", false),
-        createdAt = json.optString("createdAt", ""),
-        updatedAt = json.optString("updatedAt", "")
+        createdAt = json.stringOrNull("createdAt") ?: "",
+        updatedAt = json.stringOrNull("updatedAt") ?: ""
     )
 
 internal fun parsePublicAppSummary(json: JSONObject): PublicAppSummary =
     PublicAppSummary(
         id = json.getString("id"),
         name = json.getString("name"),
-        slug = json.optString("appSlug").ifBlank { json.optString("slug", "") },
+        slug = json.stringOrNull("appSlug").orEmpty().ifBlank { json.stringOrNull("slug").orEmpty() },
         iconUrl = json.stringOrNull("iconUrl"),
         description = json.stringOrNull("description"),
         requestCount = json.intOr("requestCount", 0)
@@ -331,10 +331,10 @@ internal fun parseUserProfileComment(json: JSONObject): UserProfileComment =
     UserProfileComment(
         id = json.getString("id"),
         body = json.getString("body"),
-        createdAt = json.optString("createdAt", ""),
+        createdAt = json.stringOrNull("createdAt") ?: "",
         featureRequestId = json.getString("featureRequestId"),
         featureRequestTitle = json.getString("featureRequestTitle"),
-        appId = json.optString("appId", ""),
+        appId = json.stringOrNull("appId") ?: "",
         appName = json.getString("appName")
     )
 

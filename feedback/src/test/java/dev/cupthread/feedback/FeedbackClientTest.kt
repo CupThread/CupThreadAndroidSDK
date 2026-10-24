@@ -1200,6 +1200,57 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchUserProfileHandlesExplicitNullsInPayload() = runTest {
+        val payloadWithNulls = """
+            {
+              "profile": {
+                "clerkUserId": null,
+                "displayName": null,
+                "avatarUrl": null,
+                "bio": null,
+                "websiteUrl": null,
+                "createdAt": null,
+                "updatedAt": null,
+                "hideComments": null
+              },
+              "publicApps": [
+                {
+                  "id": "app_1",
+                  "name": "App One",
+                  "appSlug": null,
+                  "slug": "legacy-app-one"
+                }
+              ],
+              "recentComments": [
+                {
+                  "id": "comm_1",
+                  "body": "Comment text",
+                  "createdAt": null,
+                  "featureRequestId": "req_1",
+                  "featureRequestTitle": "Title",
+                  "appId": null,
+                  "appName": "App One"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val result = client {
+            HttpResponse(200, payloadWithNulls)
+        }.fetchUserProfile("u_null_test")
+
+        assertEquals("", result.profile.clerkUserId)
+        assertEquals("", result.profile.createdAt)
+        assertEquals("", result.profile.updatedAt)
+        assertFalse(result.profile.hideComments)
+        assertEquals(1, result.apps.size)
+        assertEquals("legacy-app-one", result.apps[0].slug)
+        assertEquals(1, result.recentComments.size)
+        assertEquals("", result.recentComments[0].appId)
+        assertEquals("", result.recentComments[0].createdAt)
+    }
+
+    @Test
     fun changelogStoreTracksSeenVersionsAndIds() {
         val prefs = FakeSharedPreferences()
         val store = ChangelogStore(prefs)
