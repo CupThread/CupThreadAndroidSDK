@@ -1055,8 +1055,8 @@ class FeedbackClient internal constructor(
         if (body.isBlank()) return null
         return try {
             val json = JSONObject(body)
-            val code = json.optString("code").takeIf { it.isNotBlank() }
-            val error = json.optString("error").takeIf { it.isNotBlank() }
+            val code = if (json.isNull("code")) null else json.optString("code").takeIf { it.isNotBlank() && it != "null" }
+            val error = if (json.isNull("error")) null else json.optString("error").takeIf { it.isNotBlank() && it != "null" }
             Pair(code, error)
         } catch (_: Exception) {
             null

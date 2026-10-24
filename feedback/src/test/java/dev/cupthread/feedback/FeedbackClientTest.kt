@@ -1574,6 +1574,24 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeedbackMaps422ScanRejectedWithExplicitNullErrorToDefaultMessage() = runTest {
+        val client = client {
+            HttpResponse(
+                422,
+                """{"code":"scan_rejected","error":null}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentScanRejected exception")
+        } catch (ex: FeedbackException.AttachmentScanRejected) {
+            assertNull(ex.serverMessage)
+            assertEquals("An attachment could not be uploaded due to content inspection rejection.", ex.message)
+        }
+    }
+
+    @Test
     fun submitFeedbackMapsOther422CodesToUnexpectedStatus() = runTest {
         val client = client {
             HttpResponse(
