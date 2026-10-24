@@ -1095,6 +1095,106 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun subscribeToChangelogHitsEndpointAndParsesSuccessResult() = runTest {
+        var requestedUrl: String? = null
+        var capturedHeaders: Map<String, String>? = null
+        var capturedBody: String? = null
+        val userToken = "tok_user_123"
+
+        val result = client { req ->
+            requestedUrl = req.url
+            capturedHeaders = req.headers
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"subscribed":true,"alreadySubscribed":false}""")
+        }.subscribeToChangelog("alice@example.com", userToken = userToken)
+
+        assertEquals("https://api.example.com/api/v1/public/apps/$appKey/changelog/subscribe", requestedUrl)
+        assertEquals(userToken, capturedHeaders?.get("X-User-Token"))
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("alice@example.com", payload.getString("email"))
+        assertFalse(payload.has("turnstileToken"))
+        assertTrue(result.subscribed)
+        assertFalse(result.alreadySubscribed)
+    }
+
+    @Test
+    fun subscribeToChangelogIncludesTurnstileTokenInPayloadWhenProvided() = runTest {
+        var capturedBody: String? = null
+        val userToken = "tok_user_456"
+        val rawTurnstile = "   0.test_turnstile_token_subscribe   "
+
+        val result = client { req ->
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"subscribed":true,"alreadySubscribed":true}""")
+        }.subscribeToChangelog("bob@example.com", userToken = userToken, turnstileToken = rawTurnstile)
+
+        assertTrue(result.subscribed)
+        assertTrue(result.alreadySubscribed)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("bob@example.com", payload.getString("email"))
+        assertEquals("0.test_turnstile_token_subscribe", payload.getString("turnstileToken"))
+    }
+
+    @Test
+    fun subscribeToChangelogOmitsTurnstileTokenWhenNullOrBlank() = runTest {
+        var capturedBody: String? = null
+        val userToken = "tok_user_789"
+
+        val c = client { req ->
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"subscribed":true,"alreadySubscribed":false}""")
+        }
+
+        // null turnstileToken
+        c.subscribeToChangelog("user@example.com", userToken = userToken, turnstileToken = null)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+
+        // blank turnstileToken
+        c.subscribeToChangelog("user@example.com", userToken = userToken, turnstileToken = "   ")
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+
+        // two-argument overload
+        c.subscribeToChangelog("user@example.com", userToken = userToken)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+    }
+
+    @Test
+    fun subscribeToChangelogSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
+        val userToken = "tok_anon_user"
+        val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
+
+        try {
+            client {
+                HttpResponse(403, errorJson)
+            }.subscribeToChangelog("attacker@example.com", userToken = userToken, turnstileToken = "invalid_token")
+            fail("Expected FeedbackException.UnexpectedStatus on 403")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(403, ex.code)
+            assertTrue(ex.serverMessage.contains("turnstile_verification_failed"))
+        }
+    }
+
+    @Test
+    fun unsubscribeFromChangelogHitsEndpointAndParsesResult() = runTest {
+        var requestedUrl: String? = null
+        var capturedBody: String? = null
+
+        val result = client { req ->
+            requestedUrl = req.url
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"unsubscribed":true}""")
+        }.unsubscribeFromChangelog("user@example.com")
+
+        assertEquals("https://api.example.com/api/v1/public/apps/$appKey/changelog/unsubscribe", requestedUrl)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("user@example.com", payload.getString("email"))
+        assertTrue(result.unsubscribed)
+    }
+
+    @Test
     fun toggleVoteHitsVoteEndpoint() = runTest {
         var url: String? = null
         val result = client { request ->
