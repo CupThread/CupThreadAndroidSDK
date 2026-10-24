@@ -716,6 +716,61 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchFeatureRequestThrowsInvalidResponseOnMalformedRequestObject() = runTest {
+        val c = client {
+            HttpResponse(200, """{"request":{"missing_required_fields":true}}""")
+        }
+        try {
+            c.fetchFeatureRequest("fr-malformed")
+            fail("Expected InvalidResponse when 'request' object is malformed")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestRequiresHttpsWhenUserTokenProvided() = runTest {
+        val insecureClient = FeedbackClient(
+            FeedbackClientConfig(
+                baseUrl = "http://api.example.com",
+                appKey = "app_testkey123456"
+            ),
+            transport = { HttpResponse(200, "{}") }
+        )
+
+        try {
+            insecureClient.fetchFeatureRequest("fr-123", userToken = "anon_user_token_123")
+            fail("Expected IllegalArgumentException when userToken transmitted over HTTP")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("HTTPS") == true)
+        }
+
+        // Without user token, HTTP is permitted
+        val validJson = """
+            {
+              "request": {
+                "id": "fr-123",
+                "appId": "app_testkey123456",
+                "title": "Allowed over HTTP without token",
+                "approved": true,
+                "voteCount": 0,
+                "hasVoted": false,
+                "isOwnRequest": false
+              }
+            }
+        """.trimIndent()
+        val insecureAllowedClient = FeedbackClient(
+            FeedbackClientConfig(
+                baseUrl = "http://api.example.com",
+                appKey = "app_testkey123456"
+            ),
+            transport = { HttpResponse(200, validJson) }
+        )
+        val item = insecureAllowedClient.fetchFeatureRequest("fr-123")
+        assertEquals("fr-123", item.id)
+    }
+
+    @Test
     fun linkEndUserSendsHeadersAndPayload() = runTest {
         var capturedRequest: HttpRequest? = null
         val sessionToken = "clerk_sess_xyz"

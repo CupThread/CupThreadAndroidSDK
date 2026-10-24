@@ -446,14 +446,30 @@ class FeedbackClient internal constructor(
         userToken: String?
     ): FeatureRequestItem {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+        if (trimmedToken != null) {
+            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${featureRequestId.trim()}")
+            val parsedUri = try {
+                java.net.URI(targetUrl)
+            } catch (_: Exception) {
+                null
+            }
+            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+                "fetchFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
+            }
+        }
         val json = get(
             path = "/api/v1/feature-requests/${featureRequestId.trim()}",
-            userToken = userToken?.trim()?.takeIf { it.isNotEmpty() },
+            userToken = trimmedToken,
             mapRateLimitErrors = true
         )
         val requestJson = json.optJSONObject("request")
             ?: throw FeedbackException.InvalidResponse(IllegalStateException("Missing 'request' in response: $json"))
-        return parseFeatureRequestItem(requestJson)
+        return try {
+            parseFeatureRequestItem(requestJson)
+        } catch (error: JSONException) {
+            throw FeedbackException.InvalidResponse(error)
+        }
     }
 
     /**
