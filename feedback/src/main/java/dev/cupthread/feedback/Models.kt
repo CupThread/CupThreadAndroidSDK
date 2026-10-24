@@ -593,14 +593,14 @@ data class AppVersion(
  * @property requesterClerkId User account ID of the requester if signed in, or `null`.
  * @property approved Whether a moderator has approved this request for public display.
  * @property voteCount Total number of upvotes, including both in-app votes and [importedVotes].
- * @property importedVotes Historical upvotes copied from an external source at import time (e.g. GitHub/Linear).
- *   Already included in [voteCount] (not additive on top of it). Defaults to 0 for native requests.
  * @property hasVoted Whether the current user (identified by `userToken`) has upvoted this request.
  * @property isOwnRequest Whether the current user created this request (users cannot vote on their own requests).
  * @property recentCommenters Up to 3 most recent commenters for rendering avatar stacks.
  * @property hasMoreCommenters Whether additional commenters exist beyond [recentCommenters].
  * @property createdAt ISO 8601 creation timestamp.
  * @property updatedAt ISO 8601 last update timestamp.
+ * @property importedVotes Historical upvotes copied from an external source at import time (e.g. GitHub/Linear).
+ *   Already included in [voteCount] (not additive on top of it). Defaults to 0 for native requests.
  */
 data class FeatureRequestItem(
     val id: String,
@@ -620,13 +620,13 @@ data class FeatureRequestItem(
     val requesterClerkId: String? = null,
     val approved: Boolean,
     val voteCount: Int,
-    val importedVotes: Int = 0,
     val hasVoted: Boolean,
     val isOwnRequest: Boolean,
     val recentCommenters: List<RecentCommenter> = emptyList(),
     val hasMoreCommenters: Boolean = false,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val importedVotes: Int = 0
 ) {
     /**
      * Display name of the roadmap stage: returns [columnName] when on the board,

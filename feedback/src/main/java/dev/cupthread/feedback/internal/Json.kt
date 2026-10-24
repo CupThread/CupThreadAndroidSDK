@@ -140,13 +140,13 @@ internal fun parseFeatureRequestItem(json: JSONObject): FeatureRequestItem = Fea
     requesterClerkId = json.stringOrNull("requesterClerkId"),
     approved = json.booleanOr("approved", false),
     voteCount = json.intOr("voteCount", 0),
-    importedVotes = json.intOr("importedVotes", 0),
     hasVoted = json.booleanOr("hasVoted", false),
     isOwnRequest = json.booleanOr("isOwnRequest", false),
     recentCommenters = parseRecentCommenters(json.optJSONArray("recentCommenters")),
     hasMoreCommenters = json.booleanOr("hasMoreCommenters", false),
     createdAt = json.optString("createdAt", ""),
-    updatedAt = json.optString("updatedAt", "")
+    updatedAt = json.optString("updatedAt", ""),
+    importedVotes = json.intOr("importedVotes", 0)
 )
 
 internal fun parseListFeatureRequests(json: JSONObject, offset: Int = 0): ListFeatureRequestsResult {

@@ -1308,13 +1308,13 @@ class FeedbackClientTest {
             requesterClerkId = "user_123",
             approved = true,
             voteCount = 3,
-            importedVotes = 2,
             hasVoted = false,
             isOwnRequest = false,
             recentCommenters = listOf(RecentCommenter("Alice", "user_alice", "https://example.com/alice.png")),
             hasMoreCommenters = true,
             createdAt = "2026-01-01T00:00:00.000Z",
-            updatedAt = "2026-01-01T00:00:00.000Z"
+            updatedAt = "2026-01-01T00:00:00.000Z",
+            importedVotes = 2
         )
         val updated = base.withVoteState(voted = true, count = 4)
         assertEquals(4, updated.voteCount)
@@ -1692,6 +1692,38 @@ class FeedbackClientTest {
         assertEquals(100, result.requests[0].importedVotes)
         assertEquals(8, result.requests[1].voteCount)
         assertEquals(0, result.requests[1].importedVotes)
+    }
+
+    @Test
+    fun featureRequestItemPositionalConstructorMaintainsCompatibility() {
+        val item = FeatureRequestItem(
+            "fr-1",
+            "app-1",
+            "Title",
+            "Desc",
+            "planned",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            10,
+            false,
+            false,
+            emptyList(),
+            false,
+            "2026-01-01T00:00:00.000Z",
+            "2026-01-01T00:00:00.000Z"
+        )
+        assertEquals(0, item.importedVotes)
+        assertEquals(10, item.voteCount)
+        assertFalse(item.hasVoted)
     }
 
     @Test
