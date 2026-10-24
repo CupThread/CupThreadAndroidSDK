@@ -133,7 +133,7 @@ lifecycleScope.launch {
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
 | `fetchFeatureRequests(userToken, limit, offset, versionId, query, cursor)` | `GET /api/v1/feature-requests` (returns `hasMore` / `nextCursor`) |
 | `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` |
-| `toggleVote(featureRequestId, userToken)` | `POST /api/v1/feature-requests/{id}/vote` |
+| `toggleVote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
 | `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
@@ -141,7 +141,7 @@ lifecycleScope.launch {
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
-| `subscribeToChangelog(email, userToken, turnstileToken)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
+| `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
 | `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |

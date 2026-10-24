@@ -1250,6 +1250,125 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteIncludesShipNotifyEmailInPayloadWhenProvided() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+        val rawEmail = "   voter@example.com   "
+
+        val result = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":6}""")
+        }.toggleVote("fr-200", userToken, turnstileToken = null, shipNotifyEmail = rawEmail)
+
+        assertTrue(result.voted)
+        assertEquals(6, result.voteCount)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals(appKey, payload.getString("appKey"))
+        assertEquals(userToken, payload.getString("userToken"))
+        assertFalse(payload.has("turnstileToken"))
+        assertEquals("voter@example.com", payload.getString("shipNotifyEmail"))
+    }
+
+    @Test
+    fun toggleVoteIncludesBothTurnstileTokenAndShipNotifyEmailWhenProvided() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+        val turnstile = "0.test_turnstile_action_ship_notify"
+        val email = "notify@example.org"
+
+        val result = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":7}""")
+        }.toggleVote("fr-201", userToken, turnstileToken = turnstile, shipNotifyEmail = email)
+
+        assertTrue(result.voted)
+        assertEquals(7, result.voteCount)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals(appKey, payload.getString("appKey"))
+        assertEquals(userToken, payload.getString("userToken"))
+        assertEquals(turnstile, payload.getString("turnstileToken"))
+        assertEquals(email, payload.getString("shipNotifyEmail"))
+    }
+
+    @Test
+    fun toggleVoteOmitsShipNotifyEmailWhenNullOrBlank() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+
+        val c = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":2}""")
+        }
+
+        // null shipNotifyEmail (4-arg)
+        c.toggleVote("fr-202", userToken, turnstileToken = "tok", shipNotifyEmail = null)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
+
+        // blank shipNotifyEmail (4-arg)
+        c.toggleVote("fr-202", userToken, turnstileToken = "tok", shipNotifyEmail = "   ")
+        assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
+
+        // 3-argument overload
+        c.toggleVote("fr-202", userToken, turnstileToken = "tok")
+        assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
+
+        // 2-argument overload
+        c.toggleVote("fr-202", userToken)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
+    }
+
+    @Test
+    fun toggleVoteAllowsNamedShipNotifyEmailWithoutTurnstileToken() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+
+        val result = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":10}""")
+        }.toggleVote("fr-203", userToken, shipNotifyEmail = "named@example.com")
+
+        assertTrue(result.voted)
+        assertEquals(10, result.voteCount)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertFalse(payload.has("turnstileToken"))
+        assertEquals("named@example.com", payload.getString("shipNotifyEmail"))
+    }
+
+    @Test
+    fun toggleVoteRejectsHttpDestinationWhenTransmittingShipNotifyEmail() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
+        )
+
+        try {
+            insecureClient.toggleVote("fr-204", userToken, shipNotifyEmail = "user@example.com")
+            fail("Expected IllegalArgumentException when transmitting shipNotifyEmail over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
+        }
+    }
+
+    @Test
+    fun toggleVotePermitsHttpDestinationWhenShipNotifyEmailIsOmittedOrBlank() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
+        )
+
+        val r1 = insecureClient.toggleVote("fr-205", userToken)
+        assertTrue(r1.voted)
+
+        val r2 = insecureClient.toggleVote("fr-205", userToken, shipNotifyEmail = "   ")
+        assertTrue(r2.voted)
+    }
+
+    @Test
     fun toggleVoteSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
         val userToken = UUID.randomUUID().toString()
         val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
