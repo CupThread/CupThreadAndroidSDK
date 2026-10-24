@@ -601,16 +601,28 @@ class FeedbackClient internal constructor(
     suspend fun toggleVote(
         featureRequestId: String,
         userToken: String,
-        turnstileToken: String?,
-        shipNotifyEmail: String?
+        turnstileToken: String? = null,
+        shipNotifyEmail: String? = null
     ): VoteResult {
+        val trimmedEmail = shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }
+        if (trimmedEmail != null) {
+            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/$featureRequestId/vote")
+            val parsedUri = try {
+                java.net.URI(targetUrl)
+            } catch (_: Exception) {
+                null
+            }
+            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+                "toggleVote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
+            }
+        }
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             put("userToken", userToken)
             turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 put("turnstileToken", it)
             }
-            shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            trimmedEmail?.let {
                 put("shipNotifyEmail", it)
             }
         }

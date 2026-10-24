@@ -1320,6 +1320,55 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteAllowsNamedShipNotifyEmailWithoutTurnstileToken() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+
+        val result = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":10}""")
+        }.toggleVote("fr-203", userToken, shipNotifyEmail = "named@example.com")
+
+        assertTrue(result.voted)
+        assertEquals(10, result.voteCount)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertFalse(payload.has("turnstileToken"))
+        assertEquals("named@example.com", payload.getString("shipNotifyEmail"))
+    }
+
+    @Test
+    fun toggleVoteRejectsHttpDestinationWhenTransmittingShipNotifyEmail() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
+        )
+
+        try {
+            insecureClient.toggleVote("fr-204", userToken, shipNotifyEmail = "user@example.com")
+            fail("Expected IllegalArgumentException when transmitting shipNotifyEmail over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
+        }
+    }
+
+    @Test
+    fun toggleVotePermitsHttpDestinationWhenShipNotifyEmailIsOmittedOrBlank() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
+        )
+
+        val r1 = insecureClient.toggleVote("fr-205", userToken)
+        assertTrue(r1.voted)
+
+        val r2 = insecureClient.toggleVote("fr-205", userToken, shipNotifyEmail = "   ")
+        assertTrue(r2.voted)
+    }
+
+    @Test
     fun toggleVoteSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
         val userToken = UUID.randomUUID().toString()
         val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
