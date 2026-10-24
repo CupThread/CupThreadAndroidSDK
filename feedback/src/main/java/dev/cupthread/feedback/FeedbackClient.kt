@@ -451,6 +451,20 @@ class FeedbackClient internal constructor(
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
+     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken].
+     *
+     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [VoteResult] containing the reconciled vote state (`voted`) and current total count (`voteCount`).
+     */
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String
+    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null)
+
+    /**
+     * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
+     *
      * To remove an existing upvote, call [deleteVote] instead.
      * Returns the reconciled server vote state for optimistic UI synchronization.
      *
@@ -476,20 +490,6 @@ class FeedbackClient internal constructor(
      * println("Voted: ${result.voted}, New total: ${result.voteCount}")
      * ```
      */
-    /**
-     * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
-     *
-     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken].
-     *
-     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
-     * @param userToken Stable anonymous user token from [UserTokenStore].
-     * @return [VoteResult] containing the reconciled vote state (`voted`) and current total count (`voteCount`).
-     */
-    suspend fun toggleVote(
-        featureRequestId: String,
-        userToken: String
-    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null)
-
     suspend fun toggleVote(
         featureRequestId: String,
         userToken: String,
