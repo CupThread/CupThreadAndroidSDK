@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">Couldn\'t submit</string>
     <string name="cupthread_features_vote_desc">Vote, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Remove vote, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">You\'re voting too fast. Please try again shortly.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Roadmap</string>
