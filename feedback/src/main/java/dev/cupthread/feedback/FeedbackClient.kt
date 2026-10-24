@@ -704,16 +704,27 @@ class FeedbackClient internal constructor(
                 limit = 200,
                 cursor = currentCursor
             )
-            if (page.comments.isEmpty()) break
             allComments.addAll(page.comments)
-            currentCursor = if (page.hasMore && !page.nextCursor.isNullOrBlank()) {
-                if (seenCursors.add(page.nextCursor)) {
-                    page.nextCursor
-                } else {
-                    null
+            if (page.hasMore) {
+                if (page.comments.isEmpty()) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server indicated more comments are available but returned an empty page")
+                    )
                 }
+                val next = page.nextCursor
+                if (next.isNullOrBlank()) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server indicated more comments are available but nextCursor is missing")
+                    )
+                }
+                if (!seenCursors.add(next)) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server returned repeated cursor during comment pagination: $next")
+                    )
+                }
+                currentCursor = next
             } else {
-                null
+                currentCursor = null
             }
         } while (currentCursor != null)
         return allComments

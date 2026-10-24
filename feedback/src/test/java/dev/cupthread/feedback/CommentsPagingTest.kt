@@ -193,32 +193,56 @@ class CommentsPagingTest {
     }
 
     @Test
-    fun fetchCommentsStopsPagingIfServerReturnsRepeatedCursor() = runTest {
+    fun fetchCommentsThrowsInvalidResponseIfServerReturnsRepeatedCursor() = runTest {
         var callCount = 0
         val c = client {
             callCount++
             HttpResponse(200, pageJson(listOf("c-$callCount"), total = 10, hasMore = true, nextCursor = "stuck_cursor"))
         }
 
-        val all = c.fetchComments("fr-100")
-
-        // First call gets c-1, sets currentCursor to "stuck_cursor".
-        // Second call gets c-2, sees "stuck_cursor" again and terminates.
-        assertEquals(2, all.size)
+        try {
+            c.fetchComments("fr-100")
+            fail("Expected FeedbackException.InvalidResponse on repeated cursor")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is IllegalStateException)
+            assertTrue(ex.cause?.message.orEmpty().contains("repeated cursor"))
+        }
         assertEquals(2, callCount)
     }
 
     @Test
-    fun fetchCommentsStopsPagingIfCommentsArrayIsEmptyEvenWhenHasMoreIsTrue() = runTest {
+    fun fetchCommentsThrowsInvalidResponseIfCommentsArrayIsEmptyEvenWhenHasMoreIsTrue() = runTest {
         var callCount = 0
         val c = client {
             callCount++
             HttpResponse(200, pageJson(emptyList(), total = 5, hasMore = true, nextCursor = "next_cur"))
         }
 
-        val all = c.fetchComments("fr-100")
+        try {
+            c.fetchComments("fr-100")
+            fail("Expected FeedbackException.InvalidResponse on empty page with hasMore=true")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is IllegalStateException)
+            assertTrue(ex.cause?.message.orEmpty().contains("empty page"))
+        }
+        assertEquals(1, callCount)
+    }
 
-        assertEquals(0, all.size)
+    @Test
+    fun fetchCommentsThrowsInvalidResponseIfHasMoreIsTrueButNextCursorIsMissing() = runTest {
+        var callCount = 0
+        val c = client {
+            callCount++
+            HttpResponse(200, pageJson(listOf("c-1"), total = 5, hasMore = true, nextCursor = null))
+        }
+
+        try {
+            c.fetchComments("fr-100")
+            fail("Expected FeedbackException.InvalidResponse on missing cursor with hasMore=true")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is IllegalStateException)
+            assertTrue(ex.cause?.message.orEmpty().contains("nextCursor is missing"))
+        }
         assertEquals(1, callCount)
     }
 }
