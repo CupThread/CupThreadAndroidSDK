@@ -20,6 +20,7 @@ import dev.cupthread.feedback.internal.parseCommentList
 import dev.cupthread.feedback.internal.parseEndUserEraseResult
 import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
+import dev.cupthread.feedback.internal.parseFeatureRequestItem
 import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
 import dev.cupthread.feedback.internal.parseListChangelog
@@ -393,6 +394,66 @@ class FeedbackClient internal constructor(
             get("/api/v1/feature-requests?${encodeQuery(params)}", userToken = userToken),
             offset
         )
+    }
+
+    /**
+     * Fetches a single feature request by its [featureRequestId] via `GET /api/v1/feature-requests/{id}`.
+     *
+     * Preserved for binary backward compatibility with callers who do not pass [userToken].
+     *
+     * @param featureRequestId Unique identifier of the target [FeatureRequestItem].
+     * @return The [FeatureRequestItem] record.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws FeedbackException.AuthenticationRequired if the app's board requires sign-in and the caller has no session (HTTP 401).
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
+     * @throws FeedbackException.UnexpectedStatus on HTTP 404 (feature request not found or unapproved) or other errors.
+     * @throws FeedbackException.InvalidResponse on network failure or invalid response JSON.
+     *
+     * Example:
+     * ```kotlin
+     * val item = client.fetchFeatureRequest("fr_123")
+     * println("Feature request: ${item.title} (${item.voteCount} votes)")
+     * ```
+     */
+    suspend fun fetchFeatureRequest(
+        featureRequestId: String
+    ): FeatureRequestItem = fetchFeatureRequest(featureRequestId, userToken = null)
+
+    /**
+     * Fetches a single feature request by its [featureRequestId] via `GET /api/v1/feature-requests/{id}`.
+     *
+     * When [userToken] is provided, the returned [FeatureRequestItem] is personalized:
+     * [FeatureRequestItem.hasVoted] reflects that token's ballot and [FeatureRequestItem.isOwnRequest]
+     * indicates whether the caller created the feature request.
+     *
+     * @param featureRequestId Unique identifier of the target [FeatureRequestItem].
+     * @param userToken Optional anonymous end-user token from [UserTokenStore].
+     * @return The [FeatureRequestItem] record.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws FeedbackException.AuthenticationRequired if the app's board requires sign-in and the caller has no session (HTTP 401).
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
+     * @throws FeedbackException.UnexpectedStatus on HTTP 404 (feature request not found or unapproved) or other errors.
+     * @throws FeedbackException.InvalidResponse on network failure or invalid response JSON.
+     *
+     * Example:
+     * ```kotlin
+     * val item = client.fetchFeatureRequest("fr_123", userToken = userToken)
+     * println("Feature request: ${item.title}, voted: ${item.hasVoted}")
+     * ```
+     */
+    suspend fun fetchFeatureRequest(
+        featureRequestId: String,
+        userToken: String?
+    ): FeatureRequestItem {
+        require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val json = get(
+            path = "/api/v1/feature-requests/${featureRequestId.trim()}",
+            userToken = userToken?.trim()?.takeIf { it.isNotEmpty() },
+            mapRateLimitErrors = true
+        )
+        val requestJson = json.optJSONObject("request")
+            ?: throw FeedbackException.InvalidResponse(IllegalStateException("Missing 'request' in response: $json"))
+        return parseFeatureRequestItem(requestJson)
     }
 
     /**
@@ -986,8 +1047,16 @@ class FeedbackClient internal constructor(
     private suspend fun get(
         path: String,
         userToken: String? = null,
-        bearerToken: String? = null
-    ): JSONObject = sendJson("GET", path, body = null, userToken = userToken, bearerToken = bearerToken)
+        bearerToken: String? = null,
+        mapRateLimitErrors: Boolean = false
+    ): JSONObject = sendJson(
+        "GET",
+        path,
+        body = null,
+        userToken = userToken,
+        bearerToken = bearerToken,
+        mapRateLimitErrors = mapRateLimitErrors
+    )
 
     private fun buildHeaders(
         contentType: String?,

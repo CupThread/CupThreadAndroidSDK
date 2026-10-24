@@ -549,6 +549,173 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchFeatureRequestReturnsFeatureRequestItemOnSuccess() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val token = "anon_user_token_999"
+        val json = """
+            {
+              "request": {
+                "id": "fr-123",
+                "appId": "app_testkey123456",
+                "title": "Landscape mode for tablets",
+                "description": "Support two-pane tablet layout",
+                "status": "in_progress",
+                "columnId": "col-2",
+                "columnName": "In Progress",
+                "columnColor": "#3b82f6",
+                "versionId": "ver-1",
+                "versionLabel": "v1.2.0",
+                "releasedVersion": null,
+                "requesterName": "Alex",
+                "requesterAvatarUrl": "https://example.com/avatar.png",
+                "requesterClerkId": "u_testuser",
+                "approved": true,
+                "voteCount": 42,
+                "hasVoted": true,
+                "isOwnRequest": false,
+                "recentCommenters": [],
+                "hasMoreCommenters": false,
+                "createdAt": "2026-03-01T12:00:00.000Z",
+                "updatedAt": "2026-03-02T15:30:00.000Z"
+              }
+            }
+        """.trimIndent()
+
+        val item = client { request ->
+            capturedRequest = request
+            HttpResponse(200, json)
+        }.fetchFeatureRequest("fr-123", userToken = token)
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("GET", req.method)
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-123", req.url)
+        assertEquals(token, req.headers["X-User-Token"])
+
+        assertEquals("fr-123", item.id)
+        assertEquals("app_testkey123456", item.appId)
+        assertEquals("Landscape mode for tablets", item.title)
+        assertEquals("Support two-pane tablet layout", item.description)
+        assertEquals("in_progress", item.status)
+        assertEquals("col-2", item.columnId)
+        assertEquals("In Progress", item.columnName)
+        assertEquals("#3b82f6", item.columnColor)
+        assertEquals("ver-1", item.versionId)
+        assertEquals("v1.2.0", item.versionLabel)
+        assertNull(item.releasedVersion)
+        assertEquals("Alex", item.requesterName)
+        assertEquals("https://example.com/avatar.png", item.requesterAvatarUrl)
+        assertEquals("u_testuser", item.requesterClerkId)
+        assertTrue(item.approved)
+        assertEquals(42, item.voteCount)
+        assertTrue(item.hasVoted)
+        assertFalse(item.isOwnRequest)
+        assertEquals("2026-03-01T12:00:00.000Z", item.createdAt)
+        assertEquals("2026-03-02T15:30:00.000Z", item.updatedAt)
+    }
+
+    @Test
+    fun fetchFeatureRequestSingleArgumentOverloadOmitsUserTokenHeader() = runTest {
+        var capturedRequest: HttpRequest? = null
+        val json = """
+            {
+              "request": {
+                "id": "fr-456",
+                "appId": "app_testkey123456",
+                "title": "Offline caching",
+                "approved": true,
+                "voteCount": 5,
+                "hasVoted": false,
+                "isOwnRequest": false
+              }
+            }
+        """.trimIndent()
+
+        val item = client { request ->
+            capturedRequest = request
+            HttpResponse(200, json)
+        }.fetchFeatureRequest("fr-456")
+
+        val req = requireNotNull(capturedRequest)
+        assertEquals("GET", req.method)
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-456", req.url)
+        assertNull(req.headers["X-User-Token"])
+        assertEquals("fr-456", item.id)
+        assertEquals("Offline caching", item.title)
+        assertFalse(item.hasVoted)
+    }
+
+    @Test
+    fun fetchFeatureRequestThrowsOnBlankId() = runTest {
+        val c = client { HttpResponse(200, "{}") }
+        try {
+            c.fetchFeatureRequest("")
+            fail("Expected IllegalArgumentException for empty featureRequestId")
+        } catch (_: IllegalArgumentException) {
+            // Expected
+        }
+
+        try {
+            c.fetchFeatureRequest("   ")
+            fail("Expected IllegalArgumentException for blank featureRequestId")
+        } catch (_: IllegalArgumentException) {
+            // Expected
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestSurfaces404NotFoundAsUnexpectedStatus() = runTest {
+        val c = client {
+            HttpResponse(404, """{"error":"Feature request not found"}""")
+        }
+        try {
+            c.fetchFeatureRequest("fr-nonexistent")
+            fail("Expected UnexpectedStatus on 404")
+        } catch (e: FeedbackException.UnexpectedStatus) {
+            assertEquals(404, e.code)
+            assertTrue(e.serverMessage.contains("Feature request not found"))
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestSurfaces401AsAuthenticationRequired() = runTest {
+        val c = client {
+            HttpResponse(401, """{"error":"Authentication required","code":"authentication_required"}""")
+        }
+        try {
+            c.fetchFeatureRequest("fr-private")
+            fail("Expected AuthenticationRequired on 401")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+            // Expected
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestSurfaces429AsRateLimited() = runTest {
+        val c = client {
+            HttpResponse(429, """{"error":"Rate limit exceeded. Please slow down."}""")
+        }
+        try {
+            c.fetchFeatureRequest("fr-ratelimited")
+            fail("Expected RateLimited on 429")
+        } catch (e: FeedbackException.RateLimited) {
+            assertEquals("Rate limit exceeded. Please slow down.", e.serverMessage)
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestThrowsInvalidResponseOnMissingRequestWrapper() = runTest {
+        val c = client {
+            HttpResponse(200, """{"item":{"id":"fr-missing-wrapper"}}""")
+        }
+        try {
+            c.fetchFeatureRequest("fr-missing-wrapper")
+            fail("Expected InvalidResponse when 'request' wrapper is missing")
+        } catch (_: FeedbackException.InvalidResponse) {
+            // Expected
+        }
+    }
+
+    @Test
     fun linkEndUserSendsHeadersAndPayload() = runTest {
         var capturedRequest: HttpRequest? = null
         val sessionToken = "clerk_sess_xyz"
