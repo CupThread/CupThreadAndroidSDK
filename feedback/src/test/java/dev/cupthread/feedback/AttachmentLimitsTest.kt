@@ -135,6 +135,32 @@ class AttachmentLimitsTest {
     }
 
     @Test
+    fun draftAttachmentDeletionWorksWithNullKeyAttachments() {
+        val attachment1 = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            uploadId = "upl_1",
+            filename = "img1.png"
+        )
+        val attachment2 = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            uploadId = "upl_2",
+            filename = "img2.png"
+        )
+        val draft = FeedbackDraft(
+            title = "Title",
+            description = "Desc",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(attachment1, attachment2)
+        )
+
+        val afterDelete = draft.copy(
+            attachments = draft.attachments.filter { it != attachment1 }
+        )
+        assertEquals(1, afterDelete.attachments.size)
+        assertEquals(attachment2, afterDelete.attachments.first())
+    }
+
+    @Test
     fun isSupportedImageMimeValidatesAllowedImageTypes() {
         assertTrue(AttachmentLimits.isSupportedImageMime("image/png"))
         assertTrue(AttachmentLimits.isSupportedImageMime("image/jpeg"))

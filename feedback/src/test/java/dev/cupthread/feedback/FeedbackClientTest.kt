@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.shouldFollowRedirects
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
@@ -375,6 +376,113 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentSucceedsWithModernPrivateResponseWithoutKeyOrUrl() = runTest {
+        val json = """
+            {
+              "kind": "image",
+              "uploadId": "upl_abc123xyz",
+              "status": "uploaded",
+              "stored": true,
+              "filename": "shot.png",
+              "mimeType": "image/png",
+              "size": 12345,
+              "sha256": "abcdef0123456789"
+            }
+        """.trimIndent()
+
+        val attachment = client { HttpResponse(200, json) }.uploadAttachment(
+            data = validPngBytes,
+            filename = "shot.png",
+            mimeType = "image/png"
+        )
+
+        assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
+        assertEquals("upl_abc123xyz", attachment.uploadId)
+        assertEquals("upl_abc123xyz", attachment.id)
+        assertNull(attachment.key)
+        assertNull(attachment.url)
+        assertEquals("shot.png", attachment.filename)
+        assertEquals("image/png", attachment.mimeType)
+        assertEquals(12345L, attachment.size)
+    }
+
+    @Test
+    fun parseAttachmentHandlesBothModernAndLegacySchemas() {
+        val modernJson = JSONObject(
+            """
+            {
+              "kind": "image",
+              "uploadId": "upl_9876",
+              "status": "uploaded",
+              "stored": true,
+              "filename": "screen.png",
+              "mimeType": "image/png",
+              "size": 4096
+            }
+            """.trimIndent()
+        )
+        val modern = parseAttachment(modernJson)
+        assertEquals(FeedbackAttachment.Kind.IMAGE, modern.kind)
+        assertEquals("upl_9876", modern.uploadId)
+        assertEquals("upl_9876", modern.id)
+        assertNull(modern.key)
+        assertNull(modern.url)
+        assertEquals("screen.png", modern.filename)
+        assertEquals("image/png", modern.mimeType)
+        assertEquals(4096L, modern.size)
+
+        val legacyJson = JSONObject(
+            """
+            {
+              "kind": "image",
+              "key": "uploads/img-legacy.png",
+              "url": "https://cdn.example.com/uploads/img-legacy.png",
+              "filename": "screen.png",
+              "mimeType": "image/png",
+              "size": 2048
+            }
+            """.trimIndent()
+        )
+        val legacy = parseAttachment(legacyJson)
+        assertEquals(FeedbackAttachment.Kind.IMAGE, legacy.kind)
+        assertNull(legacy.uploadId)
+        assertEquals("uploads/img-legacy.png", legacy.key)
+        assertEquals("https://cdn.example.com/uploads/img-legacy.png", legacy.url)
+        assertEquals("uploads/img-legacy.png", legacy.id)
+        assertEquals("screen.png", legacy.filename)
+        assertEquals(2048L, legacy.size)
+    }
+
+    @Test
+    fun feedbackAttachmentCompatibilityAndIdHelper() {
+        val modern = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            uploadId = "upl_test"
+        )
+        assertEquals("upl_test", modern.id)
+        assertNull(modern.key)
+        assertNull(modern.url)
+
+        val legacy = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.R2,
+            key = "k_test",
+            url = "https://example.com/k"
+        )
+        assertEquals("k_test", legacy.id)
+        assertEquals("k_test", legacy.key)
+        assertEquals("https://example.com/k", legacy.url)
+        assertNull(legacy.uploadId)
+
+        val both = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            key = "k_test",
+            url = "https://example.com/k",
+            uploadId = "upl_test"
+        )
+        assertEquals("upl_test", both.id)
+    }
+
+    @Test
     fun uploadAttachmentRoutesEndpointsBasedOnMimeAndPreferredKind() = runTest {
         val jsonImage = """{"kind":"image","key":"img","url":"https://cdn.example.com/img"}"""
         val jsonR2 = """{"kind":"r2","key":"doc","url":"https://cdn.example.com/doc"}"""
@@ -519,6 +627,92 @@ class FeedbackClientTest {
         val payload = requireNotNull(body)
         assertTrue(payload.contains("\"platform\":\"android\""))
         assertTrue(payload.contains("cupthread-android"))
+    }
+
+    @Test
+    fun submitIncludesUploadIdsAndAttachmentFieldsCorrectly() = runTest {
+        var capturedBody: String? = null
+        val client = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"submissionId":"s-upload-test","forwardedToGithub":false}""")
+        }
+
+        val modernAttachment = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            uploadId = "upl_modern123",
+            filename = "screen.png",
+            mimeType = "image/png",
+            size = 1000L
+        )
+        val legacyAttachment = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.R2,
+            key = "legacy_key",
+            url = "https://cdn.example.com/legacy_key",
+            filename = "log.txt",
+            mimeType = "text/plain",
+            size = 200L
+        )
+        val draft = FeedbackDraft(
+            title = "Test issue with attachments",
+            description = "Detailed report",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(modernAttachment, legacyAttachment)
+        )
+
+        client.submit(draft)
+
+        val payload = JSONObject(requireNotNull(capturedBody))
+        assertTrue(payload.has("uploadIds"))
+        val uploadIds = payload.getJSONArray("uploadIds")
+        assertEquals(1, uploadIds.length())
+        assertEquals("upl_modern123", uploadIds.getString(0))
+
+        val attachments = payload.getJSONArray("attachments")
+        assertEquals(2, attachments.length())
+
+        val modernJson = attachments.getJSONObject(0)
+        assertEquals("image", modernJson.getString("kind"))
+        assertEquals("upl_modern123", modernJson.getString("uploadId"))
+        assertFalse(modernJson.has("key"))
+        assertFalse(modernJson.has("url"))
+        assertEquals("screen.png", modernJson.getString("filename"))
+        assertEquals("image/png", modernJson.getString("mimeType"))
+        assertEquals(1000L, modernJson.getLong("size"))
+
+        val legacyJson = attachments.getJSONObject(1)
+        assertEquals("r2", legacyJson.getString("kind"))
+        assertEquals("legacy_key", legacyJson.getString("key"))
+        assertEquals("https://cdn.example.com/legacy_key", legacyJson.getString("url"))
+        assertFalse(legacyJson.has("uploadId"))
+        assertEquals("log.txt", legacyJson.getString("filename"))
+        assertEquals("text/plain", legacyJson.getString("mimeType"))
+        assertEquals(200L, legacyJson.getLong("size"))
+    }
+
+    @Test
+    fun submitWithoutUploadIdsOmitsUploadIdsField() = runTest {
+        var capturedBody: String? = null
+        val client = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"submissionId":"s-legacy","forwardedToGithub":false}""")
+        }
+
+        val legacyAttachment = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.IMAGE,
+            key = "legacy_key",
+            url = "https://cdn.example.com/legacy_key"
+        )
+        val draft = FeedbackDraft(
+            title = "Legacy attachment test",
+            description = "Detailed report",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(legacyAttachment)
+        )
+
+        client.submit(draft)
+
+        val payload = JSONObject(requireNotNull(capturedBody))
+        assertFalse(payload.has("uploadIds"))
     }
 
     @Test

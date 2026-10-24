@@ -187,11 +187,12 @@ internal fun parseAttachment(json: JSONObject): FeedbackAttachment {
         ?: throw IllegalArgumentException("unknown attachment kind")
     return FeedbackAttachment(
         kind = kind,
-        key = json.getString("key"),
-        url = json.getString("url"),
+        key = json.stringOrNull("key"),
+        url = json.stringOrNull("url"),
         filename = json.stringOrNull("filename"),
         mimeType = json.stringOrNull("mimeType"),
-        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size")
+        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size"),
+        uploadId = json.stringOrNull("uploadId")
     )
 }
 
