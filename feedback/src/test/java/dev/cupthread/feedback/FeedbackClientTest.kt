@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -881,6 +882,65 @@ class FeedbackClientTest {
         assertEquals("https://api.example.com/api/v1/feature-requests/fr-9/vote", url)
         assertTrue(result.voted)
         assertEquals(4, result.voteCount)
+    }
+
+    @Test
+    fun toggleVoteIncludesTurnstileTokenInPayloadWhenProvided() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+        val turnstile = "0.test_turnstile_token_12345"
+
+        val result = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":5}""")
+        }.toggleVote("fr-100", userToken, turnstileToken = turnstile)
+
+        assertTrue(result.voted)
+        assertEquals(5, result.voteCount)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals(appKey, payload.getString("appKey"))
+        assertEquals(userToken, payload.getString("userToken"))
+        assertEquals(turnstile, payload.getString("turnstileToken"))
+    }
+
+    @Test
+    fun toggleVoteOmitsTurnstileTokenWhenNullOrBlank() = runTest {
+        var capturedBody: String? = null
+        val userToken = UUID.randomUUID().toString()
+
+        val c = client { request ->
+            capturedBody = String(request.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":1}""")
+        }
+
+        // null turnstileToken
+        c.toggleVote("fr-101", userToken, turnstileToken = null)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+
+        // blank turnstileToken
+        c.toggleVote("fr-101", userToken, turnstileToken = "   ")
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+
+        // two-argument overload
+        c.toggleVote("fr-101", userToken)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+    }
+
+    @Test
+    fun toggleVoteSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
+
+        try {
+            client {
+                HttpResponse(403, errorJson)
+            }.toggleVote("fr-102", userToken, turnstileToken = "invalid_token")
+            fail("Expected FeedbackException.UnexpectedStatus on 403")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(403, ex.code)
+            assertTrue(ex.serverMessage.contains("turnstile_verification_failed"))
+        }
     }
 
     @Test

@@ -451,27 +451,56 @@ class FeedbackClient internal constructor(
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * To remove an existing upvote, call [deleteVote] instead.
-     * Returns the reconciled server vote state for optimistic UI synchronization.
+     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken].
      *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @return [VoteResult] containing the reconciled vote state (`voted`) and current total count (`voteCount`).
+     */
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String
+    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null)
+
+    /**
+     * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
+     *
+     * To remove an existing upvote, call [deleteVote] instead.
+     * Returns the reconciled server vote state for optimistic UI synchronization.
+     *
+     * When [PublicAppConfig.requireAnonymousVoteTurnstile] is enabled, anonymous voters must provide
+     * a valid [turnstileToken] (solved with action `"vote"` and cdata matching the configured `appKey`).
+     *
+     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @return [VoteResult] containing the updated vote state (`voted`) and current total count (`voteCount`).
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
-     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
      * ```kotlin
-     * val result = client.toggleVote(featureRequestId = "req_123", userToken = userToken)
+     * val result = client.toggleVote(
+     *     featureRequestId = "req_123",
+     *     userToken = userToken,
+     *     turnstileToken = "0.test_turnstile_token..."
+     * )
      * println("Voted: ${result.voted}, New total: ${result.voteCount}")
      * ```
      */
-    suspend fun toggleVote(featureRequestId: String, userToken: String): VoteResult {
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String,
+        turnstileToken: String?
+    ): VoteResult {
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             put("userToken", userToken)
+            turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                put("turnstileToken", it)
+            }
         }
         return parseVoteResult(
             sendJson(
