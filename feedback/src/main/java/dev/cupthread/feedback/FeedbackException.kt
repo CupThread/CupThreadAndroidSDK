@@ -94,6 +94,18 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         )
 
     /**
+     * Raised when feedback submission is rejected because an attachment failed backend content inspection
+     * (HTTP 422 `scan_rejected`).
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     */
+    class AttachmentScanRejected(val serverMessage: String? = null) :
+        FeedbackException(
+            serverMessage?.ifBlank { null }
+                ?: "An attachment could not be uploaded due to content inspection rejection."
+        )
+
+    /**
      * Raised when the server responds with HTTP 429 `too_many_requests`, indicating that the client
      * has exceeded a rate limit window (such as voting too frequently on feature requests).
      *

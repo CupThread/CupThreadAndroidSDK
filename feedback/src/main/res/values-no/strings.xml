@@ -24,6 +24,7 @@
     <string name="cupthread_attachment_oversized">Vedlegg (%1$s) overskrider maksimal tillatt størrelse på %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Vedlegg overskrider maksimal tillatt størrelse på %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Ikke-støttet bildeformat. Vennligst velg et PNG-, JPEG-, WebP- eller GIF-bilde.</string>
+    <string name="cupthread_feedback_attachment_scan_rejected">Et vedlegg ble avvist av innholdsskanningen og kunne ikke lastes opp.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funksjonsønsker</string>

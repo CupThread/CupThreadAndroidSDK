@@ -24,6 +24,7 @@
     <string name="cupthread_attachment_oversized">첨부 파일(%1$s)이(가) 최대 허용 크기 %2$s을(를) 초과했습니다。</string>
     <string name="cupthread_attachment_exceeds_limit">첨부 파일이 최대 허용 크기 %1$s을(를) 초과했습니다。</string>
     <string name="cupthread_feedback_unsupported_image_type">지원되지 않는 이미지 형식입니다. PNG, JPEG, WebP 또는 GIF 이미지를 선택해 주세요。</string>
+    <string name="cupthread_feedback_attachment_scan_rejected">첨부 파일이 콘텐츠 검사에서 거부되어 업로드할 수 없습니다.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">기능 요청</string>

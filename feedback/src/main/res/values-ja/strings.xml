@@ -24,6 +24,7 @@
     <string name="cupthread_attachment_oversized">添付ファイル（%1$s）が最大許容サイズ %2$s を超えています。</string>
     <string name="cupthread_attachment_exceeds_limit">添付ファイルが最大許容サイズ %1$s を超えています。</string>
     <string name="cupthread_feedback_unsupported_image_type">サポートされていない画像形式です。PNG、JPEG、WebP、またはGIF画像を選択してください。</string>
+    <string name="cupthread_feedback_attachment_scan_rejected">添付ファイルがコンテンツスキャンによって拒否されたため、アップロードできませんでした。</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">機能リクエスト</string>
