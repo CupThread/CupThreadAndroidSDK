@@ -142,6 +142,42 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchAppConfigDecodesRequireAnonymousVoteTurnstile() = runTest {
+        val withTurnstileTrue = """
+            {
+              "appId":"app-1","appKey":"$appKey","slug":"demo-app","name":"Demo App",
+              "storeUrl":null,"storeKind":null,"iconUrl":null,"allowPublic":true,
+              "allowedPlatforms":["android"],"maxAttachmentBytes":20000000,
+              "requireAnonymousVoteTurnstile":true
+            }
+        """.trimIndent()
+        val resultTrue = client { HttpResponse(200, withTurnstileTrue) }.fetchAppConfig()
+        assertTrue(resultTrue.requireAnonymousVoteTurnstile)
+
+        val withTurnstileFalse = """
+            {
+              "appId":"app-1","appKey":"$appKey","slug":"demo-app","name":"Demo App",
+              "storeUrl":null,"storeKind":null,"iconUrl":null,"allowPublic":true,
+              "allowedPlatforms":["android"],"maxAttachmentBytes":20000000,
+              "requireAnonymousVoteTurnstile":false
+            }
+        """.trimIndent()
+        val resultFalse = client { HttpResponse(200, withTurnstileFalse) }.fetchAppConfig()
+        assertFalse(resultFalse.requireAnonymousVoteTurnstile)
+
+        val withTurnstileNull = """
+            {
+              "appId":"app-1","appKey":"$appKey","slug":"demo-app","name":"Demo App",
+              "storeUrl":null,"storeKind":null,"iconUrl":null,"allowPublic":true,
+              "allowedPlatforms":["android"],"maxAttachmentBytes":20000000,
+              "requireAnonymousVoteTurnstile":null
+            }
+        """.trimIndent()
+        val resultNull = client { HttpResponse(200, withTurnstileNull) }.fetchAppConfig()
+        assertFalse(resultNull.requireAnonymousVoteTurnstile)
+    }
+
+    @Test
     fun prepareChangelogOverlayReturnsNullWhenHidden() = runTest {
         val json = """
             {
@@ -1202,6 +1238,58 @@ class FeedbackClientTest {
         val parsedBare = dev.cupthread.feedback.internal.parseFeatureRequestComment(bareJson)
         assertEquals("c-bare", parsedBare.id)
         assertEquals("Bare comment", parsedBare.body)
+    }
+
+    @Test
+    fun parseFeatureRequestCommentDecodesAppIdAndUpdatedAt() {
+        val json = org.json.JSONObject(
+            """
+            {
+              "id": "c-full",
+              "featureRequestId": "fr-99",
+              "appId": "app-test-42",
+              "authorName": "Elena",
+              "body": "Comment with new metadata fields",
+              "createdAt": "2026-03-20T12:00:00Z",
+              "updatedAt": "2026-03-20T12:05:00Z"
+            }
+            """.trimIndent()
+        )
+
+        val comment = dev.cupthread.feedback.internal.parseFeatureRequestComment(json)
+        assertEquals("c-full", comment.id)
+        assertEquals("fr-99", comment.featureRequestId)
+        assertEquals("app-test-42", comment.appId)
+        assertEquals("Elena", comment.authorName)
+        assertEquals("Comment with new metadata fields", comment.body)
+        assertEquals("2026-03-20T12:00:00Z", comment.createdAt)
+        assertEquals("2026-03-20T12:05:00Z", comment.updatedAt)
+    }
+
+    @Test
+    fun parseFeatureRequestCommentHandlesMissingOrNullFields() {
+        val jsonWithNulls = org.json.JSONObject(
+            """
+            {
+              "id": "c-minimal",
+              "featureRequestId": null,
+              "appId": null,
+              "authorName": null,
+              "body": "Minimal comment",
+              "createdAt": null,
+              "updatedAt": null
+            }
+            """.trimIndent()
+        )
+
+        val comment = dev.cupthread.feedback.internal.parseFeatureRequestComment(jsonWithNulls)
+        assertEquals("c-minimal", comment.id)
+        assertEquals("", comment.featureRequestId)
+        assertNull(comment.appId)
+        assertNull(comment.authorName)
+        assertEquals("Minimal comment", comment.body)
+        assertEquals("", comment.createdAt)
+        assertNull(comment.updatedAt)
     }
 
     @Test

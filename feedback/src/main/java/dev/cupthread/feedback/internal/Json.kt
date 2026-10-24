@@ -69,6 +69,7 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
         allowAnonymousVote = json.booleanOr("allowAnonymousVote", true),
         allowAnonymousFeedback = json.booleanOr("allowAnonymousFeedback", true),
         allowAnonymousChangelog = json.booleanOr("allowAnonymousChangelog", true),
+        requireAnonymousVoteTurnstile = json.booleanOr("requireAnonymousVoteTurnstile", false),
         sdk = parseSdkAppearance(json.optJSONObject("sdk"))
     )
 }
@@ -282,7 +283,7 @@ internal fun parseFeatureRequestComment(json: JSONObject): FeatureRequestComment
     val record = json.optJSONObject("comment") ?: json
     return FeatureRequestComment(
         id = record.getString("id"),
-        featureRequestId = record.getString("featureRequestId"),
+        featureRequestId = record.stringOrNull("featureRequestId") ?: record.optString("featureRequestId", ""),
         authorName = record.stringOrNull("authorName"),
         authorEmail = record.stringOrNull("authorEmail"),
         authorAvatarUrl = record.stringOrNull("authorAvatarUrl"),
@@ -292,7 +293,9 @@ internal fun parseFeatureRequestComment(json: JSONObject): FeatureRequestComment
         replyToClerkId = record.stringOrNull("replyToClerkId"),
         replyToAuthorName = record.stringOrNull("replyToAuthorName"),
         isHidden = record.booleanOr("isHidden", false),
-        createdAt = record.optString("createdAt", "")
+        createdAt = record.stringOrNull("createdAt") ?: record.optString("createdAt", ""),
+        appId = record.stringOrNull("appId"),
+        updatedAt = record.stringOrNull("updatedAt")
     )
 }
 
