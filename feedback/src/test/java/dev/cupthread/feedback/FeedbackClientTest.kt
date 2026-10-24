@@ -454,6 +454,63 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun parseAttachmentRejectsResponseWithoutUploadIdOrKey() {
+        val jsonWithoutIdOrKey = JSONObject(
+            """
+            {
+              "kind": "image",
+              "url": "https://cdn.example.com/orphan.png",
+              "filename": "screen.png"
+            }
+            """.trimIndent()
+        )
+        try {
+            parseAttachment(jsonWithoutIdOrKey)
+            fail("expected IllegalArgumentException")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message!!.contains("uploadId or key"))
+        }
+
+        val jsonWithBlankIds = JSONObject(
+            """
+            {
+              "kind": "image",
+              "uploadId": "   ",
+              "key": "",
+              "url": "https://cdn.example.com/orphan.png"
+            }
+            """.trimIndent()
+        )
+        try {
+            parseAttachment(jsonWithBlankIds)
+            fail("expected IllegalArgumentException")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message!!.contains("uploadId or key"))
+        }
+    }
+
+    @Test
+    fun uploadAttachmentThrowsUnreadableUploadResponseWhenResponseMissingIdentifier() = runTest {
+        val jsonWithoutIdentifier = """
+            {
+              "kind": "image",
+              "url": "https://cdn.example.com/orphan.png",
+              "filename": "screen.png"
+            }
+        """.trimIndent()
+
+        try {
+            client { HttpResponse(200, jsonWithoutIdentifier) }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screen.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnreadableUploadResponse")
+        } catch (_: FeedbackException.UnreadableUploadResponse) {
+        }
+    }
+
+    @Test
     fun feedbackAttachmentCompatibilityAndIdHelper() {
         val modern = FeedbackAttachment(
             kind = FeedbackAttachment.Kind.IMAGE,
