@@ -592,7 +592,9 @@ data class AppVersion(
  * @property requesterAvatarUrl Hosted avatar image URL of the requester, or `null`.
  * @property requesterClerkId User account ID of the requester if signed in, or `null`.
  * @property approved Whether a moderator has approved this request for public display.
- * @property voteCount Total number of upvotes.
+ * @property voteCount Total number of upvotes, including both in-app votes and [importedVotes].
+ * @property importedVotes Historical upvotes copied from an external source at import time (e.g. GitHub/Linear).
+ *   Already included in [voteCount] (not additive on top of it). Defaults to 0 for native requests.
  * @property hasVoted Whether the current user (identified by `userToken`) has upvoted this request.
  * @property isOwnRequest Whether the current user created this request (users cannot vote on their own requests).
  * @property recentCommenters Up to 3 most recent commenters for rendering avatar stacks.
@@ -618,6 +620,7 @@ data class FeatureRequestItem(
     val requesterClerkId: String? = null,
     val approved: Boolean,
     val voteCount: Int,
+    val importedVotes: Int = 0,
     val hasVoted: Boolean,
     val isOwnRequest: Boolean,
     val recentCommenters: List<RecentCommenter> = emptyList(),
