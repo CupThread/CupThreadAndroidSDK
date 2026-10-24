@@ -921,6 +921,10 @@ class FeedbackClientTest {
         // blank turnstileToken
         c.toggleVote("fr-101", userToken, turnstileToken = "   ")
         assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
+
+        // two-argument overload
+        c.toggleVote("fr-101", userToken)
+        assertFalse(org.json.JSONObject(capturedBody!!).has("turnstileToken"))
     }
 
     @Test
