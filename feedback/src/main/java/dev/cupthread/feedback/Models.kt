@@ -629,6 +629,61 @@ data class FeatureRequestItem(
     val importedVotes: Int = 0
 ) {
     /**
+     * Preserves binary backward compatibility with callers compiled against SDK versions
+     * prior to the addition of [importedVotes].
+     */
+    constructor(
+        id: String,
+        appId: String,
+        title: String,
+        description: String,
+        status: String,
+        columnId: String?,
+        columnSlug: String?,
+        columnName: String?,
+        columnColor: String? = null,
+        versionId: String?,
+        versionLabel: String?,
+        releasedVersion: String?,
+        requesterName: String?,
+        requesterAvatarUrl: String? = null,
+        requesterClerkId: String? = null,
+        approved: Boolean,
+        voteCount: Int,
+        hasVoted: Boolean,
+        isOwnRequest: Boolean,
+        recentCommenters: List<RecentCommenter> = emptyList(),
+        hasMoreCommenters: Boolean = false,
+        createdAt: String,
+        updatedAt: String
+    ) : this(
+        id = id,
+        appId = appId,
+        title = title,
+        description = description,
+        status = status,
+        columnId = columnId,
+        columnSlug = columnSlug,
+        columnName = columnName,
+        columnColor = columnColor,
+        versionId = versionId,
+        versionLabel = versionLabel,
+        releasedVersion = releasedVersion,
+        requesterName = requesterName,
+        requesterAvatarUrl = requesterAvatarUrl,
+        requesterClerkId = requesterClerkId,
+        approved = approved,
+        voteCount = voteCount,
+        hasVoted = hasVoted,
+        isOwnRequest = isOwnRequest,
+        recentCommenters = recentCommenters,
+        hasMoreCommenters = hasMoreCommenters,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        importedVotes = 0
+    )
+
+    /**
      * Display name of the roadmap stage: returns [columnName] when on the board,
      * otherwise falls back to the raw [status] slug.
      */
