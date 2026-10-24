@@ -956,6 +956,45 @@ data class ListFeatureRequestsResult(
 )
 
 /**
+ * Result of fetching a page of comments on a feature request via [FeedbackClient.fetchCommentsPage].
+ *
+ * Returned by `GET /api/v1/feature-requests/{id}/comments`.
+ *
+ * Each page carries keyset pagination metadata: pass [nextCursor] back as `cursor` to fetch
+ * subsequent pages.
+ *
+ * Example:
+ * ```kotlin
+ * var page = client.fetchCommentsPage(featureRequestId = "req_123", limit = 50)
+ * val allComments = page.comments.toMutableList()
+ * while (page.hasMore && page.nextCursor != null) {
+ *     page = client.fetchCommentsPage(
+ *         featureRequestId = "req_123",
+ *         limit = 50,
+ *         cursor = page.nextCursor
+ *     )
+ *     allComments += page.comments
+ * }
+ * ```
+ *
+ * @property comments List of [FeatureRequestComment] records on this page, ordered ascending by creation time (`createdAt ASC, id ASC`).
+ * @property total Total number of visible comments on the thread.
+ * @property hasMore Whether an additional page of comments exists after [comments].
+ * @property nextCursor Keyset cursor to pass to [FeedbackClient.fetchCommentsPage] to load the next page, or `null` if on the last page.
+ */
+data class ListCommentsResult(
+    val comments: List<FeatureRequestComment>,
+    val total: Int = comments.size,
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null
+)
+
+/**
+ * Typealias matching the OpenAPI 3.1 schema name `ListFeatureRequestCommentsResponse`.
+ */
+typealias ListFeatureRequestCommentsResponse = ListCommentsResult
+
+/**
  * Feature request referenced by a [ChangelogEntry], highlighting resolved requests.
  *
  * @property id Unique ID of the linked feature request.

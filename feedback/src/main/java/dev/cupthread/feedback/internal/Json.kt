@@ -21,6 +21,7 @@ import dev.cupthread.feedback.FeedbackAttachment
 import dev.cupthread.feedback.FeedbackPlatform
 import dev.cupthread.feedback.FeedbackSubmissionResult
 import dev.cupthread.feedback.ListChangelogResult
+import dev.cupthread.feedback.ListCommentsResult
 import dev.cupthread.feedback.ListFeatureRequestsResult
 import dev.cupthread.feedback.ChangelogOverlayConfig
 import dev.cupthread.feedback.EndUserLinkResult
@@ -307,6 +308,16 @@ internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
             add(parseFeatureRequestComment(array.getJSONObject(i)))
         }
     }
+}
+
+internal fun parseListComments(json: JSONObject): ListCommentsResult {
+    val comments = parseCommentList(json)
+    return ListCommentsResult(
+        comments = comments,
+        total = json.optInt("total", comments.size),
+        hasMore = json.optBoolean("hasMore", false),
+        nextCursor = json.stringOrNull("nextCursor")
+    )
 }
 
 internal fun parsePublicUserProfile(json: JSONObject): PublicUserProfile =
