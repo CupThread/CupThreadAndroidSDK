@@ -516,7 +516,7 @@ private fun FeedbackFormBody(
                         attachment = attachment,
                         onDelete = {
                             draft = draft.copy(
-                                attachments = draft.attachments.filter { it.key != attachment.key }
+                                attachments = draft.attachments.filter { it != attachment }
                             )
                         }
                     )

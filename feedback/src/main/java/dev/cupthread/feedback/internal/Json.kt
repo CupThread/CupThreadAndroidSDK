@@ -185,13 +185,19 @@ internal fun parseFeedbackSubmission(json: JSONObject): FeedbackSubmissionResult
 internal fun parseAttachment(json: JSONObject): FeedbackAttachment {
     val kind = FeedbackAttachment.Kind.fromWire(json.getString("kind"))
         ?: throw IllegalArgumentException("unknown attachment kind")
+    val uploadId = json.stringOrNull("uploadId")?.trim()?.ifEmpty { null }
+    val key = json.stringOrNull("key")?.trim()?.ifEmpty { null }
+    if (uploadId == null && key == null) {
+        throw IllegalArgumentException("attachment response must contain an uploadId or key")
+    }
     return FeedbackAttachment(
         kind = kind,
-        key = json.getString("key"),
-        url = json.getString("url"),
+        key = key,
+        url = json.stringOrNull("url"),
         filename = json.stringOrNull("filename"),
         mimeType = json.stringOrNull("mimeType"),
-        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size")
+        size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size"),
+        uploadId = uploadId
     )
 }
 

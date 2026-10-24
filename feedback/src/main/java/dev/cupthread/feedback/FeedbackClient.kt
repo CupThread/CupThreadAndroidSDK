@@ -165,19 +165,28 @@ class FeedbackClient internal constructor(
             putOptString("buildNumber", draft.buildNumber.trim().ifEmpty { null })
             put("metadata", JSONObject(defaultMetadata(draft)))
             val attachments = JSONArray()
+            val uploadIds = JSONArray()
             for (attachment in draft.attachments) {
                 attachments.put(
                     JSONObject().apply {
                         put("kind", attachment.kind.wireValue)
-                        put("key", attachment.key)
-                        put("url", attachment.url)
+                        putOptString("uploadId", attachment.uploadId)
+                        putOptString("key", attachment.key)
+                        putOptString("url", attachment.url)
                         putOptString("filename", attachment.filename)
                         putOptString("mimeType", attachment.mimeType)
                         if (attachment.size != null) put("size", attachment.size)
                     }
                 )
+                val uploadId = attachment.uploadId?.trim()?.takeIf { it.isNotEmpty() }
+                if (uploadId != null) {
+                    uploadIds.put(uploadId)
+                }
             }
             put("attachments", attachments)
+            if (uploadIds.length() > 0) {
+                put("uploadIds", uploadIds)
+            }
         }
         return parseFeedbackSubmission(
             sendJson(
