@@ -17,6 +17,7 @@ import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
+import dev.cupthread.feedback.internal.parseListComments
 import dev.cupthread.feedback.internal.parseEndUserEraseResult
 import dev.cupthread.feedback.internal.parseEndUserLinkResult
 import dev.cupthread.feedback.internal.parseFeatureRequestComment
@@ -667,12 +668,68 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches public comments on a feature request from `GET /api/v1/feature-requests/{id}/comments`.
+     * Fetches a paginated page of comments on a feature request from
+     * `GET /api/v1/feature-requests/{id}/comments`.
      *
-     * Returns a flat list of comments including avatar URLs and threaded `@reply` references.
+     * Comments are returned in ascending chronological order (`createdAt ASC, id ASC`, oldest first).
+     *
+     * Responses include [ListCommentsResult.hasMore] and [ListCommentsResult.nextCursor].
+     * Pass [nextCursor][ListCommentsResult.nextCursor] back as [cursor] for keyset paging to load
+     * subsequent pages without building deep offsets.
+     *
+     * @param featureRequestId Unique identifier of the target [FeatureRequestItem].
+     * @param limit Maximum number of comments to return per page (clamped between 1 and 200; default is 200).
+     * @param cursor Optional opaque keyset cursor from a previous page's [ListCommentsResult.nextCursor].
+     *   Malformed cursors are rejected by the server with HTTP 400.
+     * @return [ListCommentsResult] containing the comments on this page along with pagination metadata.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as HTTP 404 if not found or HTTP 400 for invalid cursor).
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     *
+     * Example:
+     * ```kotlin
+     * val page = client.fetchCommentsPage("req_123", limit = 50)
+     * println("Found ${page.total} comments (page size: ${page.comments.size}, hasMore: ${page.hasMore})")
+     * if (page.hasMore && page.nextCursor != null) {
+     *     val nextPage = client.fetchCommentsPage("req_123", cursor = page.nextCursor)
+     * }
+     * ```
+     */
+    suspend fun fetchCommentsPage(
+        featureRequestId: String,
+        limit: Int = 200,
+        cursor: String? = null
+    ): ListCommentsResult {
+        require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val clampedLimit = limit.coerceIn(1, 200)
+        val params = mutableListOf<Pair<String, String>>()
+        if (clampedLimit != 200 || !cursor.isNullOrBlank()) {
+            params += "limit" to clampedLimit.toString()
+        }
+        if (!cursor.isNullOrBlank()) {
+            params += "cursor" to cursor
+        }
+        val path = if (params.isNotEmpty()) {
+            "/api/v1/feature-requests/${featureRequestId.trim()}/comments?${encodeQuery(params)}"
+        } else {
+            "/api/v1/feature-requests/${featureRequestId.trim()}/comments"
+        }
+        val json = get(path, mapRateLimitErrors = true)
+        return parseListComments(json)
+    }
+
+    /**
+     * Fetches all visible comments on a feature request from `GET /api/v1/feature-requests/{id}/comments`.
+     *
+     * Keyset-paginated on the server with a maximum page size of 200. This method automatically walks
+     * subsequent pages using [fetchCommentsPage] until [ListCommentsResult.hasMore] is `false`,
+     * collecting all comments for callers that display the entire comment thread.
      *
      * @param featureRequestId Target [FeatureRequestItem.id].
-     * @return List of [FeatureRequestComment] instances, sorted chronologically.
+     * @return List of all [FeatureRequestComment] records on the thread, ordered ascending by creation time.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
@@ -684,8 +741,41 @@ class FeedbackClient internal constructor(
      * }
      * ```
      */
-    suspend fun fetchComments(featureRequestId: String): List<FeatureRequestComment> =
-        parseCommentList(get("/api/v1/feature-requests/$featureRequestId/comments"))
+    suspend fun fetchComments(featureRequestId: String): List<FeatureRequestComment> {
+        val allComments = mutableListOf<FeatureRequestComment>()
+        var currentCursor: String? = null
+        val seenCursors = mutableSetOf<String>()
+        do {
+            val page = fetchCommentsPage(
+                featureRequestId = featureRequestId,
+                limit = 200,
+                cursor = currentCursor
+            )
+            allComments.addAll(page.comments)
+            if (page.hasMore) {
+                if (page.comments.isEmpty()) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server indicated more comments are available but returned an empty page")
+                    )
+                }
+                val next = page.nextCursor
+                if (next.isNullOrBlank()) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server indicated more comments are available but nextCursor is missing")
+                    )
+                }
+                if (!seenCursors.add(next)) {
+                    throw FeedbackException.InvalidResponse(
+                        IllegalStateException("Server returned repeated cursor during comment pagination: $next")
+                    )
+                }
+                currentCursor = next
+            } else {
+                currentCursor = null
+            }
+        } while (currentCursor != null)
+        return allComments
+    }
 
     /**
      * Posts a new comment or threaded `@reply` on a feature request via

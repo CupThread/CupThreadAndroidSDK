@@ -134,7 +134,8 @@ lifecycleScope.launch {
 | `fetchFeatureRequests(userToken, limit, offset, versionId, query, cursor)` | `GET /api/v1/feature-requests` (returns `hasMore` / `nextCursor`) |
 | `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` |
 | `toggleVote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` |
-| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` |
+| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
+| `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
 | `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
