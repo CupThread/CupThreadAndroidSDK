@@ -528,7 +528,8 @@ class FeedbackClient internal constructor(
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken].
+     * Preserved for binary backward compatibility with callers who do not pass [turnstileToken]
+     * or [shipNotifyEmail].
      *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
@@ -537,13 +538,12 @@ class FeedbackClient internal constructor(
     suspend fun toggleVote(
         featureRequestId: String,
         userToken: String
-    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null)
+    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null, shipNotifyEmail = null)
 
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * To remove an existing upvote, call [deleteVote] instead.
-     * Returns the reconciled server vote state for optimistic UI synchronization.
+     * Preserved for binary backward compatibility with callers who do not pass [shipNotifyEmail].
      *
      * When [PublicAppConfig.requireAnonymousVoteTurnstile] is enabled, anonymous voters must provide
      * a valid [turnstileToken] (solved with action `"vote"` and cdata matching the configured `appKey`).
@@ -556,13 +556,44 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
+     */
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String,
+        turnstileToken: String?
+    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = turnstileToken, shipNotifyEmail = null)
+
+    /**
+     * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
+     *
+     * To remove an existing upvote, call [deleteVote] instead.
+     * Returns the reconciled server vote state for optimistic UI synchronization.
+     *
+     * When [PublicAppConfig.requireAnonymousVoteTurnstile] is enabled, anonymous voters must provide
+     * a valid [turnstileToken] (solved with action `"vote"` or `"ship-notify"` and cdata matching the configured `appKey`).
+     *
+     * An optional [shipNotifyEmail] opts the address into double opt-in ship notifications;
+     * a single-use confirmation email is dispatched by CupThread. The endpoint is idempotent,
+     * so submitting an upvote again with [shipNotifyEmail] on an already-voted request registers
+     * the notification opt-in without toggling the vote.
+     *
+     * @param featureRequestId Unique ID of the target [FeatureRequestItem].
+     * @param userToken Stable anonymous user token from [UserTokenStore].
+     * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
+     * @param shipNotifyEmail Optional email address to opt into ship notifications for this request.
+     * @return [VoteResult] containing the updated vote state (`voted`) and current total count (`voteCount`).
+     * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
+     * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
+     * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
+     * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
      * ```kotlin
      * val result = client.toggleVote(
      *     featureRequestId = "req_123",
      *     userToken = userToken,
-     *     turnstileToken = "0.test_turnstile_token..."
+     *     turnstileToken = "0.test_turnstile_token...",
+     *     shipNotifyEmail = "voter@example.com"
      * )
      * println("Voted: ${result.voted}, New total: ${result.voteCount}")
      * ```
@@ -570,13 +601,29 @@ class FeedbackClient internal constructor(
     suspend fun toggleVote(
         featureRequestId: String,
         userToken: String,
-        turnstileToken: String?
+        turnstileToken: String? = null,
+        shipNotifyEmail: String? = null
     ): VoteResult {
+        val trimmedEmail = shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }
+        if (trimmedEmail != null) {
+            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/$featureRequestId/vote")
+            val parsedUri = try {
+                java.net.URI(targetUrl)
+            } catch (_: Exception) {
+                null
+            }
+            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+                "toggleVote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
+            }
+        }
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             put("userToken", userToken)
             turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 put("turnstileToken", it)
+            }
+            trimmedEmail?.let {
+                put("shipNotifyEmail", it)
             }
         }
         return parseVoteResult(
