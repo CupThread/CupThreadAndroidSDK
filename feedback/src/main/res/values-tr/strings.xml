@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">Gönderilemedi</string>
     <string name="cupthread_features_vote_desc">Oy ver, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Oyu kaldır, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Çok hızlı oy veriyorsunuz. Lütfen birazdan tekrar deneyin.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Yol Haritası</string>

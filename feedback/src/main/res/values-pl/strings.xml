@@ -46,6 +46,7 @@
     <string name="cupthread_features_submit_failed">Nie udało się przesłać</string>
     <string name="cupthread_features_vote_desc">Głosuj, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Usuń głos, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Głosujesz za szybko. Spróbuj ponownie za chwilę.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Plan rozwoju</string>
