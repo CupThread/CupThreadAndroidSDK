@@ -592,13 +592,15 @@ data class AppVersion(
  * @property requesterAvatarUrl Hosted avatar image URL of the requester, or `null`.
  * @property requesterClerkId User account ID of the requester if signed in, or `null`.
  * @property approved Whether a moderator has approved this request for public display.
- * @property voteCount Total number of upvotes.
+ * @property voteCount Total number of upvotes, including both in-app votes and [importedVotes].
  * @property hasVoted Whether the current user (identified by `userToken`) has upvoted this request.
  * @property isOwnRequest Whether the current user created this request (users cannot vote on their own requests).
  * @property recentCommenters Up to 3 most recent commenters for rendering avatar stacks.
  * @property hasMoreCommenters Whether additional commenters exist beyond [recentCommenters].
  * @property createdAt ISO 8601 creation timestamp.
  * @property updatedAt ISO 8601 last update timestamp.
+ * @property importedVotes Historical upvotes copied from an external source at import time (e.g. GitHub/Linear).
+ *   Already included in [voteCount] (not additive on top of it). Defaults to 0 for native requests.
  */
 data class FeatureRequestItem(
     val id: String,
@@ -623,8 +625,64 @@ data class FeatureRequestItem(
     val recentCommenters: List<RecentCommenter> = emptyList(),
     val hasMoreCommenters: Boolean = false,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val importedVotes: Int = 0
 ) {
+    /**
+     * Preserves binary backward compatibility with callers compiled against SDK versions
+     * prior to the addition of [importedVotes].
+     */
+    constructor(
+        id: String,
+        appId: String,
+        title: String,
+        description: String,
+        status: String,
+        columnId: String?,
+        columnSlug: String?,
+        columnName: String?,
+        columnColor: String? = null,
+        versionId: String?,
+        versionLabel: String?,
+        releasedVersion: String?,
+        requesterName: String?,
+        requesterAvatarUrl: String? = null,
+        requesterClerkId: String? = null,
+        approved: Boolean,
+        voteCount: Int,
+        hasVoted: Boolean,
+        isOwnRequest: Boolean,
+        recentCommenters: List<RecentCommenter> = emptyList(),
+        hasMoreCommenters: Boolean = false,
+        createdAt: String,
+        updatedAt: String
+    ) : this(
+        id = id,
+        appId = appId,
+        title = title,
+        description = description,
+        status = status,
+        columnId = columnId,
+        columnSlug = columnSlug,
+        columnName = columnName,
+        columnColor = columnColor,
+        versionId = versionId,
+        versionLabel = versionLabel,
+        releasedVersion = releasedVersion,
+        requesterName = requesterName,
+        requesterAvatarUrl = requesterAvatarUrl,
+        requesterClerkId = requesterClerkId,
+        approved = approved,
+        voteCount = voteCount,
+        hasVoted = hasVoted,
+        isOwnRequest = isOwnRequest,
+        recentCommenters = recentCommenters,
+        hasMoreCommenters = hasMoreCommenters,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        importedVotes = 0
+    )
+
     /**
      * Display name of the roadmap stage: returns [columnName] when on the board,
      * otherwise falls back to the raw [status] slug.

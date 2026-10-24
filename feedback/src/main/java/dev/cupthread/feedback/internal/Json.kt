@@ -145,7 +145,8 @@ internal fun parseFeatureRequestItem(json: JSONObject): FeatureRequestItem = Fea
     recentCommenters = parseRecentCommenters(json.optJSONArray("recentCommenters")),
     hasMoreCommenters = json.booleanOr("hasMoreCommenters", false),
     createdAt = json.optString("createdAt", ""),
-    updatedAt = json.optString("updatedAt", "")
+    updatedAt = json.optString("updatedAt", ""),
+    importedVotes = json.intOr("importedVotes", 0)
 )
 
 internal fun parseListFeatureRequests(json: JSONObject, offset: Int = 0): ListFeatureRequestsResult {

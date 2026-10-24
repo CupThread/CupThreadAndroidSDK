@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material3.CircularProgressIndicator
@@ -177,6 +178,13 @@ fun FeatureRequestDetailSheet(
                     }
                     item.versionLabel?.let {
                         CapsuleBadge(it, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Outlined.Sell)
+                    }
+                    if (item.importedVotes > 0) {
+                        CapsuleBadge(
+                            stringResource(R.string.cupthread_features_imported_votes, item.importedVotes),
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            Icons.Outlined.History
+                        )
                     }
                 }
                 VotePill(

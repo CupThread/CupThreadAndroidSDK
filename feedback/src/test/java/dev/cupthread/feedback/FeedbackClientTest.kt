@@ -1313,10 +1313,12 @@ class FeedbackClientTest {
             recentCommenters = listOf(RecentCommenter("Alice", "user_alice", "https://example.com/alice.png")),
             hasMoreCommenters = true,
             createdAt = "2026-01-01T00:00:00.000Z",
-            updatedAt = "2026-01-01T00:00:00.000Z"
+            updatedAt = "2026-01-01T00:00:00.000Z",
+            importedVotes = 2
         )
         val updated = base.withVoteState(voted = true, count = 4)
         assertEquals(4, updated.voteCount)
+        assertEquals(2, updated.importedVotes)
         assertTrue(updated.hasVoted)
         assertEquals(base.title, updated.title)
         assertEquals(base.columnName, updated.columnName)
@@ -1572,6 +1574,156 @@ class FeedbackClientTest {
         assertEquals("Minimal comment", comment.body)
         assertEquals("", comment.createdAt)
         assertNull(comment.updatedAt)
+    }
+
+    @Test
+    fun parseFeatureRequestItemDecodesImportedVotes() {
+        val json = org.json.JSONObject(
+            """
+            {
+              "id": "fr-imported",
+              "appId": "app-1",
+              "title": "Imported feature from GitHub",
+              "description": "Originally from GitHub issue #42",
+              "status": "planned",
+              "approved": true,
+              "voteCount": 124,
+              "importedVotes": 120,
+              "hasVoted": true,
+              "isOwnRequest": false,
+              "createdAt": "2026-03-01T00:00:00.000Z",
+              "updatedAt": "2026-03-02T00:00:00.000Z"
+            }
+            """.trimIndent()
+        )
+
+        val item = dev.cupthread.feedback.internal.parseFeatureRequestItem(json)
+        assertEquals("fr-imported", item.id)
+        assertEquals(124, item.voteCount)
+        assertEquals(120, item.importedVotes)
+        assertTrue(item.hasVoted)
+    }
+
+    @Test
+    fun parseFeatureRequestItemDefaultsImportedVotesToZeroWhenAbsentOrNull() {
+        val jsonWithoutImported = org.json.JSONObject(
+            """
+            {
+              "id": "fr-native",
+              "appId": "app-1",
+              "title": "Native feature",
+              "description": "Created in CupThread",
+              "status": "planned",
+              "approved": true,
+              "voteCount": 5,
+              "hasVoted": false,
+              "isOwnRequest": false,
+              "createdAt": "2026-03-01T00:00:00.000Z",
+              "updatedAt": "2026-03-02T00:00:00.000Z"
+            }
+            """.trimIndent()
+        )
+        val item1 = dev.cupthread.feedback.internal.parseFeatureRequestItem(jsonWithoutImported)
+        assertEquals(5, item1.voteCount)
+        assertEquals(0, item1.importedVotes)
+
+        val jsonWithNullImported = org.json.JSONObject(
+            """
+            {
+              "id": "fr-null-imported",
+              "appId": "app-1",
+              "title": "Native feature null imported",
+              "description": "Created in CupThread",
+              "status": "planned",
+              "approved": true,
+              "voteCount": 3,
+              "importedVotes": null,
+              "hasVoted": false,
+              "isOwnRequest": false,
+              "createdAt": "2026-03-01T00:00:00.000Z",
+              "updatedAt": "2026-03-02T00:00:00.000Z"
+            }
+            """.trimIndent()
+        )
+        val item2 = dev.cupthread.feedback.internal.parseFeatureRequestItem(jsonWithNullImported)
+        assertEquals(3, item2.voteCount)
+        assertEquals(0, item2.importedVotes)
+    }
+
+    @Test
+    fun fetchFeatureRequestsPopulatesImportedVotesInList() = runTest {
+        val json = """
+            {
+              "requests": [
+                {
+                  "id": "fr-1",
+                  "appId": "app-1",
+                  "title": "Imported from GitHub",
+                  "status": "planned",
+                  "approved": true,
+                  "voteCount": 105,
+                  "importedVotes": 100,
+                  "hasVoted": false,
+                  "isOwnRequest": false,
+                  "createdAt": "2026-01-01T00:00:00.000Z",
+                  "updatedAt": "2026-01-01T00:00:00.000Z"
+                },
+                {
+                  "id": "fr-2",
+                  "appId": "app-1",
+                  "title": "Native in-app request",
+                  "status": "planned",
+                  "approved": true,
+                  "voteCount": 8,
+                  "importedVotes": 0,
+                  "hasVoted": true,
+                  "isOwnRequest": false,
+                  "createdAt": "2026-01-02T00:00:00.000Z",
+                  "updatedAt": "2026-01-02T00:00:00.000Z"
+                }
+              ],
+              "total": 2
+            }
+        """.trimIndent()
+
+        val result = client { HttpResponse(200, json) }.fetchFeatureRequests("user-token-123")
+        assertEquals(2, result.requests.size)
+        assertEquals(105, result.requests[0].voteCount)
+        assertEquals(100, result.requests[0].importedVotes)
+        assertEquals(8, result.requests[1].voteCount)
+        assertEquals(0, result.requests[1].importedVotes)
+    }
+
+    @Test
+    fun featureRequestItemPositionalConstructorMaintainsCompatibility() {
+        val item = FeatureRequestItem(
+            "fr-1",
+            "app-1",
+            "Title",
+            "Desc",
+            "planned",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            10,
+            false,
+            false,
+            emptyList(),
+            false,
+            "2026-01-01T00:00:00.000Z",
+            "2026-01-01T00:00:00.000Z"
+        )
+        assertEquals(0, item.importedVotes)
+        assertEquals(10, item.voteCount)
+        assertFalse(item.hasVoted)
     }
 
     @Test
