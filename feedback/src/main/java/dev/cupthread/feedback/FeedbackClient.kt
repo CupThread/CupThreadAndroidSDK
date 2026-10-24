@@ -795,25 +795,28 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Fetches a public user profile from `GET /api/v1/users/{userId}/profile`.
+     * Fetches a public user profile from `GET /api/v1/users/{userId}/profile?appKey={appKey}`.
      *
-     * Returns the user's public biographical details, public applications, and recent public comments.
+     * Resolves app-scoped pseudonymous identifiers (`u_*`) carried by board and comment payloads.
+     * Note: Raw Clerk user IDs (`user_*`) are no longer resolved and return an anonymous placeholder.
      *
-     * @param userId Unique user identifier (e.g., Clerk user account ID).
+     * @param userId App-scoped pseudonymous user identifier (`u_*`) from board or comment payloads.
      * @return [PublicUserProfileResult] containing the user profile, associated apps, and comments.
      * @throws FeedbackException.UnexpectedStatus on HTTP 404 if the user profile does not exist.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
      * ```kotlin
-     * val userProfile = client.fetchUserProfile("user_clerk_123")
+     * val userProfile = client.fetchUserProfile("u_1234567890abcdef1234567890abcdef")
      * println("User: ${userProfile.profile.displayName}")
      * println("Bio: ${userProfile.profile.bio}")
      * println("Apps count: ${userProfile.apps.size}")
      * ```
      */
-    suspend fun fetchUserProfile(userId: String): PublicUserProfileResult =
-        parsePublicUserProfileResult(get("/api/v1/users/$userId/profile"))
+    suspend fun fetchUserProfile(userId: String): PublicUserProfileResult {
+        val query = encodeQuery(listOf("appKey" to config.appKey))
+        return parsePublicUserProfileResult(get("/api/v1/users/$userId/profile?$query"))
+    }
 
     /**
      * Erases the caller's own end-user profile for this application via `POST /api/v1/me/erase`.

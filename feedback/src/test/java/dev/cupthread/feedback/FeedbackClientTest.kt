@@ -1102,7 +1102,7 @@ class FeedbackClientTest {
         val profileJson = """
             {
               "profile": {
-                "clerkUserId": "user_lex",
+                "clerkUserId": "u_abcdef1234567890abcdef1234567890",
                 "displayName": "Lex",
                 "avatarUrl": "https://example.com/lex.png",
                 "bio": "Building things",
@@ -1139,9 +1139,9 @@ class FeedbackClientTest {
         val result = client { request ->
             url = request.url
             HttpResponse(200, profileJson)
-        }.fetchUserProfile("user_lex")
+        }.fetchUserProfile("u_abcdef1234567890abcdef1234567890")
 
-        assertEquals("https://api.example.com/api/v1/users/user_lex/profile", url)
+        assertEquals("https://api.example.com/api/v1/users/u_abcdef1234567890abcdef1234567890/profile?appKey=$appKey", url)
         assertEquals("Lex", result.profile.displayName)
         assertEquals("https://example.com/lex.png", result.profile.avatarUrl)
         assertEquals("Building things", result.profile.bio)
@@ -1152,6 +1152,51 @@ class FeedbackClientTest {
         assertEquals(1, result.recentComments.size)
         assertEquals("Dark Mode Support", result.recentComments[0].featureRequestTitle)
         assertFalse(result.hideComments)
+    }
+
+    @Test
+    fun fetchUserProfileHandlesAnonymousPlaceholderForNonPseudonymOrOptedOutUser() = runTest {
+        var url: String? = null
+        val placeholderJson = """
+            {
+              "profile": {
+                "clerkUserId": "user_raw_clerk_id",
+                "displayName": null,
+                "avatarUrl": null,
+                "bio": null,
+                "websiteUrl": null,
+                "createdAt": "2026-01-01T00:00:00Z"
+              },
+              "publicApps": [],
+              "recentComments": []
+            }
+        """.trimIndent()
+
+        val result = client { request ->
+            url = request.url
+            HttpResponse(200, placeholderJson)
+        }.fetchUserProfile("user_raw_clerk_id")
+
+        assertEquals("https://api.example.com/api/v1/users/user_raw_clerk_id/profile?appKey=$appKey", url)
+        assertNull(result.profile.displayName)
+        assertNull(result.profile.avatarUrl)
+        assertNull(result.profile.bio)
+        assertNull(result.profile.websiteUrl)
+        assertTrue(result.apps.isEmpty())
+        assertTrue(result.recentComments.isEmpty())
+    }
+
+    @Test
+    fun fetchUserProfileThrowsUnexpectedStatusOn404() = runTest {
+        try {
+            client {
+                HttpResponse(404, """{"error":"User not found"}""")
+            }.fetchUserProfile("u_unknown_hex_id")
+            fail("Expected FeedbackException.UnexpectedStatus on 404")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(404, ex.code)
+            assertTrue(ex.serverMessage.contains("User not found"))
+        }
     }
 
     @Test

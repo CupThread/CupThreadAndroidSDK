@@ -307,7 +307,7 @@ internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
 
 internal fun parsePublicUserProfile(json: JSONObject): PublicUserProfile =
     PublicUserProfile(
-        clerkUserId = json.getString("clerkUserId"),
+        clerkUserId = json.optString("clerkUserId", ""),
         displayName = json.stringOrNull("displayName"),
         avatarUrl = json.stringOrNull("avatarUrl"),
         bio = json.stringOrNull("bio"),
@@ -321,7 +321,7 @@ internal fun parsePublicAppSummary(json: JSONObject): PublicAppSummary =
     PublicAppSummary(
         id = json.getString("id"),
         name = json.getString("name"),
-        slug = json.getString("slug"),
+        slug = json.optString("appSlug").ifBlank { json.optString("slug", "") },
         iconUrl = json.stringOrNull("iconUrl"),
         description = json.stringOrNull("description"),
         requestCount = json.intOr("requestCount", 0)
@@ -334,13 +334,13 @@ internal fun parseUserProfileComment(json: JSONObject): UserProfileComment =
         createdAt = json.optString("createdAt", ""),
         featureRequestId = json.getString("featureRequestId"),
         featureRequestTitle = json.getString("featureRequestTitle"),
-        appId = json.getString("appId"),
+        appId = json.optString("appId", ""),
         appName = json.getString("appName")
     )
 
 internal fun parsePublicUserProfileResult(json: JSONObject): PublicUserProfileResult {
     val profileJson = json.getJSONObject("profile")
-    val appsArray = json.optJSONArray("apps") ?: JSONArray()
+    val appsArray = json.optJSONArray("publicApps") ?: json.optJSONArray("apps") ?: JSONArray()
     val commentsArray = json.optJSONArray("recentComments") ?: JSONArray()
     return PublicUserProfileResult(
         profile = parsePublicUserProfile(profileJson),

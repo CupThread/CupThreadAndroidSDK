@@ -136,7 +136,7 @@ lifecycleScope.launch {
 | `toggleVote(featureRequestId, userToken)` | `POST /api/v1/feature-requests/{id}/vote` |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
-| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile` |
+| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
