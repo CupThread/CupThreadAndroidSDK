@@ -47,6 +47,7 @@
     <string name="cupthread_features_submit_failed">提交失敗</string>
     <string name="cupthread_features_vote_desc">投票，目前 %1$d 票</string>
     <string name="cupthread_features_remove_vote_desc">取消投票，目前 %1$d 票</string>
+    <string name="cupthread_features_vote_rate_limited">投票過於頻繁，請稍後再試。</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">路線圖</string>

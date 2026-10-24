@@ -16,6 +16,8 @@ package dev.cupthread.feedback
  *     showLoginPrompt("Please sign in to submit feedback.")
  * } catch (e: FeedbackException.UnsupportedMediaType) {
  *     showErrorSnackbar("Unsupported file format: ${e.message}")
+ * } catch (e: FeedbackException.RateLimited) {
+ *     showErrorSnackbar(e.message ?: "You're voting too fast. Please try again shortly.")
  * } catch (e: FeedbackException.UnexpectedStatus) {
  *     Log.e("Feedback", "Server error code: ${e.code}, message: ${e.serverMessage}")
  *     showErrorSnackbar("Submission failed: ${e.serverMessage}")
@@ -101,6 +103,18 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "An attachment could not be uploaded due to content inspection rejection."
+        )
+
+    /**
+     * Raised when the server responds with HTTP 429 `too_many_requests`, indicating that the client
+     * has exceeded a rate limit window (such as voting too frequently on feature requests).
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     */
+    class RateLimited(val serverMessage: String? = null) :
+        FeedbackException(
+            serverMessage?.ifBlank { null }
+                ?: "You're voting too fast. Please try again shortly."
         )
 
     /**

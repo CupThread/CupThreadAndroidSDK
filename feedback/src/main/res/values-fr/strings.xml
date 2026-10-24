@@ -47,6 +47,7 @@
     <string name="cupthread_features_submit_failed">Échec de l\'envoi</string>
     <string name="cupthread_features_vote_desc">Voter, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Retirer le vote, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Vous votez trop rapidement. Veuillez réessayer dans un instant.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Feuille de route</string>

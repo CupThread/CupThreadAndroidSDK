@@ -47,6 +47,7 @@
     <string name="cupthread_features_submit_failed">送信できませんでした</string>
     <string name="cupthread_features_vote_desc">投票する、現在 %1$d 票</string>
     <string name="cupthread_features_remove_vote_desc">投票を取り消す、現在 %1$d 票</string>
+    <string name="cupthread_features_vote_rate_limited">投票の頻度が高すぎます。しばらく待ってから再度お試しください。</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">ロードマップ</string>

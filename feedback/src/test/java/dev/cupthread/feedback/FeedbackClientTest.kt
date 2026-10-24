@@ -848,6 +848,114 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteMapsHttp429ToRateLimitedWithServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"error":"Too many votes. Please try again shortly."}""")
+            }.toggleVote("fr-10", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many votes. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many votes. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun toggleVoteMapsHttp429WithBlankBodyToDefaultRateLimitedMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, "   ")
+            }.toggleVote("fr-11", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun toggleVoteMapsHttp429WithJsonCodeOnlyToNullServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"code":"too_many_requests"}""")
+            }.toggleVote("fr-11-code", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun toggleVoteMapsHttp429WithJsonNullErrorToNullServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"code":"too_many_requests","error":null}""")
+            }.toggleVote("fr-11-null-error", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun toggleVoteMapsHttp429WithPlainTextBodyToServerMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, "Rate limit reached from client IP")
+            }.toggleVote("fr-11-text", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Rate limit reached from client IP", ex.serverMessage)
+            assertEquals("Rate limit reached from client IP", ex.message)
+        }
+    }
+
+    @Test
+    fun deleteVoteHitsDeleteEndpointWithRateLimitMapping() = runTest {
+        var method: String? = null
+        var url: String? = null
+        var userTokenHeader: String? = null
+        val token = UUID.randomUUID().toString()
+
+        val result = client { request ->
+            method = request.method
+            url = request.url
+            userTokenHeader = request.headers["X-User-Token"]
+            HttpResponse(200, """{"voted":false,"voteCount":3}""")
+        }.deleteVote("fr-12", token)
+
+        assertEquals("DELETE", method)
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-12/vote", url)
+        assertEquals(token, userTokenHeader)
+        assertFalse(result.voted)
+        assertEquals(3, result.voteCount)
+
+        try {
+            client {
+                HttpResponse(429, """{"error":"Too many votes. Please try again shortly."}""")
+            }.deleteVote("fr-12", token)
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many votes. Please try again shortly.", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun nonVoteEndpointsDoNotMapHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"error":"Rate limited"}""")
+            }.fetchColumns()
+            fail("Expected FeedbackException.UnexpectedStatus on 429")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(429, ex.code)
+            assertEquals("""{"error":"Rate limited"}""", ex.serverMessage)
+        }
+    }
+
+    @Test
     fun updateUserAttributesSendsTokenAndBody() = runTest {
         var header: String? = null
         var body: String? = null

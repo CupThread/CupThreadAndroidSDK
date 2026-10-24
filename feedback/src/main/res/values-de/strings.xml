@@ -47,6 +47,7 @@
     <string name="cupthread_features_submit_failed">Übermittlung fehlgeschlagen</string>
     <string name="cupthread_features_vote_desc">Abstimmen, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Stimme zurückziehen, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Sie stimmen zu schnell ab. Bitte versuchen Sie es gleich noch einmal.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Roadmap</string>

@@ -47,6 +47,7 @@
     <string name="cupthread_features_submit_failed">Kunne ikke sende inn</string>
     <string name="cupthread_features_vote_desc">Stem, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Fjern stemme, %1$d</string>
+    <string name="cupthread_features_vote_rate_limited">Du stemmer for raskt. Prøv igjen om et øyeblikk.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Veikart</string>
