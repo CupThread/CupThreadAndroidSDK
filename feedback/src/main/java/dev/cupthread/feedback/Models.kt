@@ -103,20 +103,48 @@ data class FeedbackClientConfig(
  * ```
  *
  * @property kind Storage backend where the file is hosted (see [FeedbackAttachment.Kind]).
- * @property key Unique storage key assigned by the server.
- * @property url Publicly accessible CDN URL for rendering or downloading the attachment.
+ * @property key Unique storage key assigned by the server, or `null` for private uploads.
+ * @property url Publicly accessible CDN URL for rendering or downloading the attachment, or `null` if private.
  * @property filename Original file name provided during upload (e.g., `"screenshot.png"`), or `null`.
  * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
  * @property size File size in bytes as reported by the storage backend, or `null`.
+ * @property uploadId Unique upload identifier assigned by the storage backend, or `null`.
  */
 data class FeedbackAttachment(
     val kind: Kind,
-    val key: String,
-    val url: String,
+    val key: String? = null,
+    val url: String? = null,
     val filename: String? = null,
     val mimeType: String? = null,
-    val size: Long? = null
+    val size: Long? = null,
+    val uploadId: String? = null
 ) {
+    /**
+     * Backward-compatible constructor for callers providing [key] and [url].
+     */
+    constructor(
+        kind: Kind,
+        key: String,
+        url: String,
+        filename: String? = null,
+        mimeType: String? = null,
+        size: Long? = null
+    ) : this(
+        kind = kind,
+        key = key,
+        url = url,
+        filename = filename,
+        mimeType = mimeType,
+        size = size,
+        uploadId = null
+    )
+
+    /**
+     * Unique identifier for this attachment, preferring [uploadId] when present,
+     * falling back to [key].
+     */
+    val id: String?
+        get() = uploadId ?: key
     /**
      * Storage backend category for an attachment.
      *
