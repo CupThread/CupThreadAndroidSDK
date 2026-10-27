@@ -82,6 +82,31 @@ class RequestIdTest {
     }
 
     @Test
+    fun providerWhitespacePaddedValueIsNotTrimmedIntoValidity() = runTest {
+        val config = FeedbackClientConfig(
+            baseUrl = "https://api.example.com",
+            appKey = appKey,
+            requestIdProvider = { "  corr-id-1234567890  " }
+        )
+        client(config) { request ->
+            assertNull("padded value must be treated as invalid, not trimmed", request.headers[REQUEST_ID_HEADER])
+            HttpResponse(200, configJson)
+        }.fetchAppConfig()
+    }
+
+    @Test
+    fun lowercaseEchoedRequestIdHeaderIsAttachedToError() = runTest {
+        try {
+            client {
+                HttpResponse(404, """{"error":"App not found"}""", mapOf("x-request-id" to "srv-req-lowercase"))
+            }.fetchAppConfig()
+            fail("expected UnexpectedStatus")
+        } catch (error: FeedbackException.UnexpectedStatus) {
+            assertEquals("srv-req-lowercase", error.requestId)
+        }
+    }
+
+    @Test
     fun requestIdPatternMatchesServerContract() {
         assertTrue(REQUEST_ID_PATTERN.matches("0123456789abcdef-uuid_like.Value"))
         assertTrue(REQUEST_ID_PATTERN.matches("abcd1234"))

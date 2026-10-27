@@ -1387,12 +1387,14 @@ class FeedbackClient internal constructor(
      *
      * Returns the configured [FeedbackClientConfig.requestIdProvider] value when it matches the
      * server's `^[A-Za-z0-9._-]{8,64}$` contract, or `null` when a configured provider declines
-     * (the server then mints its own identifier). Without a provider, a fresh UUID is generated
-     * per request so every call is correlatable in server logs.
+     * (the server then mints its own identifier). Provider values are validated as returned —
+     * surrounding whitespace is never trimmed away, so padded values are treated as invalid.
+     * Without a provider, a fresh UUID is generated per request so every call is correlatable
+     * in server logs.
      */
     private fun resolveRequestId(): String? {
         val provider = config.requestIdProvider ?: return UUID.randomUUID().toString()
-        val provided = provider.invoke()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val provided = provider.invoke()?.takeIf { it.isNotBlank() } ?: return null
         return provided.takeIf { REQUEST_ID_PATTERN.matches(it) }
     }
 
@@ -1485,7 +1487,9 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.InvalidResponse(error)
             }
             if (response.code !in accepted) {
-                val requestId = response.headers[REQUEST_ID_HEADER]?.trim()?.takeIf { it.isNotEmpty() }
+                val requestId = response.headers.entries
+                    .firstOrNull { (name, _) -> name.equals(REQUEST_ID_HEADER, ignoreCase = true) }
+                    ?.value?.trim()?.takeIf { it.isNotEmpty() }
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired(requestId)
                 if (response.code == 402 && mapSubmissionQuotaErrors) {
                     val errorPayload = parseErrorPayload(response.body)
