@@ -293,6 +293,15 @@ class FeedbackClient internal constructor(
         requireNotNull(token) {
             "userToken is required for non-image uploads: upload sessions are identity-bound (X-User-Token)"
         }
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/uploads/sessions")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "uploadAttachment destination must use HTTPS when transmitting upload-session credentials: $targetUrl"
+        }
         val clientFileId = "client-${UUID.randomUUID()}"
         val payload = JSONObject().apply {
             put("appKey", config.appKey)

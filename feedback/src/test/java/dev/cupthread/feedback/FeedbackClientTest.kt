@@ -701,6 +701,52 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentNonImageRejectsNonHttpsBaseUrl() = runTest {
+        var requestCount = 0
+        try {
+            FeedbackClient(
+                config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+                transport = HttpTransport { _ ->
+                    requestCount += 1
+                    HttpResponse(201, uploadSessionJson("c1"))
+                }
+            ).uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected IllegalArgumentException for non-HTTPS baseUrl")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message!!.contains("HTTPS"))
+            assertEquals(0, requestCount)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageThrowsUnreadableUploadResponseOnBlankUploadId() = runTest {
+        try {
+            client { request ->
+                if (request.url.endsWith("/uploads/sessions")) {
+                    uploadSessionResponseFor(request)
+                } else {
+                    HttpResponse(
+                        200,
+                        """{"uploadId":"  ","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}"""
+                    )
+                }
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected UnreadableUploadResponse")
+        } catch (_: FeedbackException.UnreadableUploadResponse) {
+        }
+    }
+
+    @Test
     fun uploadAttachmentNonImageMapsHttp415OnPutToUnsupportedMediaType() = runTest {
         try {
             client { request ->
