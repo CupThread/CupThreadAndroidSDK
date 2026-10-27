@@ -725,24 +725,28 @@ class FeedbackClientTest {
 
     @Test
     fun uploadAttachmentNonImageThrowsUnreadableUploadResponseOnBlankUploadId() = runTest {
-        try {
-            client { request ->
-                if (request.url.endsWith("/uploads/sessions")) {
-                    uploadSessionResponseFor(request)
-                } else {
-                    HttpResponse(
-                        200,
-                        """{"uploadId":"  ","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}"""
-                    )
-                }
-            }.uploadAttachment(
-                data = byteArrayOf(1),
-                filename = "log.txt",
-                mimeType = "text/plain",
-                userToken = "tok"
-            )
-            fail("expected UnreadableUploadResponse")
-        } catch (_: FeedbackException.UnreadableUploadResponse) {
+        val brokenResponses = listOf(
+            """{"uploadId":"","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}""",
+            """{"uploadId":null,"clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}""",
+            """{"clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}"""
+        )
+        for (broken in brokenResponses) {
+            try {
+                client { request ->
+                    if (request.url.endsWith("/uploads/sessions")) {
+                        uploadSessionResponseFor(request)
+                    } else {
+                        HttpResponse(200, broken)
+                    }
+                }.uploadAttachment(
+                    data = byteArrayOf(1),
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    userToken = "tok"
+                )
+                fail("expected UnreadableUploadResponse for $broken")
+            } catch (_: FeedbackException.UnreadableUploadResponse) {
+            }
         }
     }
 

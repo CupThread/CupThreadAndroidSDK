@@ -66,12 +66,11 @@ internal fun parseUploadSession(json: JSONObject, clientFileId: String): UploadS
  * Parses the `200` body of `PUT /api/v1/uploads/{uploadId}`.
  *
  * @throws org.json.JSONException if the body does not match the documented uploaded-file schema
- *   or if the returned [UploadedSessionFile.uploadId] is blank.
+ *   or if the returned [UploadedSessionFile.uploadId] is missing, null, or blank.
  */
 internal fun parseUploadedSessionFile(json: JSONObject): UploadedSessionFile {
-    val uploadId = json.getString("uploadId").trim().ifEmpty {
-        throw org.json.JSONException("uploaded session file response has a blank uploadId")
-    }
+    val uploadId = json.stringOrNull("uploadId")?.trim()?.ifEmpty { null }
+        ?: throw org.json.JSONException("uploaded session file response has a missing or blank uploadId")
     return UploadedSessionFile(
         uploadId = uploadId,
         filename = json.stringOrNull("filename"),
