@@ -20,6 +20,7 @@ package dev.cupthread.feedback
  *     showErrorSnackbar(e.message ?: "You're voting too fast. Please try again shortly.")
  * } catch (e: FeedbackException.UnexpectedStatus) {
  *     Log.e("Feedback", "Server error code: ${e.code}, message: ${e.serverMessage}")
+ *     supportTicket.referenceId = e.requestId // server X-Request-Id for support conversations
  *     showErrorSnackbar("Submission failed: ${e.serverMessage}")
  * } catch (e: FeedbackException.InvalidResponse) {
  *     Log.e("Feedback", "Network connection or parsing failed", e.cause)
@@ -33,6 +34,14 @@ package dev.cupthread.feedback
  * @param cause Underlying root cause exception, when available.
  */
 sealed class FeedbackException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    /**
+     * Server-assigned correlation identifier echoed in the `X-Request-Id` response header,
+     * or the caller-supplied `X-Request-Id` request header accepted by the server. Attach it
+     * to bug reports and support conversations so CupThread can locate the exact request in
+     * server logs. `null` when the server did not echo the header (for example on transport
+     * failures, where no response was received).
+     */
+    open val requestId: String? = null
     /**
      * Raised when a network transport failure occurs (such as connection timeouts, DNS resolution errors,
      * or SSL handshake issues) or when the server returns a malformed response body that cannot be parsed.
@@ -52,9 +61,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
     /**
      * Raised when attempting to perform an action that requires a registered or permitted user token
      * on an app configured with anonymous restrictions (HTTP 401 `authentication_required`).
+     *
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class AuthenticationRequired :
-        FeedbackException("These updates are only available to signed-in users.")
+    class AuthenticationRequired @JvmOverloads constructor(
+        override val requestId: String? = null
+    ) : FeedbackException("These updates are only available to signed-in users.")
 
     /**
      * Raised when an attachment upload HTTP request is rejected because the file media type
@@ -62,8 +74,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      * content does not match the accepted image formats (PNG, JPEG, WebP, GIF).
      *
      * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class UnsupportedMediaType(val serverMessage: String? = null) :
+    class UnsupportedMediaType @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) :
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "This image format is not supported. Please upload a PNG, JPEG, WebP, or GIF image."
@@ -74,8 +90,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      * that the application's workspace has reached its monthly submission quota.
      *
      * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class SubmissionQuotaExceeded(val serverMessage: String? = null) :
+    class SubmissionQuotaExceeded @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) :
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "This app has reached its submission limit for this month. Please try again later."
@@ -86,8 +106,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      * that the application's workspace subscription is inactive or canceled.
      *
      * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class SubscriptionInactive(val serverMessage: String? = null) :
+    class SubscriptionInactive @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) :
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "Submissions are unavailable for this app right now. Please try again later."
@@ -98,8 +122,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      * (HTTP 422 `scan_rejected`).
      *
      * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class AttachmentScanRejected(val serverMessage: String? = null) :
+    class AttachmentScanRejected @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) :
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "An attachment could not be uploaded due to content inspection rejection."
@@ -110,8 +138,12 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      * has exceeded a rate limit window (such as voting too frequently on feature requests).
      *
      * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class RateLimited(val serverMessage: String? = null) :
+    class RateLimited @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) :
         FeedbackException(
             serverMessage?.ifBlank { null }
                 ?: "You're voting too fast. Please try again shortly."
@@ -123,7 +155,11 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      *
      * @property code The HTTP status code received from the server (e.g. 400, 403, 404, 429, 500).
      * @property serverMessage Raw error message text extracted from the response body.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
      */
-    class UnexpectedStatus(val code: Int, val serverMessage: String) :
-        FeedbackException("The feedback request failed ($code): $serverMessage")
+    class UnexpectedStatus @JvmOverloads constructor(
+        val code: Int,
+        val serverMessage: String,
+        override val requestId: String? = null
+    ) : FeedbackException("The feedback request failed ($code): $serverMessage")
 }

@@ -154,6 +154,32 @@ version filter changes restart paging from the first page. For custom surfaces,
 `fetchFeatureRequests` returns `hasMore` / `nextCursor`; pass `nextCursor` back as `cursor`
 (keyset paging) or advance `offset` by the number of returned requests.
 
+### Request Correlation (X-Request-Id)
+
+Every API call carries an `X-Request-Id` request header — a fresh UUID by default — and the
+server's echoed identifier is attached to thrown `FeedbackException`s as `requestId`, so it can be
+quoted in support conversations to locate the exact request in CupThread server logs. To correlate
+SDK traffic with your own tracing, supply a factory on the config:
+
+```kotlin
+val client = FeedbackClient(
+    FeedbackClientConfig(
+        baseUrl = "https://api.cupthread.com",
+        appKey = "app_xxx",
+        requestIdProvider = { tracer.currentTraceId() } // returning null/blank/invalid skips the header
+    )
+)
+
+try {
+    client.submit(draft, userToken)
+} catch (e: FeedbackException.UnexpectedStatus) {
+    Log.e("Feedback", "Submit failed (${e.code}); request id: ${e.requestId}")
+}
+```
+
+The server honors values matching `^[A-Za-z0-9._-]{8,64}$` and replaces anything else with its own
+generated identifier.
+
 ---
 
 ## Development & Testing

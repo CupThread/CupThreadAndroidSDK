@@ -16,8 +16,13 @@ internal data class HttpRequest(
 
 internal data class HttpResponse(
     val code: Int,
-    val body: String
+    val body: String,
+    val headers: Map<String, String> = emptyMap()
 )
+
+internal const val REQUEST_ID_HEADER = "X-Request-Id"
+
+internal val REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9._-]{8,64}$")
 
 internal fun interface HttpTransport {
     fun execute(request: HttpRequest): HttpResponse
@@ -55,9 +60,17 @@ internal class UrlConnectionTransport : HttpTransport {
                 connection.errorStream
             }
             val text = stream?.bufferedReader(StandardCharsets.UTF_8).use { it?.readText().orEmpty() }
-            HttpResponse(connection.responseCode, text)
+            HttpResponse(connection.responseCode, text, responseHeaders(connection))
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun responseHeaders(connection: HttpURLConnection): Map<String, String> = buildMap {
+        connection.headerFields?.forEach { (name, values) ->
+            if (name != null) {
+                this[name] = values?.firstOrNull().orEmpty()
+            }
         }
     }
 }
