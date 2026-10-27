@@ -127,7 +127,7 @@ lifecycleScope.launch {
 | Method | Endpoint / Description |
 | ------ | ---------------------- |
 | `submit(draft, userToken)` | `POST /api/v1/feedback` (sends `X-User-Token`) |
-| `uploadAttachment(data, filename, mimeType, preferredKind, userToken)` | `POST /api/v1/uploads/{images,r2}` (sends `X-User-Token`) |
+| `uploadAttachment(data, filename, mimeType, preferredKind, userToken)` | Images: `POST /api/v1/uploads/images`; other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`) |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |

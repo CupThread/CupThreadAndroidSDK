@@ -29,6 +29,8 @@ import dev.cupthread.feedback.internal.parseListFeatureRequests
 import dev.cupthread.feedback.internal.parsePublicAppConfig
 import dev.cupthread.feedback.internal.parsePublicUserProfileResult
 import dev.cupthread.feedback.internal.parseUserAttributesUpdate
+import dev.cupthread.feedback.internal.parseUploadSession
+import dev.cupthread.feedback.internal.parseUploadedSessionFile
 import dev.cupthread.feedback.internal.parseVoteResult
 import dev.cupthread.feedback.internal.putOptString
 import java.text.SimpleDateFormat
@@ -206,22 +208,29 @@ class FeedbackClient internal constructor(
      * to be attached to a [FeedbackDraft].
      *
      * - Image MIME types (e.g., `image/png`, `image/jpeg`) are routed to `POST /api/v1/uploads/images`.
-     * - All other files (e.g. logs, crashes, text) are routed to `POST /api/v1/uploads/r2` object storage.
+     * - All other files (e.g. logs, crashes, text) are uploaded through the upload-session lifecycle:
+     *   `POST /api/v1/uploads/sessions` reserves a slot, then the raw bytes are stored via
+     *   `PUT /api/v1/uploads/{uploadId}`. The legacy `POST /api/v1/uploads/r2` endpoint is removed
+     *   server-side and answers `410 Gone`.
      * - Use [preferredKind] to explicitly override the destination storage backend.
      *
      * Accepts HTTP 200 OK and 201 Created responses. If [userToken] is provided, it is forwarded
      * as the `X-User-Token` header to associate the upload with the anonymous user identity.
+     * Non-image uploads require [userToken]: upload sessions are identity-bound, so the same
+     * token must later be passed to [submit].
      *
      * @param data Binary payload to upload.
      * @param filename Display file name including extension (e.g. `screenshot.png`).
      * @param mimeType MIME content type (e.g. `image/png`, `application/pdf`).
      * @param preferredKind Optional explicit [FeedbackAttachment.Kind], overriding MIME-based auto-detection.
-     * @param userToken Optional stable user token (from [UserTokenStore]) to attribute the upload.
-     * @return A populated [FeedbackAttachment] containing the persisted URL and storage key.
+     * @param userToken Stable user token (from [UserTokenStore]) to attribute the upload; required for non-image uploads.
+     * @return A populated [FeedbackAttachment] carrying the server-assigned `uploadId` (and legacy
+     *   `key`/`url` for older image responses).
+     * @throws IllegalArgumentException if a non-image upload is attempted without a non-blank [userToken].
      * @throws FeedbackException.AuthenticationRequired on HTTP 401.
      * @throws FeedbackException.UnsupportedMediaType on HTTP 415 or when an unsupported image format (e.g. SVG) is uploaded.
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
-     * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded `maxAttachmentBytes`).
+     * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded the session's per-file byte budget).
      * @throws FeedbackException.InvalidResponse if a network error occurs.
      *
      * Example:
@@ -251,28 +260,90 @@ class FeedbackClient internal constructor(
         }
         if (kind == FeedbackAttachment.Kind.IMAGE) {
             AttachmentLimits.validateImageAttachment(data, filename, mimeType)
+            val boundary = "Boundary-${UUID.randomUUID()}"
+            val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
+            val json = sendMultipart(
+                path = "/api/v1/uploads/images",
+                boundary = boundary,
+                body = body,
+                userToken = userToken,
+                accepted = setOf(200, 201),
+                mapUnsupportedMediaType = true
+            )
+            return try {
+                parseAttachment(json)
+            } catch (_: Exception) {
+                throw FeedbackException.UnreadableUploadResponse()
+            }
         }
-        val path = if (kind == FeedbackAttachment.Kind.IMAGE) {
-            "/api/v1/uploads/images"
-        } else {
-            "/api/v1/uploads/r2"
+        return uploadViaSession(data, filename, mimeType, userToken)
+    }
+
+    /**
+     * Uploads a non-image attachment through the upload-session lifecycle so the resulting
+     * `uploadId` can be finalized by [submit] (`uploadIds` array).
+     */
+    private suspend fun uploadViaSession(
+        data: ByteArray,
+        filename: String,
+        mimeType: String,
+        userToken: String?
+    ): FeedbackAttachment {
+        val token = userToken?.trim()?.takeIf { it.isNotEmpty() }
+        requireNotNull(token) {
+            "userToken is required for non-image uploads: upload sessions are identity-bound (X-User-Token)"
         }
-        val boundary = "Boundary-${UUID.randomUUID()}"
-        val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
-        val isImageUpload = (kind == FeedbackAttachment.Kind.IMAGE)
-        val json = sendMultipart(
-            path = path,
-            boundary = boundary,
-            body = body,
-            userToken = userToken,
+        val clientFileId = "client-${UUID.randomUUID()}"
+        val payload = JSONObject().apply {
+            put("appKey", config.appKey)
+            put("purpose", "feedback_attachment")
+            put(
+                "files",
+                JSONArray().put(
+                    JSONObject().apply {
+                        put("clientFileId", clientFileId)
+                        put("filename", filename)
+                        put("contentType", mimeType)
+                        put("sizeBytes", data.size)
+                    }
+                )
+            )
+        }
+        val sessionJson = sendJson(
+            method = "POST",
+            path = "/api/v1/uploads/sessions",
+            body = payload,
+            userToken = token,
             accepted = setOf(200, 201),
-            mapUnsupportedMediaType = isImageUpload
+            mapRateLimitErrors = true
         )
-        return try {
-            parseAttachment(json)
+        val reservation = try {
+            parseUploadSession(sessionJson, clientFileId)
         } catch (_: Exception) {
             throw FeedbackException.UnreadableUploadResponse()
         }
+        val uploadedJson = sendBinary(
+            method = "PUT",
+            path = "/api/v1/uploads/${reservation.slot.uploadId}",
+            contentType = mimeType,
+            body = data,
+            bearerToken = reservation.sessionToken,
+            accepted = setOf(200, 201),
+            mapUnsupportedMediaType = true,
+            mapRateLimitErrors = true
+        )
+        val uploaded = try {
+            parseUploadedSessionFile(uploadedJson)
+        } catch (_: Exception) {
+            throw FeedbackException.UnreadableUploadResponse()
+        }
+        return FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.R2,
+            uploadId = uploaded.uploadId,
+            filename = uploaded.filename ?: filename,
+            mimeType = uploaded.contentType ?: mimeType,
+            size = uploaded.sizeBytes ?: data.size.toLong()
+        )
     }
 
     /**
@@ -1342,6 +1413,28 @@ class FeedbackClient internal constructor(
             mapUnsupportedMediaType = mapUnsupportedMediaType
         )
     }
+
+    private suspend fun sendBinary(
+        method: String,
+        path: String,
+        contentType: String,
+        body: ByteArray,
+        bearerToken: String? = null,
+        accepted: Set<Int> = setOf(200),
+        mapUnsupportedMediaType: Boolean = false,
+        mapRateLimitErrors: Boolean = false
+    ): JSONObject = send(
+        HttpRequest(
+            method = method,
+            url = joinUrl(config.baseUrl, path),
+            headers = buildHeaders(contentType, null, bearerToken),
+            contentType = contentType,
+            body = body
+        ),
+        accepted,
+        mapUnsupportedMediaType = mapUnsupportedMediaType,
+        mapRateLimitErrors = mapRateLimitErrors
+    )
 
     private suspend fun send(
         request: HttpRequest,
