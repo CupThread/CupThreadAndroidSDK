@@ -74,12 +74,28 @@ enum class FeedbackPlatform(val wireValue: String) {
  * @property appKey Public app key generated in the CupThread developer dashboard (e.g., `app_live_...`).
  * @property defaultPlatform Default platform reported on feedback drafts when none is explicitly provided;
  *   defaults to [FeedbackPlatform.current] ([FeedbackPlatform.ANDROID]).
+ * @property requestIdProvider Optional factory invoked before every API call to supply the
+ *   `X-Request-Id` request header used for end-to-end correlation with CupThread server logs.
+ *   When `null` (default), the SDK generates a fresh UUID per request. When set, a `null`, blank,
+ *   or invalid return value (the server honors only `^[A-Za-z0-9._-]{8,64}$`) skips the header so
+ *   the server mints its own identifier. The server's echoed `X-Request-Id` is exposed on thrown
+ *   [FeedbackException]s via [FeedbackException.requestId].
  */
 data class FeedbackClientConfig(
     val baseUrl: String,
     val appKey: String,
-    val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current
-)
+    val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current,
+    val requestIdProvider: (() -> String?)? = null
+) {
+    /**
+     * Backward-compatible constructor for callers created before [requestIdProvider] existed.
+     */
+    constructor(
+        baseUrl: String,
+        appKey: String,
+        defaultPlatform: FeedbackPlatform
+    ) : this(baseUrl, appKey, defaultPlatform, null)
+}
 
 /**
  * An uploaded attachment descriptor, as returned by [FeedbackClient.uploadAttachment].

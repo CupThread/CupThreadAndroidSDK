@@ -1,6 +1,8 @@
 package dev.cupthread.feedback
 
 import android.content.Context
+import dev.cupthread.feedback.internal.REQUEST_ID_HEADER
+import dev.cupthread.feedback.internal.REQUEST_ID_PATTERN
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.SdkAppearanceCache
@@ -74,6 +76,11 @@ import org.json.JSONObject
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
+ *
+ * Every request carries an `X-Request-Id` header (a fresh UUID by default, or the value returned by
+ * [FeedbackClientConfig.requestIdProvider]). The server's echoed identifier is available as
+ * [FeedbackException.requestId] on thrown errors — quote it in support conversations so CupThread
+ * can locate the exact request in its logs.
  *
  * ### Example Initialization
  * ```kotlin
@@ -1366,11 +1373,27 @@ class FeedbackClient internal constructor(
     private fun buildHeaders(
         contentType: String?,
         userToken: String?,
-        bearerToken: String? = null
+        bearerToken: String? = null,
+        requestId: String? = null
     ): Map<String, String> = buildMap {
         if (contentType != null) put("Content-Type", contentType)
         if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
         if (!bearerToken.isNullOrBlank()) put("Authorization", "Bearer $bearerToken")
+        if (!requestId.isNullOrBlank()) put(REQUEST_ID_HEADER, requestId)
+    }
+
+    /**
+     * Resolves the outgoing `X-Request-Id` header value for a single API call.
+     *
+     * Returns the configured [FeedbackClientConfig.requestIdProvider] value when it matches the
+     * server's `^[A-Za-z0-9._-]{8,64}$` contract, or `null` when a configured provider declines
+     * (the server then mints its own identifier). Without a provider, a fresh UUID is generated
+     * per request so every call is correlatable in server logs.
+     */
+    private fun resolveRequestId(): String? {
+        val provider = config.requestIdProvider ?: return UUID.randomUUID().toString()
+        val provided = provider.invoke()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return provided.takeIf { REQUEST_ID_PATTERN.matches(it) }
     }
 
     private suspend fun sendJson(
@@ -1389,7 +1412,7 @@ class FeedbackClient internal constructor(
             HttpRequest(
                 method = method,
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken, bearerToken),
+                headers = buildHeaders(contentType, userToken, bearerToken, resolveRequestId()),
                 contentType = contentType,
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
@@ -1414,7 +1437,7 @@ class FeedbackClient internal constructor(
             HttpRequest(
                 method = "POST",
                 url = joinUrl(config.baseUrl, path),
-                headers = buildHeaders(contentType, userToken, bearerToken),
+                headers = buildHeaders(contentType, userToken, bearerToken, resolveRequestId()),
                 contentType = contentType,
                 body = body
             ),
@@ -1436,7 +1459,7 @@ class FeedbackClient internal constructor(
         HttpRequest(
             method = method,
             url = joinUrl(config.baseUrl, path),
-            headers = buildHeaders(contentType, null, bearerToken),
+            headers = buildHeaders(contentType, null, bearerToken, resolveRequestId()),
             contentType = contentType,
             body = body
         ),
@@ -1462,31 +1485,32 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.InvalidResponse(error)
             }
             if (response.code !in accepted) {
-                if (response.code == 401) throw FeedbackException.AuthenticationRequired()
+                val requestId = response.headers[REQUEST_ID_HEADER]?.trim()?.takeIf { it.isNotEmpty() }
+                if (response.code == 401) throw FeedbackException.AuthenticationRequired(requestId)
                 if (response.code == 402 && mapSubmissionQuotaErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     when (errorPayload?.first) {
-                        "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second)
-                        "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second)
+                        "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second, requestId)
+                        "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second, requestId)
                     }
                 }
                 if (response.code == 415 && mapUnsupportedMediaType) {
                     val errorPayload = parseErrorPayload(response.body)
-                    throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null })
+                    throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null }, requestId)
                 }
                 if (response.code == 422 && mapAttachmentScanErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     if (errorPayload?.first == "scan_rejected") {
                         val message = errorPayload.second
-                        throw FeedbackException.AttachmentScanRejected(message)
+                        throw FeedbackException.AttachmentScanRejected(message, requestId)
                     }
                 }
                 if (response.code == 429 && mapRateLimitErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     val message = if (errorPayload != null) errorPayload.second else response.body.ifBlank { null }
-                    throw FeedbackException.RateLimited(message)
+                    throw FeedbackException.RateLimited(message, requestId)
                 }
-                throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" })
+                throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" }, requestId)
             }
             try {
                 if (response.body.isBlank()) JSONObject() else JSONObject(response.body)
