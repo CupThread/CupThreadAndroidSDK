@@ -542,7 +542,9 @@ class FeedbackClientTest {
     @Test
     fun uploadAttachmentRoutesEndpointsBasedOnMimeAndPreferredKind() = runTest {
         val jsonImage = """{"kind":"image","key":"img","url":"https://cdn.example.com/img"}"""
-        val jsonR2 = """{"kind":"r2","key":"doc","url":"https://cdn.example.com/doc"}"""
+        val uploadedJson = """
+            {"uploadId":"upl_slot1","clientFileId":"c1","filename":"doc.bin","contentType":"application/pdf","sizeBytes":3,"sha256":"aa","stored":true}
+        """.trimIndent()
 
         var urlImage: String? = null
         client { request ->
@@ -551,24 +553,274 @@ class FeedbackClientTest {
         }.uploadAttachment(data = validJpegBytes, filename = "photo.jpg", mimeType = "image/jpeg")
         assertEquals("https://api.example.com/api/v1/uploads/images", urlImage)
 
-        var urlR2: String? = null
+        val r2Urls = mutableListOf<String>()
         client { request ->
-            urlR2 = request.url
-            HttpResponse(200, jsonR2)
-        }.uploadAttachment(data = byteArrayOf(1), filename = "log.txt", mimeType = "text/plain")
-        assertEquals("https://api.example.com/api/v1/uploads/r2", urlR2)
+            r2Urls += request.url
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(data = byteArrayOf(1), filename = "log.txt", mimeType = "text/plain", userToken = "tok")
+        assertEquals(
+            listOf(
+                "https://api.example.com/api/v1/uploads/sessions",
+                "https://api.example.com/api/v1/uploads/upl_slot1"
+            ),
+            r2Urls
+        )
 
-        var urlOverride: String? = null
+        val overrideUrls = mutableListOf<String>()
         client { request ->
-            urlOverride = request.url
-            HttpResponse(200, jsonR2)
+            overrideUrls += request.url
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
         }.uploadAttachment(
             data = validPngBytes,
             filename = "photo.png",
             mimeType = "image/png",
-            preferredKind = FeedbackAttachment.Kind.R2
+            preferredKind = FeedbackAttachment.Kind.R2,
+            userToken = "tok"
         )
-        assertEquals("https://api.example.com/api/v1/uploads/r2", urlOverride)
+        assertEquals(
+            listOf(
+                "https://api.example.com/api/v1/uploads/sessions",
+                "https://api.example.com/api/v1/uploads/upl_slot1"
+            ),
+            overrideUrls
+        )
+    }
+
+    /** Parses the clientFileId out of a session-create request body and echoes it in a valid 201 response. */
+    private fun uploadSessionResponseFor(request: HttpRequest): HttpResponse =
+        HttpResponse(201, uploadSessionJson(clientFileIdFromSessionRequest(request)))
+
+    private fun clientFileIdFromSessionRequest(request: HttpRequest): String =
+        JSONObject(String(requireNotNull(request.body), Charsets.UTF_8))
+            .getJSONArray("files")
+            .getJSONObject(0)
+            .getString("clientFileId")
+
+    private fun uploadSessionJson(clientFileId: String): String = """
+        {
+          "session": {
+            "sessionId": "ups_1",
+            "sessionToken": "cpt_up_t0k3n",
+            "expiresAt": "2026-10-27T12:00:00.000Z",
+            "maxFileSizeBytes": 20000000,
+            "maxFiles": 8
+          },
+          "files": [
+            {
+              "clientFileId": "$clientFileId",
+              "uploadId": "upl_slot1",
+              "uploadUrl": "/api/v1/uploads/upl_slot1",
+              "maxSizeBytes": 20000000
+            }
+          ]
+        }
+    """.trimIndent()
+
+    @Test
+    fun uploadAttachmentNonImageUsesUploadSessionFlow() = runTest {
+        val uploadedJson = """
+            {"uploadId":"upl_slot1","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":2,"sha256":"aa","stored":true}
+        """.trimIndent()
+        val requests = mutableListOf<HttpRequest>()
+
+        val attachment = client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(
+            data = byteArrayOf(0x0A, 0x0D),
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_session"
+        )
+
+        assertEquals(2, requests.size)
+
+        val create = requests[0]
+        assertEquals("POST", create.method)
+        assertEquals("https://api.example.com/api/v1/uploads/sessions", create.url)
+        assertEquals("usr_tok_session", create.headers["X-User-Token"])
+        assertEquals("application/json", create.headers["Content-Type"])
+        val createBody = JSONObject(String(requireNotNull(create.body), Charsets.UTF_8))
+        assertEquals(appKey, createBody.getString("appKey"))
+        assertEquals("feedback_attachment", createBody.getString("purpose"))
+        val fileInput = createBody.getJSONArray("files").getJSONObject(0)
+        assertEquals("log.txt", fileInput.getString("filename"))
+        assertEquals("text/plain", fileInput.getString("contentType"))
+        assertEquals(2, fileInput.getInt("sizeBytes"))
+
+        val put = requests[1]
+        assertEquals("PUT", put.method)
+        assertEquals("https://api.example.com/api/v1/uploads/upl_slot1", put.url)
+        assertEquals("Bearer cpt_up_t0k3n", put.headers["Authorization"])
+        assertEquals("text/plain", put.headers["Content-Type"])
+        assertFalse(put.headers.containsKey("X-User-Token"))
+        assertEquals(listOf<Byte>(0x0A, 0x0D), requireNotNull(put.body).toList())
+
+        assertEquals(FeedbackAttachment.Kind.R2, attachment.kind)
+        assertEquals("upl_slot1", attachment.uploadId)
+        assertEquals("upl_slot1", attachment.id)
+        assertNull(attachment.key)
+        assertNull(attachment.url)
+        assertEquals("log.txt", attachment.filename)
+        assertEquals("text/plain", attachment.mimeType)
+        assertEquals(2L, attachment.size)
+    }
+
+    @Test
+    fun uploadAttachmentNonImageRequiresUserToken() = runTest {
+        val attempts = listOf<String?>(null, "   ")
+        for (userToken in attempts) {
+            var requestCount = 0
+            try {
+                client { _ ->
+                    requestCount += 1
+                    HttpResponse(201, uploadSessionJson("c1"))
+                }.uploadAttachment(
+                    data = byteArrayOf(1),
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    userToken = userToken
+                )
+                fail("expected IllegalArgumentException for userToken=$userToken")
+            } catch (_: IllegalArgumentException) {
+                assertEquals(0, requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageRejectsNonHttpsBaseUrl() = runTest {
+        var requestCount = 0
+        try {
+            FeedbackClient(
+                config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+                transport = HttpTransport { _ ->
+                    requestCount += 1
+                    HttpResponse(201, uploadSessionJson("c1"))
+                }
+            ).uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected IllegalArgumentException for non-HTTPS baseUrl")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message!!.contains("HTTPS"))
+            assertEquals(0, requestCount)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageThrowsUnreadableUploadResponseOnBlankUploadId() = runTest {
+        val brokenResponses = listOf(
+            """{"uploadId":"","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}""",
+            """{"uploadId":null,"clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}""",
+            """{"clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":1,"sha256":"aa","stored":true}"""
+        )
+        for (broken in brokenResponses) {
+            try {
+                client { request ->
+                    if (request.url.endsWith("/uploads/sessions")) {
+                        uploadSessionResponseFor(request)
+                    } else {
+                        HttpResponse(200, broken)
+                    }
+                }.uploadAttachment(
+                    data = byteArrayOf(1),
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    userToken = "tok"
+                )
+                fail("expected UnreadableUploadResponse for $broken")
+            } catch (_: FeedbackException.UnreadableUploadResponse) {
+            }
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageMapsHttp415OnPutToUnsupportedMediaType() = runTest {
+        try {
+            client { request ->
+                if (request.url.endsWith("/uploads/sessions")) {
+                    uploadSessionResponseFor(request)
+                } else {
+                    HttpResponse(415, """{"error":"File content type does not match verified magic bytes"}""")
+                }
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected UnsupportedMediaType")
+        } catch (_: FeedbackException.UnsupportedMediaType) {
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"error":"Daily upload byte or rate limit exceeded"}""")
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Daily upload byte or rate limit exceeded", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageThrowsUnreadableUploadResponseOnMalformedSession() = runTest {
+        try {
+            client { HttpResponse(201, """{"unexpected":"shape"}""") }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected UnreadableUploadResponse")
+        } catch (_: FeedbackException.UnreadableUploadResponse) {
+        }
+    }
+
+    @Test
+    fun uploadAttachmentNonImageThrowsUnexpectedStatusOnPut413() = runTest {
+        try {
+            client { request ->
+                if (request.url.endsWith("/uploads/sessions")) {
+                    uploadSessionResponseFor(request)
+                } else {
+                    HttpResponse(413, """{"error":"Payload exceeds size limit","code":"file_too_large"}""")
+                }
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "tok"
+            )
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(413, ex.code)
+            assertTrue(ex.serverMessage.contains("file_too_large"))
+        }
     }
 
     @Test
