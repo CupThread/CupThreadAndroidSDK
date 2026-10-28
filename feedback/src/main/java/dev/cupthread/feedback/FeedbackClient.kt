@@ -197,6 +197,15 @@ class FeedbackClient internal constructor(
         )
     }
 
+    /**
+     * Submits a completed feedback draft without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * two-parameter signature; delegates to [submit] with a `null` `turnstileToken`.
+     */
+    suspend fun submit(draft: FeedbackDraft, userToken: String?): FeedbackSubmissionResult =
+        submit(draft, userToken, turnstileToken = null)
+
     private fun feedbackSubmitPayload(draft: FeedbackDraft, turnstileToken: String?): JSONObject =
         JSONObject().apply {
             put("appKey", config.appKey)
@@ -321,6 +330,27 @@ class FeedbackClient internal constructor(
         }
         return uploadViaSession(data, filename, mimeType, userToken, turnstileToken)
     }
+
+    /**
+     * Uploads a binary file or screenshot attachment without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * five-parameter signature; delegates to [uploadAttachment] with a `null` `turnstileToken`.
+     */
+    suspend fun uploadAttachment(
+        data: ByteArray,
+        filename: String,
+        mimeType: String,
+        preferredKind: FeedbackAttachment.Kind?,
+        userToken: String?
+    ): FeedbackAttachment = uploadAttachment(
+        data = data,
+        filename = filename,
+        mimeType = mimeType,
+        preferredKind = preferredKind,
+        userToken = userToken,
+        turnstileToken = null
+    )
 
     /**
      * Uploads a non-image attachment through the upload-session lifecycle so the resulting
@@ -614,6 +644,17 @@ class FeedbackClient internal constructor(
             throw FeedbackException.InvalidResponse(error)
         }
     }
+
+    /**
+     * Submits a new feature request proposal without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * two-parameter signature; delegates to [submitFeatureRequest] with a `null` `turnstileToken`.
+     */
+    suspend fun submitFeatureRequest(
+        draft: FeatureRequestDraft,
+        userToken: String
+    ): FeatureRequestSubmissionResult = submitFeatureRequest(draft, userToken, turnstileToken = null)
 
     /**
      * Submits a new feature request proposal to `POST /api/v1/feature-requests`.

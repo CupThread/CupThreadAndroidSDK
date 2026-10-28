@@ -79,12 +79,13 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
 
 /**
  * Decodes the optional `turnstile` object. Absent on deployments that publish no site key, in
- * which case `null` signals that intake needs a host-supplied token provider instead.
+ * which case `null` signals that intake needs a host-supplied token provider instead. Values of
+ * an unexpected JSON type degrade to `null` rather than failing the whole config parse.
  */
 internal fun parseTurnstileConfig(json: JSONObject?): TurnstileConfig? {
     if (json == null) return null
     return TurnstileConfig(
-        siteKey = json.stringOrNull("siteKey")?.trim()?.takeIf { it.isNotEmpty() }
+        siteKey = (json.opt("siteKey") as? String)?.trim()?.takeIf { it.isNotEmpty() }
     )
 }
 

@@ -104,6 +104,16 @@ data class FeedbackClientConfig(
         appKey: String,
         defaultPlatform: FeedbackPlatform
     ) : this(baseUrl, appKey, defaultPlatform, null, null)
+
+    /**
+     * Backward-compatible constructor for callers created before [turnstileTokenProvider] existed.
+     */
+    constructor(
+        baseUrl: String,
+        appKey: String,
+        defaultPlatform: FeedbackPlatform,
+        requestIdProvider: (() -> String?)?
+    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider, null)
 }
 
 /**
@@ -496,10 +506,10 @@ data class SdkAppearance(
  * @property allowAnonymousFeedback Whether feedback submissions can be sent anonymously.
  * @property allowAnonymousChangelog Whether changelog release notes can be viewed anonymously.
  * @property requireAnonymousVoteTurnstile Whether anonymous feature request votes require Cloudflare Turnstile human verification.
+ * @property sdk Remote theme and surface appearance bundle ([SdkAppearance]).
  * @property turnstile Public Turnstile widget configuration, or `null` while the deployment publishes
  *   no site key (absence means the hosted challenge page cannot mint tokens for this app and intake
  *   needs a host-supplied [TurnstileTokenProvider]).
- * @property sdk Remote theme and surface appearance bundle ([SdkAppearance]).
  */
 data class PublicAppConfig(
     val appId: String,
@@ -519,8 +529,8 @@ data class PublicAppConfig(
     val allowAnonymousFeedback: Boolean,
     val allowAnonymousChangelog: Boolean,
     val requireAnonymousVoteTurnstile: Boolean = false,
-    val turnstile: TurnstileConfig? = null,
-    val sdk: SdkAppearance = SdkAppearance.defaults
+    val sdk: SdkAppearance = SdkAppearance.defaults,
+    val turnstile: TurnstileConfig? = null
 )
 
 /**

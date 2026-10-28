@@ -447,6 +447,53 @@ class TurnstileIntakeTest {
         assertNull(blank.turnstile?.siteKey)
     }
 
+    @Test
+    fun fetchAppConfigToleratesUnexpectedSiteKeyTypes() = runTest {
+        // Numbers are not coerced and object/array values must not fail the whole config parse.
+        for (broken in listOf("123", "true", "{}", "[]")) {
+            val config = turnstileClient(null) { HttpResponse(200, configJson("""{"siteKey":$broken}""")) }.fetchAppConfig()
+            assertNull("siteKey $broken should degrade to null", config.turnstile?.siteKey)
+            assertEquals("Demo App", config.name)
+        }
+    }
+
+    // endregion
+
+    // region binary-compatibility overloads
+
+    @Test
+    fun legacyJvmSignaturesArePreservedForBinaryCompatibility() {
+        // Suspend functions carry a trailing Continuation parameter in their JVM descriptors.
+        val continuation = kotlin.coroutines.Continuation::class.java
+        val client = FeedbackClient::class.java
+        // POST /api/v1/feedback — the pre-Turnstile two-parameter descriptor.
+        client.getDeclaredMethod("submit", FeedbackDraft::class.java, String::class.java, continuation)
+        // POST /api/v1/feature-requests — the pre-Turnstile two-parameter descriptor.
+        client.getDeclaredMethod("submitFeatureRequest", FeatureRequestDraft::class.java, String::class.java, continuation)
+        // uploadAttachment — the pre-Turnstile five-parameter descriptor.
+        client.getDeclaredMethod(
+            "uploadAttachment",
+            ByteArray::class.java,
+            String::class.java,
+            String::class.java,
+            FeedbackAttachment.Kind::class.java,
+            String::class.java,
+            continuation
+        )
+        // FeedbackClientConfig — the constructors that existed before the provider was added.
+        FeedbackClientConfig::class.java.getConstructor(
+            String::class.java,
+            String::class.java,
+            FeedbackPlatform::class.java
+        )
+        FeedbackClientConfig::class.java.getConstructor(
+            String::class.java,
+            String::class.java,
+            FeedbackPlatform::class.java,
+            Function0::class.java
+        )
+    }
+
     // endregion
 
     // region FeedbackException.VerificationRequired retryability
