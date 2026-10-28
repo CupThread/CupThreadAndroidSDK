@@ -25,6 +25,7 @@
     <string name="cupthread_attachment_exceeds_limit">La pièce jointe dépasse la taille maximale autorisée de %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Format d\'image non pris en charge. Veuillez sélectionner une image PNG, JPEG, WebP ou GIF.</string>
     <string name="cupthread_feedback_attachment_scan_rejected">Une pièce jointe a été rejetée par l\'analyse de contenu et n\'a pas pu être téléversée.</string>
+    <string name="cupthread_feedback_verification_required">Veuillez compléter la vérification humaine, puis réessayer.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Demandes de fonctionnalités</string>

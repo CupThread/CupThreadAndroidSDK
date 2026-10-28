@@ -25,6 +25,7 @@
     <string name="cupthread_attachment_exceeds_limit">附件超過咗允許嘅大小上限 %1$s。</string>
     <string name="cupthread_feedback_unsupported_image_type">不支援的圖片格式。請選擇 PNG、JPEG、WebP 或 GIF 圖片。</string>
     <string name="cupthread_feedback_attachment_scan_rejected">附件未通過內容安全性檢查，無法上傳。</string>
+    <string name="cupthread_feedback_verification_required">請完成人機驗證後再試一次。</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">功能建議</string>

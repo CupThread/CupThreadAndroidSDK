@@ -25,6 +25,7 @@
     <string name="cupthread_attachment_exceeds_limit">Attachment exceeds the maximum allowed size of %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Unsupported image type. Please select a PNG, JPEG, WebP, or GIF image.</string>
     <string name="cupthread_feedback_attachment_scan_rejected">An attachment was rejected by content scan and could not be uploaded.</string>
+    <string name="cupthread_feedback_verification_required">Please complete the human verification step and try again.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Feature Requests</string>
