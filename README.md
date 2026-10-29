@@ -239,14 +239,23 @@ attachments end up on publicly readable CDN URLs:
   APP13 (IPTC/Photoshop), COM comments and unknown APPn metadata segments are dropped;
   APP0 (JFIF), APP1 (EXIF), APP2 (ICC color profile) and APP14 (Adobe transform flag) are kept.
 - **PNG**: `eXIf`, `tEXt`, `iTXt`, `zTXt` and `tIME` chunks are dropped.
-- **WebP**: `EXIF` and `XMP ` chunks are dropped.
+- **WebP**: `EXIF` and `XMP` chunks (fourcc `XMP` with a trailing space) are dropped.
 - Non-image attachments (logs, crashes, text) are never touched.
 
-Scrubbing is lossless (pixel data is never re-encoded) and always on — there is no host opt-out.
-If a metadata structure is malformed beyond confident parsing, the whole structure is dropped
-rather than uploaded (fail closed). Maker-notes are left as-is; they do not carry GPS coordinates
-on mainstream phone cameras, but exotic sources (e.g. some dashcams) may embed non-standard data
-there.
+Scrubbing is lossless (pixel data is never re-encoded) and always on — there is no host opt-out,
+and it applies no matter which storage backend an image is routed to (including explicit
+`preferredKind` overrides). If a metadata structure is malformed beyond confident parsing, the
+whole structure is dropped rather than uploaded (fail closed).
+
+Known limitations to be aware of:
+
+- **Only the GPS IFD is removed from EXIF.** Other EXIF fields survive by design, because
+  removing them requires rewriting the TIFF layout and would lose orientation (rotating photos
+  incorrectly). Camera make/model, capture timestamps, exposure settings and serial numbers, if
+  present, are still uploaded — hosts with stricter needs should re-encode images themselves
+  before calling `uploadAttachment`.
+- Maker-notes are left as-is; they do not carry GPS coordinates on mainstream phone cameras, but
+  exotic sources (e.g. some dashcams) may embed non-standard data there.
 
 ---
 

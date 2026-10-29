@@ -257,9 +257,10 @@ class FeedbackClient internal constructor(
      *   server-side and answers `410 Gone`.
      * - Use [preferredKind] to explicitly override the destination storage backend.
      *
-     * Image payloads are scrubbed before upload (issue #21): EXIF GPS coordinates, XMP, IPTC and
-     * comment metadata are stripped so location data never leaves the device; pixel data is not
-     * re-encoded. Non-image payloads are passed through untouched.
+     * Image payloads are scrubbed before upload regardless of the destination backend, including
+     * when [preferredKind] routes them to upload sessions (issue #21): EXIF GPS coordinates, XMP,
+     * IPTC and comment metadata are stripped so location data never leaves the device; pixel data
+     * is not re-encoded. Non-image payloads are passed through untouched.
      *
      * Accepts HTTP 200 OK and 201 Created responses. If [userToken] is provided, it is forwarded
      * as the `X-User-Token` header to associate the upload with the anonymous user identity.
@@ -315,10 +316,11 @@ class FeedbackClient internal constructor(
         } else {
             FeedbackAttachment.Kind.R2
         }
+        // Metadata (EXIF GPS coordinates in particular) never leaves the device, regardless of
+        // which storage backend the payload is routed to. Validation runs on the scrubbed bytes
+        // because they are what actually gets sent.
+        val scrubbedData = ImageMetadataScrubber.scrub(data)
         if (kind == FeedbackAttachment.Kind.IMAGE) {
-            // Metadata (EXIF GPS coordinates in particular) never leaves the device; validation
-            // runs on the scrubbed bytes because they are what actually gets sent.
-            val scrubbedData = ImageMetadataScrubber.scrub(data)
             AttachmentLimits.validateImageAttachment(scrubbedData, filename, mimeType)
             val boundary = "Boundary-${UUID.randomUUID()}"
             val body = multipartBody(boundary, config.appKey, filename, mimeType, scrubbedData)
@@ -336,7 +338,7 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.UnreadableUploadResponse()
             }
         }
-        return uploadViaSession(data, filename, mimeType, userToken, turnstileToken)
+        return uploadViaSession(scrubbedData, filename, mimeType, userToken, turnstileToken)
     }
 
     /**

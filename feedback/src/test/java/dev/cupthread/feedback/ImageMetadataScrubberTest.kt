@@ -317,6 +317,38 @@ class ImageMetadataScrubberTest {
         assertSame(broken, ImageMetadataScrubber.scrub(broken))
     }
 
+    @Test
+    fun webpKeptOddLengthChunksRetainTheirPadByte() {
+        // A lossy WebP with alpha: VP8X, odd-length ALPH, EXIF, odd-length VP8 data.
+        val alph = webpChunk("ALPH", byteArrayOf(9, 8, 7)) // odd length -> carries a pad byte
+        val alphWithPad = alph + byteArrayOf(0)
+        val exif = webpChunk("EXIF", exifTiff(bigEndian = false, includeGps = true))
+        val vp8 = webpChunk("VP8 ", byteArrayOf(1, 2, 3, 4, 5))
+        val original = webp(webpChunk("VP8X", vp8xPayload()), alph, exif, vp8)
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)
+
+        // The kept ALPH chunk still carries its pad byte...
+        assertTrue(indexOf(scrubbed, alphWithPad) >= 0)
+        assertFalse(indexOf(scrubbed, exif) >= 0)
+        // ...and every remaining chunk header sits at an even offset, so the file still parses
+        // as RIFF: walk the chunks exactly like a decoder would.
+        assertEquals("RIFF", String(scrubbed, 0, 4, Charsets.ISO_8859_1))
+        assertEquals((scrubbed.size - 8).toLong(), u32At(scrubbed, 4, bigEndian = false))
+        var i = 12
+        val seen = mutableListOf<String>()
+        while (i < scrubbed.size) {
+            assertTrue(i + 8 <= scrubbed.size)
+            val fourcc = String(scrubbed, i, 4, Charsets.ISO_8859_1)
+            val length = u32At(scrubbed, i + 4, bigEndian = false)
+            assertTrue(i + 8 + length <= scrubbed.size)
+            seen.add(fourcc)
+            i += 8 + length.toInt() + (length and 1L).toInt()
+        }
+        assertEquals(i, scrubbed.size)
+        assertEquals(listOf("VP8X", "ALPH", "VP8 "), seen)
+    }
+
     // endregion
 
     // region pass-through content

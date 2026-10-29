@@ -307,13 +307,16 @@ internal object ImageMetadataScrubber {
             val length = u32At(data, i + 4, bigEndian = false)
             if (length > Int.MAX_VALUE || i + 8 + length > data.size) return data
             val chunkEnd = i + 8 + length.toInt()
+            // RIFF pads odd-length chunks to even sizes; the pad must travel with the chunk so
+            // the reassembled file keeps every following chunk header even-aligned.
+            val paddedEnd = minOf(chunkEnd + (length and 1L).toInt(), data.size)
             if (fourcc == "EXIF" || fourcc == "XMP ") {
                 changed = true
             } else {
                 if (fourcc == "VP8X") vp8xKeptIndex = kept.size
-                kept.add(data.copyOfRange(i, chunkEnd))
+                kept.add(data.copyOfRange(i, paddedEnd))
             }
-            i = chunkEnd + (length and 1L).toInt() // odd-sized chunks carry a pad byte
+            i = paddedEnd
         }
         if (!changed) return data
         val output = concat(kept, changed = true, original = data)

@@ -355,6 +355,42 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentScrubsImageEvenWhenRoutedToUploadSessions() = runTest {
+        // #21: an explicit preferredKind=R2 must not bypass the scrubber for image bytes.
+        val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
+        val requests = mutableListOf<HttpRequest>()
+        client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(
+                    200,
+                    """{"uploadId":"upl_img_r2","clientFileId":"c","filename":"photo.jpg",""" +
+                        """"contentType":"image/jpeg","sizeBytes":${photoWithGps.size},"stored":true}"""
+                )
+            }
+        }.uploadAttachment(
+            data = photoWithGps,
+            filename = "photo.jpg",
+            mimeType = "image/jpeg",
+            preferredKind = FeedbackAttachment.Kind.R2,
+            userToken = "usr_tok_r2"
+        )
+
+        val putRequest = requests.last { it.method == "PUT" }
+        val body = requireNotNull(putRequest.body)
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+        // Display-relevant metadata survives the scrub, proving the payload was scrubbed not dropped.
+        assertTrue(TestImageFixtures.indexOf(body, "CupThreadCam".toByteArray(Charsets.US_ASCII)) >= 0)
+    }
+
+    @Test
     fun uploadAttachmentSendsNonImageBytesUntouched() = runTest {
         val logBytes = "SEVERE: crash log with tokens".toByteArray(Charsets.US_ASCII)
         val requests = mutableListOf<HttpRequest>()
@@ -378,7 +414,7 @@ class FeedbackClientTest {
 
         // Non-image attachments bypass the scrubber entirely.
         val putRequest = requests.last { it.method == "PUT" }
-        assertEquals(0, TestImageFixtures.indexOf(requireNotNull(putRequest.body), logBytes))
+        assertTrue(TestImageFixtures.indexOf(requireNotNull(putRequest.body), logBytes) >= 0)
     }
 
     @Test
