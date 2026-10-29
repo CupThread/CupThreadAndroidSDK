@@ -8,6 +8,7 @@ import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.AttachmentLimits
+import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
@@ -256,6 +257,10 @@ class FeedbackClient internal constructor(
      *   server-side and answers `410 Gone`.
      * - Use [preferredKind] to explicitly override the destination storage backend.
      *
+     * Image payloads are scrubbed before upload (issue #21): EXIF GPS coordinates, XMP, IPTC and
+     * comment metadata are stripped so location data never leaves the device; pixel data is not
+     * re-encoded. Non-image payloads are passed through untouched.
+     *
      * Accepts HTTP 200 OK and 201 Created responses. If [userToken] is provided, it is forwarded
      * as the `X-User-Token` header to associate the upload with the anonymous user identity.
      * Non-image uploads require [userToken]: upload sessions are identity-bound, so the same
@@ -311,9 +316,12 @@ class FeedbackClient internal constructor(
             FeedbackAttachment.Kind.R2
         }
         if (kind == FeedbackAttachment.Kind.IMAGE) {
-            AttachmentLimits.validateImageAttachment(data, filename, mimeType)
+            // Metadata (EXIF GPS coordinates in particular) never leaves the device; validation
+            // runs on the scrubbed bytes because they are what actually gets sent.
+            val scrubbedData = ImageMetadataScrubber.scrub(data)
+            AttachmentLimits.validateImageAttachment(scrubbedData, filename, mimeType)
             val boundary = "Boundary-${UUID.randomUUID()}"
-            val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
+            val body = multipartBody(boundary, config.appKey, filename, mimeType, scrubbedData)
             val json = sendMultipart(
                 path = "/api/v1/uploads/images",
                 boundary = boundary,

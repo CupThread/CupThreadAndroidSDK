@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.shouldFollowRedirects
 import java.util.UUID
@@ -10,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -294,6 +296,89 @@ class FeedbackClientTest {
         assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
         assertEquals("uploads/img-123.png", attachment.key)
         assertEquals("https://cdn.example.com/uploads/img-123.png", attachment.url)
+    }
+
+    @Test
+    fun uploadAttachmentStripsGpsMetadataFromImageBeforeUpload() = runTest {
+        // #21: the exact EXIF GPS bytes must never appear in the multipart body.
+        val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
+        val scrubbedPhoto = ImageMetadataScrubber.scrub(photoWithGps)
+        assertNotSame(photoWithGps, scrubbedPhoto)
+        var sentBody: ByteArray? = null
+        val json = """
+            {
+              "kind": "image",
+              "uploadId": "upl_img_21",
+              "status": "uploaded",
+              "stored": true,
+              "filename": "photo.jpg",
+              "mimeType": "image/jpeg",
+              "size": ${scrubbedPhoto.size}
+            }
+        """.trimIndent()
+
+        val attachment = client { request ->
+            sentBody = request.body
+            HttpResponse(201, json)
+        }.uploadAttachment(data = photoWithGps, filename = "photo.jpg", mimeType = "image/jpeg")
+
+        assertEquals("upl_img_21", attachment.uploadId)
+        val body = requireNotNull(sentBody)
+        // The scrubbed payload is what actually goes on the wire...
+        assertTrue(TestImageFixtures.indexOf(body, scrubbedPhoto) >= 0)
+        // ...and neither the GPS coordinate rationals nor any GPS IFD entry data survive.
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLongitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+    }
+
+    @Test
+    fun uploadAttachmentKeepsCleanImageBytesIntact() = runTest {
+        val cleanPhoto = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = false)
+        var sentBody: ByteArray? = null
+        client { request ->
+            sentBody = request.body
+            HttpResponse(201, """{"kind":"image","uploadId":"upl_2","stored":true}""")
+        }.uploadAttachment(data = cleanPhoto, filename = "photo.jpg", mimeType = "image/jpeg")
+
+        // A photo without metadata is forwarded byte-for-byte.
+        assertTrue(TestImageFixtures.indexOf(requireNotNull(sentBody), cleanPhoto) >= 0)
+    }
+
+    @Test
+    fun uploadAttachmentSendsNonImageBytesUntouched() = runTest {
+        val logBytes = "SEVERE: crash log with tokens".toByteArray(Charsets.US_ASCII)
+        val requests = mutableListOf<HttpRequest>()
+        client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(
+                    200,
+                    """{"uploadId":"upl_log","clientFileId":"c","filename":"log.txt",""" +
+                        """"contentType":"text/plain","sizeBytes":${logBytes.size},"stored":true}"""
+                )
+            }
+        }.uploadAttachment(
+            data = logBytes,
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_scrub"
+        )
+
+        // Non-image attachments bypass the scrubber entirely.
+        val putRequest = requests.last { it.method == "PUT" }
+        assertEquals(0, TestImageFixtures.indexOf(requireNotNull(putRequest.body), logBytes))
     }
 
     @Test
