@@ -17,6 +17,7 @@ import java.util.Arrays
  *   faithful rendering.
  * - **PNG**: drops `eXIf`, `tEXt`, `iTXt`, `zTXt` and `tIME` chunks.
  * - **WebP**: drops `EXIF` and `XMP ` chunks and clears the corresponding VP8X presence flags.
+ * - **GIF**: drops Comment Extensions and `XMP Data` Application Extensions.
  * - Any other content is returned unchanged, so non-image attachments are never touched.
  *
  * Pixel data is never re-encoded: scrubbing is lossless and cheap. When a metadata structure
@@ -59,6 +60,7 @@ internal object ImageMetadataScrubber {
         if (isJpeg(data)) return scrubJpeg(data)
         if (isPng(data)) return scrubPng(data)
         if (isWebP(data)) return scrubWebP(data)
+        if (isGif(data)) return scrubGif(data)
         return data
     }
 
@@ -341,6 +343,94 @@ internal object ImageMetadataScrubber {
         0, 0, 0, 0,
         'W'.code.toByte(), 'E'.code.toByte(), 'B'.code.toByte(), 'P'.code.toByte()
     )
+
+    // endregion
+
+    // region GIF
+
+    private fun isGif(data: ByteArray): Boolean =
+        data.size >= 6 &&
+            data[0] == 'G'.code.toByte() && data[1] == 'I'.code.toByte() &&
+            data[2] == 'F'.code.toByte() && data[3] == '8'.code.toByte() &&
+            (data[4] == '7'.code.toByte() || data[4] == '9'.code.toByte()) &&
+            data[5] == 'a'.code.toByte()
+
+    /**
+     * Drops Comment Extensions and `XMP Data` Application Extensions, which can carry free-text
+     * and XMP metadata. Animation-critical Application Extensions (e.g. `NETSCAPE2.0`) and all
+     * other blocks are copied verbatim. Any structural inconsistency returns the original bytes.
+     */
+    private fun scrubGif(data: ByteArray): ByteArray {
+        if (data.size < 14) return data // header + logical screen descriptor + trailer at minimum
+        val packed = data[10].toInt() and 0xFF
+        var i = 13
+        if (packed and 0x80 != 0) {
+            i += 3 * (1 shl (packed and 0x07) + 1) // global color table
+            if (i >= data.size) return data
+        }
+        val out = java.io.ByteArrayOutputStream()
+        out.write(data, 0, i)
+        var changed = false
+        while (i < data.size) {
+            when (data[i].toInt() and 0xFF) {
+                0x3B -> { // trailer: copy through end of file
+                    out.write(data, i, data.size - i)
+                    i = data.size
+                }
+                0x2C -> { // image descriptor: header, optional local color table, LZW sub-blocks
+                    if (i + 10 > data.size) return data
+                    val localPacked = data[i + 9].toInt() and 0xFF
+                    var j = i + 10
+                    if (localPacked and 0x80 != 0) {
+                        j += 3 * (1 shl (localPacked and 0x07) + 1)
+                    }
+                    if (j >= data.size) return data
+                    val subBlocks = skipGifSubBlocks(data, j + 1) ?: return data
+                    out.write(data, i, subBlocks - i)
+                    i = subBlocks
+                }
+                0x21 -> { // extension: label + sub-blocks (the first sub-block holds the intro data)
+                    if (i + 2 > data.size) return data
+                    when (data[i + 1].toInt() and 0xFF) {
+                        0xFE -> { // comment extension
+                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            changed = true
+                            i = end
+                        }
+                        0xFF -> { // application extension: identify via its 8-byte identifier
+                            if (i + 12 > data.size) return data
+                            val identifier = String(data, i + 3, 8, Charsets.ISO_8859_1)
+                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            if (identifier == "XMP Data") {
+                                changed = true
+                            } else {
+                                out.write(data, i, end - i)
+                            }
+                            i = end
+                        }
+                        else -> { // graphic control, plain text, ...: keep whole extension
+                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            out.write(data, i, end - i)
+                            i = end
+                        }
+                    }
+                }
+                else -> return data // unknown block: leave the file alone
+            }
+        }
+        return if (changed) out.toByteArray() else data
+    }
+
+    /** Returns the index just past the zero-length terminator block, or `null` when malformed. */
+    private fun skipGifSubBlocks(data: ByteArray, start: Int): Int? {
+        var i = start
+        while (true) {
+            if (i >= data.size) return null
+            val size = data[i].toInt() and 0xFF
+            if (size == 0) return i + 1
+            i += 1 + size
+        }
+    }
 
     // endregion
 

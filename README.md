@@ -240,6 +240,8 @@ attachments end up on publicly readable CDN URLs:
   APP0 (JFIF), APP1 (EXIF), APP2 (ICC color profile) and APP14 (Adobe transform flag) are kept.
 - **PNG**: `eXIf`, `tEXt`, `iTXt`, `zTXt` and `tIME` chunks are dropped.
 - **WebP**: `EXIF` and `XMP` chunks (fourcc `XMP` with a trailing space) are dropped.
+- **GIF**: Comment Extensions and `XMP Data` Application Extensions are dropped; animation
+  extensions such as `NETSCAPE2.0` are kept.
 - Non-image attachments (logs, crashes, text) are never touched.
 
 Scrubbing is lossless (pixel data is never re-encoded) and always on — there is no host opt-out,

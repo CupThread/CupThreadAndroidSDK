@@ -387,4 +387,61 @@ internal object TestImageFixtures {
     )
 
     // endregion
+
+    // region GIF
+
+    internal const val GIF_TRAILER_INT = 0x3B
+
+    /** Assembles a GIF: signature + logical screen descriptor (no global color table) + blocks + trailer. */
+    internal fun gif(vararg blocks: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write("GIF89a".toByteArray(Charsets.US_ASCII))
+        out.write(
+            byteArrayOf(
+                0x01, 0x00, // width
+                0x01, 0x00, // height
+                0x00, // packed: no global color table
+                0x00, // background color index
+                0x00 // pixel aspect ratio
+            )
+        )
+        for (block in blocks) out.write(block)
+        out.write(GIF_TRAILER_INT)
+        return out.toByteArray()
+    }
+
+    internal fun gifSubBlock(data: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(data.size)
+        out.write(data)
+        return out.toByteArray()
+    }
+
+    internal fun gifCommentExtension(text: String): ByteArray =
+        byteArrayOf(0x21, 0xFE.toByte()) + gifSubBlock(text.toByteArray(Charsets.US_ASCII)) +
+            byteArrayOf(0x00)
+
+    /** Identifier is the 8-byte field (plus 3-byte auth code), e.g. "NETSCAPE" / "2.0" or "XMP Data". */
+    internal fun gifApplicationExtension(identifier: String, payload: ByteArray): ByteArray {
+        require(identifier.length <= 8)
+        val paddedId = identifier.toByteArray(Charsets.US_ASCII) +
+            ByteArray(8 - identifier.length) + ByteArray(3) // auth code
+        return byteArrayOf(0x21, 0xFF.toByte(), 0x0B) + paddedId +
+            gifSubBlock(payload) + byteArrayOf(0x00)
+    }
+
+    internal fun gifGraphicControlExtension(): ByteArray = byteArrayOf(
+        0x21, 0xF9.toByte(), 0x04, 0x00, 0x00, 0x00, 0x00, 0x00
+    )
+
+    /** A minimal image descriptor with no local color table and 3 LZW data bytes. */
+    internal fun gifImageBlock(lzwBytes: ByteArray): ByteArray =
+        byteArrayOf(0x2C) +
+            byteArrayOf(0, 0, 0, 0, 1, 0, 1, 0) + // left/top/width/height
+            byteArrayOf(0x00) + // packed: no local color table, not interleaved
+            byteArrayOf(0x02) + // LZW minimum code size
+            gifSubBlock(lzwBytes) +
+            byteArrayOf(0x00)
+
+    // endregion
 }

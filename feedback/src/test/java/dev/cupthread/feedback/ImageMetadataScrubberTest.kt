@@ -351,14 +351,58 @@ class ImageMetadataScrubberTest {
 
     // endregion
 
+    // region GIF
+
+    @Test
+    fun gifCommentAndXmpApplicationExtensionsAreDropped() {
+        val comment = TestImageFixtures.gifCommentExtension("taken at home address")
+        val xmpApp = TestImageFixtures.gifApplicationExtension("XMP Data", "<x/>".toByteArray(Charsets.US_ASCII))
+        val netscape = TestImageFixtures.gifApplicationExtension("NETSCAPE", byteArrayOf(1, 0, 0))
+        val gce = TestImageFixtures.gifGraphicControlExtension()
+        val image = TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
+        val original = TestImageFixtures.gif(gce, netscape, comment, xmpApp, image)
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)
+
+        assertTrue(indexOf(scrubbed, netscape) >= 0) // animation looping survives
+        assertTrue(indexOf(scrubbed, gce) >= 0)
+        assertTrue(indexOf(scrubbed, image) >= 0)
+        assertTrue(scrubbed.last() == TestImageFixtures.GIF_TRAILER_INT.toByte())
+        assertFalse(indexOf(scrubbed, comment) >= 0)
+        assertFalse(indexOf(scrubbed, xmpApp) >= 0)
+        assertFalse(indexOf(scrubbed, "taken at home".toByteArray(Charsets.US_ASCII)) >= 0)
+    }
+
+    @Test
+    fun gifWithoutMetadataIsReturnedUnchanged() {
+        val original = TestImageFixtures.gif(
+            TestImageFixtures.gifGraphicControlExtension(),
+            TestImageFixtures.gifApplicationExtension("NETSCAPE", byteArrayOf(1, 0, 0)),
+            TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
+        )
+        assertSame(original, ImageMetadataScrubber.scrub(original))
+    }
+
+    @Test
+    fun gifWithMalformedSubBlocksReturnsOriginalBytes() {
+        // Comment extension whose sub-block chain never terminates within the file.
+        val broken = TestImageFixtures.gif(
+            TestImageFixtures.gifGraphicControlExtension(),
+            byteArrayOf(0x21, 0xFE.toByte(), 0x10, 1, 2, 3) // claims 16 data bytes, file ends
+        )
+        assertSame(broken, ImageMetadataScrubber.scrub(broken))
+    }
+
+    // endregion
+
     // region pass-through content
 
     @Test
     fun nonImageAndUnknownContentIsNeverTouched() {
-        val gif = "GIF89a".toByteArray(Charsets.US_ASCII) + byteArrayOf(1, 2, 3)
-        assertSame(gif, ImageMetadataScrubber.scrub(gif))
         val log = "INFO everything is fine".toByteArray(Charsets.US_ASCII)
         assertSame(log, ImageMetadataScrubber.scrub(log))
+        val heicLike = byteArrayOf(0, 0, 0, 0x18) + "ftypheic".toByteArray(Charsets.US_ASCII)
+        assertSame(heicLike, ImageMetadataScrubber.scrub(heicLike))
 
         val empty = ByteArray(0)
         assertSame(empty, ImageMetadataScrubber.scrub(empty))
