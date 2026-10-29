@@ -526,6 +526,7 @@ private fun FeatureRequestComposeSheet(
     val scope = rememberCoroutineScope()
     val canSubmit = title.trim().length >= 3 && description.trim().length >= 5
     val defaultSubmitError = stringResource(R.string.cupthread_features_submit_failed)
+    val verificationRequiredError = stringResource(R.string.cupthread_feedback_verification_required)
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -550,6 +551,8 @@ private fun FeatureRequestComposeSheet(
                                 userToken
                             )
                             onSubmitted()
+                        } catch (ex: FeedbackException.VerificationRequired) {
+                            error = verificationRequiredError
                         } catch (ex: Exception) {
                             error = ex.message ?: defaultSubmitError
                         } finally {

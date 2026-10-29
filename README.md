@@ -126,13 +126,13 @@ lifecycleScope.launch {
 
 | Method | Endpoint / Description |
 | ------ | ---------------------- |
-| `submit(draft, userToken)` | `POST /api/v1/feedback` (sends `X-User-Token`) |
-| `uploadAttachment(data, filename, mimeType, preferredKind, userToken)` | Images: `POST /api/v1/uploads/images`; other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`) |
+| `submit(draft, userToken, turnstileToken?)` | `POST /api/v1/feedback` (sends `X-User-Token`) |
+| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images`; other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`) |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
 | `fetchFeatureRequests(userToken, limit, offset, versionId, query, cursor)` | `GET /api/v1/feature-requests` (returns `hasMore` / `nextCursor`) |
-| `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` |
+| `submitFeatureRequest(draft, userToken, turnstileToken?)` | `POST /api/v1/feature-requests` |
 | `toggleVote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
 | `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
@@ -179,6 +179,55 @@ try {
 
 The server honors values matching `^[A-Za-z0-9._-]{8,64}$` and replaces anything else with its own
 generated identifier.
+
+### Human Verification (Turnstile)
+
+Production deployments with Turnstile enforcement reject the gated intake calls — `submit`
+(`POST /api/v1/feedback`), `submitFeatureRequest` (`POST /api/v1/feature-requests`), and
+non-image `uploadAttachment` (upload-session creation) — with HTTP 403 unless the request
+carries a valid Cloudflare `turnstileToken`. Install a `TurnstileTokenProvider` on the config so
+submissions succeed:
+
+```kotlin
+val client = FeedbackClient(
+    FeedbackClientConfig(
+        baseUrl = "https://api.cupthread.com",
+        appKey = "app_xxx",
+        turnstileTokenProvider = TurnstileTokenProvider { challenge ->
+            // Mint a FRESH single-use token per invocation under the exact (action, cdata)
+            // binding the endpoint validates — e.g. render the Cloudflare widget with
+            // action = challenge.action ("feedback" or "feature-request") and
+            // cdata = challenge.cdata (your app key), or server-mint one.
+            myTurnstileBridge.solve(challenge.action, challenge.cdata)
+        }
+    )
+)
+```
+
+Provider contract:
+
+- `token(challenge)` is consulted at most twice per gated call: once before the first attempt and
+  once more only if the server rejects it with a retryable `turnstile_*` 403 — the SDK then
+  resends exactly once with the fresh token. Returning `null` (or throwing) sends the request
+  unverified, which the server answers with a typed `FeedbackException.VerificationRequired`
+  (carrying `serverCode`: `turnstile_required`, `turnstile_verification_failed`, or
+  `turnstile_not_configured`) instead of a raw JSON error body.
+- Explicit `turnstileToken` parameters on `submit`, `submitFeatureRequest`, and
+  `uploadAttachment` take precedence for the first attempt; the provider is still consulted for
+  a retry.
+- Bindings: feedback intake and upload-session creation share action `feedback`; feature-request
+  submission uses `feature-request`; in both cases `cdata` is your app key
+  (`TurnstileChallenge.feedback(appKey)` / `TurnstileChallenge.featureRequest(appKey)`).
+
+The built-in `FeedbackComposer` and feature-request compose sheet surface a localized
+verification message when a submission is rejected by the gate.
+
+Tip: `PublicAppConfig.turnstile?.siteKey` (from `fetchAppConfig`) publishes the public widget site
+key when the deployment supports WebView challenges. Native clients can mint tokens by loading
+`https://app.cupthread.com/turnstile/verify?siteKey=…&action=…&cdata=…&theme=light|dark|auto&locale=…`
+in an embedded WebView and reading the `{status:"success", token}` message posted to
+`window.AndroidTurnstileBridge.postMessage(JSON)` (`@JavascriptInterface`). Tokens are single-use
+with a ~300 s validity window — mint a fresh one per call.
 
 ---
 

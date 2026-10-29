@@ -40,6 +40,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -71,6 +72,7 @@ import org.json.JSONObject
  * - [FeedbackException.AuthenticationRequired]: Endpoint requires an authenticated or permitted user session (HTTP 401).
  * - [FeedbackException.SubmissionQuotaExceeded]: Workspace monthly submission quota reached (HTTP 402 `tier_limit_submissions`).
  * - [FeedbackException.SubscriptionInactive]: Workspace subscription is inactive or canceled (HTTP 402 `subscription_inactive`).
+ * - [FeedbackException.VerificationRequired]: Human-verification (Turnstile) gate rejected an intake call (HTTP 403 `turnstile_*`).
  * - [FeedbackException.UnsupportedMediaType]: File format or image media type is unsupported (HTTP 415 `unsupported_media_type`).
  * - [FeedbackException.RateLimited]: Client exceeded request rate limit, such as voting too frequently (HTTP 429).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
@@ -136,13 +138,24 @@ class FeedbackClient internal constructor(
      * All attachments included in [FeedbackDraft.attachments] must be uploaded beforehand via
      * [uploadAttachment].
      *
+     * When the deployment enforces Cloudflare Turnstile human verification, the request must
+     * carry a `turnstileToken`. It is resolved from [explicitToken][turnstileToken] when
+     * provided, otherwise from the configured
+     * [FeedbackClientConfig.turnstileTokenProvider]; if the server rejects the first attempt,
+     * the provider is consulted once more for a fresh (single-use) token and the submission is
+     * retried once before [FeedbackException.VerificationRequired] is thrown.
+     *
      * @param draft The feedback content, reporter details, and uploaded attachments ([FeedbackDraft]).
      * @param userToken Optional stable anonymous user token from [UserTokenStore]. Sent as the `X-User-Token`
      *   header to attribute submissions.
+     * @param turnstileToken Optional Cloudflare Turnstile token minted for the
+     *   [TurnstileAction.FEEDBACK] action with the app key as `cdata`. When provided, the configured
+     *   token provider is not consulted before the first attempt.
      * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
      * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
+     * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the submission (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.AttachmentScanRejected if an attachment was rejected during backend content inspection (HTTP 422 `scan_rejected`).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
@@ -162,8 +175,39 @@ class FeedbackClient internal constructor(
      * Log.d("Feedback", "Submitted: ${result.submissionId}")
      * ```
      */
-    suspend fun submit(draft: FeedbackDraft, userToken: String? = null): FeedbackSubmissionResult {
-        val payload = JSONObject().apply {
+    suspend fun submit(
+        draft: FeedbackDraft,
+        userToken: String? = null,
+        turnstileToken: String? = null
+    ): FeedbackSubmissionResult = sendWithTurnstileRetry(
+        challenge = TurnstileChallenge.feedback(config.appKey),
+        explicitToken = turnstileToken
+    ) { token ->
+        parseFeedbackSubmission(
+            sendJson(
+                method = "POST",
+                path = "/api/v1/feedback",
+                body = feedbackSubmitPayload(draft, token),
+                userToken = userToken,
+                accepted = setOf(200, 201, 202),
+                mapSubmissionQuotaErrors = true,
+                mapAttachmentScanErrors = true,
+                mapVerificationErrors = true
+            )
+        )
+    }
+
+    /**
+     * Submits a completed feedback draft without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * two-parameter signature; delegates to [submit] with a `null` `turnstileToken`.
+     */
+    suspend fun submit(draft: FeedbackDraft, userToken: String?): FeedbackSubmissionResult =
+        submit(draft, userToken, turnstileToken = null)
+
+    private fun feedbackSubmitPayload(draft: FeedbackDraft, turnstileToken: String?): JSONObject =
+        JSONObject().apply {
             put("appKey", config.appKey)
             put("title", draft.title.trim())
             put("description", draft.description.trim())
@@ -196,19 +240,10 @@ class FeedbackClient internal constructor(
             if (uploadIds.length() > 0) {
                 put("uploadIds", uploadIds)
             }
+            if (turnstileToken != null) {
+                put("turnstileToken", turnstileToken)
+            }
         }
-        return parseFeedbackSubmission(
-            sendJson(
-                method = "POST",
-                path = "/api/v1/feedback",
-                body = payload,
-                userToken = userToken,
-                accepted = setOf(200, 201, 202),
-                mapSubmissionQuotaErrors = true,
-                mapAttachmentScanErrors = true
-            )
-        )
-    }
 
     /**
      * Uploads a binary file or screenshot attachment to storage and returns a descriptor ready
@@ -226,16 +261,25 @@ class FeedbackClient internal constructor(
      * Non-image uploads require [userToken]: upload sessions are identity-bound, so the same
      * token must later be passed to [submit].
      *
+     * Non-image (upload-session) creation is Turnstile-gated like feedback intake; the resolved
+     * `turnstileToken` is sent on the session-create call. It is resolved from
+     * [explicitToken][turnstileToken] when provided, otherwise from the configured
+     * [FeedbackClientConfig.turnstileTokenProvider], with the same single fresh-token retry.
+     *
      * @param data Binary payload to upload.
      * @param filename Display file name including extension (e.g. `screenshot.png`).
      * @param mimeType MIME content type (e.g. `image/png`, `application/pdf`).
      * @param preferredKind Optional explicit [FeedbackAttachment.Kind], overriding MIME-based auto-detection.
      * @param userToken Stable user token (from [UserTokenStore]) to attribute the upload; required for non-image uploads.
+     * @param turnstileToken Optional Cloudflare Turnstile token minted for the
+     *   [TurnstileAction.FEEDBACK] action with the app key as `cdata`; only consulted for the
+     *   upload-session (non-image) path.
      * @return A populated [FeedbackAttachment] carrying the server-assigned `uploadId` (and legacy
      *   `key`/`url` for older image responses).
      * @throws IllegalArgumentException if a non-image upload is attempted without a non-blank [userToken].
      * @throws FeedbackException.AuthenticationRequired on HTTP 401.
      * @throws FeedbackException.UnsupportedMediaType on HTTP 415 or when an unsupported image format (e.g. SVG) is uploaded.
+     * @throws FeedbackException.VerificationRequired if the upload-session human-verification gate rejects the request (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded the session's per-file byte budget).
      * @throws FeedbackException.InvalidResponse if a network error occurs.
@@ -258,7 +302,8 @@ class FeedbackClient internal constructor(
         filename: String,
         mimeType: String,
         preferredKind: FeedbackAttachment.Kind? = null,
-        userToken: String? = null
+        userToken: String? = null,
+        turnstileToken: String? = null
     ): FeedbackAttachment {
         val kind = preferredKind ?: if (mimeType.startsWith("image/")) {
             FeedbackAttachment.Kind.IMAGE
@@ -283,8 +328,29 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.UnreadableUploadResponse()
             }
         }
-        return uploadViaSession(data, filename, mimeType, userToken)
+        return uploadViaSession(data, filename, mimeType, userToken, turnstileToken)
     }
+
+    /**
+     * Uploads a binary file or screenshot attachment without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * five-parameter signature; delegates to [uploadAttachment] with a `null` `turnstileToken`.
+     */
+    suspend fun uploadAttachment(
+        data: ByteArray,
+        filename: String,
+        mimeType: String,
+        preferredKind: FeedbackAttachment.Kind?,
+        userToken: String?
+    ): FeedbackAttachment = uploadAttachment(
+        data = data,
+        filename = filename,
+        mimeType = mimeType,
+        preferredKind = preferredKind,
+        userToken = userToken,
+        turnstileToken = null
+    )
 
     /**
      * Uploads a non-image attachment through the upload-session lifecycle so the resulting
@@ -294,7 +360,8 @@ class FeedbackClient internal constructor(
         data: ByteArray,
         filename: String,
         mimeType: String,
-        userToken: String?
+        userToken: String?,
+        turnstileToken: String?
     ): FeedbackAttachment {
         val token = userToken?.trim()?.takeIf { it.isNotEmpty() }
         requireNotNull(token) {
@@ -310,29 +377,38 @@ class FeedbackClient internal constructor(
             "uploadAttachment destination must use HTTPS when transmitting upload-session credentials: $targetUrl"
         }
         val clientFileId = "client-${UUID.randomUUID()}"
-        val payload = JSONObject().apply {
-            put("appKey", config.appKey)
-            put("purpose", "feedback_attachment")
-            put(
-                "files",
-                JSONArray().put(
-                    JSONObject().apply {
-                        put("clientFileId", clientFileId)
-                        put("filename", filename)
-                        put("contentType", mimeType)
-                        put("sizeBytes", data.size)
-                    }
+        val sessionJson = sendWithTurnstileRetry(
+            challenge = TurnstileChallenge.feedback(config.appKey),
+            explicitToken = turnstileToken
+        ) { verificationToken ->
+            val payload = JSONObject().apply {
+                put("appKey", config.appKey)
+                put("purpose", "feedback_attachment")
+                if (verificationToken != null) {
+                    put("turnstileToken", verificationToken)
+                }
+                put(
+                    "files",
+                    JSONArray().put(
+                        JSONObject().apply {
+                            put("clientFileId", clientFileId)
+                            put("filename", filename)
+                            put("contentType", mimeType)
+                            put("sizeBytes", data.size)
+                        }
+                    )
                 )
+            }
+            sendJson(
+                method = "POST",
+                path = "/api/v1/uploads/sessions",
+                body = payload,
+                userToken = token,
+                accepted = setOf(200, 201),
+                mapRateLimitErrors = true,
+                mapVerificationErrors = true
             )
         }
-        val sessionJson = sendJson(
-            method = "POST",
-            path = "/api/v1/uploads/sessions",
-            body = payload,
-            userToken = token,
-            accepted = setOf(200, 201),
-            mapRateLimitErrors = true
-        )
         val reservation = try {
             parseUploadSession(sessionJson, clientFileId)
         } catch (_: Exception) {
@@ -570,17 +646,38 @@ class FeedbackClient internal constructor(
     }
 
     /**
+     * Submits a new feature request proposal without a Turnstile token.
+     *
+     * Preserved for binary backward compatibility with callers compiled against the
+     * two-parameter signature; delegates to [submitFeatureRequest] with a `null` `turnstileToken`.
+     */
+    suspend fun submitFeatureRequest(
+        draft: FeatureRequestDraft,
+        userToken: String
+    ): FeatureRequestSubmissionResult = submitFeatureRequest(draft, userToken, turnstileToken = null)
+
+    /**
      * Submits a new feature request proposal to `POST /api/v1/feature-requests`.
      *
      * Depending on the console's moderation settings, new requests may be immediately visible
      * or placed into moderation review (indicated by [FeatureRequestSubmissionResult.pending]).
      *
+     * When the deployment enforces Cloudflare Turnstile human verification, the request must
+     * carry a `turnstileToken`. It is resolved from [turnstileToken] when provided, otherwise
+     * from the configured [FeedbackClientConfig.turnstileTokenProvider]; if the server rejects
+     * the first attempt, the provider is consulted once more for a fresh (single-use) token and
+     * the proposal is retried once before [FeedbackException.VerificationRequired] is thrown.
+     *
      * @param draft The proposed title, description, and optional requester display name ([FeatureRequestDraft]).
      * @param userToken Stable anonymous user token from [UserTokenStore] that owns the request.
+     * @param turnstileToken Optional Cloudflare Turnstile token minted for the
+     *   [TurnstileAction.FEATURE_REQUEST] action with the app key as `cdata`. When provided, the
+     *   configured token provider is not consulted before the first attempt.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
      * @throws FeedbackException.AuthenticationRequired if anonymous requests are disallowed (HTTP 401).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
+     * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the proposal (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
@@ -601,23 +698,31 @@ class FeedbackClient internal constructor(
      */
     suspend fun submitFeatureRequest(
         draft: FeatureRequestDraft,
-        userToken: String
-    ): FeatureRequestSubmissionResult {
+        userToken: String,
+        turnstileToken: String? = null
+    ): FeatureRequestSubmissionResult = sendWithTurnstileRetry(
+        challenge = TurnstileChallenge.featureRequest(config.appKey),
+        explicitToken = turnstileToken
+    ) { token ->
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             put("title", draft.title.trim())
             put("description", draft.description.trim())
             putOptString("requesterName", draft.requesterName.trim().ifEmpty { null })
             put("requesterToken", userToken)
+            if (token != null) {
+                put("turnstileToken", token)
+            }
         }
-        return parseFeatureRequestSubmission(
+        parseFeatureRequestSubmission(
             sendJson(
                 method = "POST",
                 path = "/api/v1/feature-requests",
                 body = payload,
                 userToken = null,
                 accepted = setOf(200, 201),
-                mapSubmissionQuotaErrors = true
+                mapSubmissionQuotaErrors = true,
+                mapVerificationErrors = true
             )
         )
     }
@@ -1398,6 +1503,45 @@ class FeedbackClient internal constructor(
         return provided.takeIf { REQUEST_ID_PATTERN.matches(it) }
     }
 
+    /**
+     * Resolves a Turnstile token from the configured provider for [challenge], trimming empty
+     * results to `null` and swallowing provider failures so an unavailable token degrades to an
+     * unverified request (which the server answers with [FeedbackException.VerificationRequired]).
+     */
+    private suspend fun resolveTurnstileToken(challenge: TurnstileChallenge): String? =
+        try {
+            config.turnstileTokenProvider?.token(challenge)?.trim()?.takeIf { it.isNotEmpty() }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
+     * Sends a Turnstile-gated intake request, retrying exactly once with a freshly provided
+     * token when the server's human-verification gate rejects the first attempt (HTTP 403) and
+     * a token provider is configured.
+     *
+     * [explicitToken] (the caller-supplied `turnstileToken` parameter) takes precedence for the
+     * first attempt; the configured provider is consulted only for the retry. Tokens are
+     * single-use, so the provider is asked for a fresh token on every consultation.
+     */
+    private suspend fun <T> sendWithTurnstileRetry(
+        challenge: TurnstileChallenge,
+        explicitToken: String?,
+        attempt: suspend (turnstileToken: String?) -> T
+    ): T {
+        val firstToken = explicitToken?.trim()?.takeIf { it.isNotEmpty() }
+            ?: resolveTurnstileToken(challenge)
+        return try {
+            attempt(firstToken)
+        } catch (error: FeedbackException.VerificationRequired) {
+            if (config.turnstileTokenProvider == null || !error.canRetryWithFreshToken) throw error
+            val retryToken = resolveTurnstileToken(challenge) ?: throw error
+            attempt(retryToken)
+        }
+    }
+
     private suspend fun sendJson(
         method: String,
         path: String,
@@ -1407,7 +1551,8 @@ class FeedbackClient internal constructor(
         accepted: Set<Int> = setOf(200),
         mapSubmissionQuotaErrors: Boolean = false,
         mapAttachmentScanErrors: Boolean = false,
-        mapRateLimitErrors: Boolean = false
+        mapRateLimitErrors: Boolean = false,
+        mapVerificationErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -1421,7 +1566,8 @@ class FeedbackClient internal constructor(
             accepted,
             mapSubmissionQuotaErrors = mapSubmissionQuotaErrors,
             mapAttachmentScanErrors = mapAttachmentScanErrors,
-            mapRateLimitErrors = mapRateLimitErrors
+            mapRateLimitErrors = mapRateLimitErrors,
+            mapVerificationErrors = mapVerificationErrors
         )
     }
 
@@ -1476,7 +1622,8 @@ class FeedbackClient internal constructor(
         mapSubmissionQuotaErrors: Boolean = false,
         mapUnsupportedMediaType: Boolean = false,
         mapAttachmentScanErrors: Boolean = false,
-        mapRateLimitErrors: Boolean = false
+        mapRateLimitErrors: Boolean = false,
+        mapVerificationErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1491,6 +1638,14 @@ class FeedbackClient internal constructor(
                     .firstOrNull { (name, _) -> name.equals(REQUEST_ID_HEADER, ignoreCase = true) }
                     ?.value?.trim()?.takeIf { it.isNotEmpty() }
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired(requestId)
+                if (response.code == 403 && mapVerificationErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second ?: response.body.ifBlank { null }
+                    if (FeedbackException.VerificationRequired.isTurnstileRejection(code, message)) {
+                        throw FeedbackException.VerificationRequired(code, message, requestId)
+                    }
+                }
                 if (response.code == 402 && mapSubmissionQuotaErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     when (errorPayload?.first) {

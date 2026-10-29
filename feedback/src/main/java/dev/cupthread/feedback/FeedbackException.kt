@@ -150,6 +150,68 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         )
 
     /**
+     * Raised when the server's human-verification (Cloudflare Turnstile) gate rejects a gated
+     * intake call — `POST /api/v1/feedback`, `POST /api/v1/feature-requests`, or
+     * `POST /api/v1/uploads/sessions` — with HTTP 403, replacing the raw server body previously
+     * surfaced through [UnexpectedStatus].
+     *
+     * When [FeedbackClientConfig.turnstileTokenProvider] is configured and the rejection is
+     * retryable ([canRetryWithFreshToken]), the client has already retried once with a freshly
+     * minted token before this error is thrown — surface retry guidance to the user, or mint
+     * another token through a subsequent call.
+     *
+     * @property serverCode Machine-readable rejection code: `turnstile_required` when the request
+     *   carried no token, `turnstile_verification_failed` when siteverify rejected it (replay,
+     *   expiry, or action/cdata mismatch), `turnstile_not_configured` when the deployment requires
+     *   a secret it does not have, or `null` on legacy deployments that answered a message-only 403.
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class VerificationRequired @JvmOverloads constructor(
+        val serverCode: String? = null,
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "Please complete human verification and try again."
+    ) {
+        /**
+         * Whether minting a fresh token and retrying can succeed. Only
+         * [CODE_NOT_CONFIGURED] is futile — no client token can pass a deployment
+         * whose server lacks its verification secret.
+         */
+        val canRetryWithFreshToken: Boolean
+            get() = serverCode != CODE_NOT_CONFIGURED
+
+        companion object {
+            /** The request carried no `turnstileToken`. */
+            const val CODE_REQUIRED = "turnstile_required"
+
+            /** siteverify rejected the token (replay, expiry, or action/cdata mismatch). */
+            const val CODE_VERIFICATION_FAILED = "turnstile_verification_failed"
+
+            /** The deployment enforces verification but its server has no secret configured. */
+            const val CODE_NOT_CONFIGURED = "turnstile_not_configured"
+
+            /**
+             * Whether a rejection body represents the server's Turnstile human-verification gate.
+             *
+             * The machine-readable `code` wins when present. Releases from before the codes were
+             * introduced carried no `code` on intake, so the message matches as a fallback —
+             * a `null` code with a non-verification message is left for [UnexpectedStatus].
+             */
+            internal fun isTurnstileRejection(code: String?, message: String?): Boolean =
+                code == CODE_REQUIRED ||
+                    code == CODE_VERIFICATION_FAILED ||
+                    code == CODE_NOT_CONFIGURED ||
+                    (code == null && (
+                        message?.contains("turnstile", ignoreCase = true) == true ||
+                            message?.contains("human verification", ignoreCase = true) == true
+                    ))
+        }
+    }
+
+    /**
      * Raised when the server responds with an HTTP status code outside the accepted success range
      * for the specific endpoint.
      *

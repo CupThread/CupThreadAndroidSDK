@@ -29,6 +29,7 @@ import dev.cupthread.feedback.PublicAppConfig
 import dev.cupthread.feedback.SdkAppearance
 import dev.cupthread.feedback.SdkFeatures
 import dev.cupthread.feedback.SdkTheme
+import dev.cupthread.feedback.TurnstileConfig
 import dev.cupthread.feedback.UserAttributesUpdateResult
 import dev.cupthread.feedback.VoteResult
 import org.json.JSONArray
@@ -71,7 +72,20 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
         allowAnonymousFeedback = json.booleanOr("allowAnonymousFeedback", true),
         allowAnonymousChangelog = json.booleanOr("allowAnonymousChangelog", true),
         requireAnonymousVoteTurnstile = json.booleanOr("requireAnonymousVoteTurnstile", false),
+        turnstile = parseTurnstileConfig(json.optJSONObject("turnstile")),
         sdk = parseSdkAppearance(json.optJSONObject("sdk"))
+    )
+}
+
+/**
+ * Decodes the optional `turnstile` object. Absent on deployments that publish no site key, in
+ * which case `null` signals that intake needs a host-supplied token provider instead. Values of
+ * an unexpected JSON type degrade to `null` rather than failing the whole config parse.
+ */
+internal fun parseTurnstileConfig(json: JSONObject?): TurnstileConfig? {
+    if (json == null) return null
+    return TurnstileConfig(
+        siteKey = (json.opt("siteKey") as? String)?.trim()?.takeIf { it.isNotEmpty() }
     )
 }
 

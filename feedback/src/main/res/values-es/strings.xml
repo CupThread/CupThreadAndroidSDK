@@ -25,6 +25,7 @@
     <string name="cupthread_attachment_exceeds_limit">El adjunto supera el tamaño máximo permitido de %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Formato de imagen no compatible. Seleccione una imagen PNG, JPEG, WebP o GIF.</string>
     <string name="cupthread_feedback_attachment_scan_rejected">El análisis de contenido rechazó un archivo adjunto y no se pudo subir.</string>
+    <string name="cupthread_feedback_verification_required">Completa la verificación humana e inténtalo de nuevo.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Solicitudes de funciones</string>

@@ -80,12 +80,21 @@ enum class FeedbackPlatform(val wireValue: String) {
  *   or invalid return value (the server honors only `^[A-Za-z0-9._-]{8,64}$`) skips the header so
  *   the server mints its own identifier. The server's echoed `X-Request-Id` is exposed on thrown
  *   [FeedbackException]s via [FeedbackException.requestId].
+ * @property turnstileTokenProvider Optional factory the SDK consults for a Cloudflare Turnstile
+ *   token before gated intake calls (`POST /api/v1/feedback`, `POST /api/v1/feature-requests`,
+ *   and upload-session creation). Production deployments with Turnstile enforcement reject these
+ *   calls with HTTP 403 otherwise. The provider receives the [TurnstileChallenge] naming the exact
+ *   `(action, cdata)` binding to mint the token under, and should return a fresh token per call
+ *   (tokens are single-use) or `null` when none can be minted. When the server rejects the first
+ *   attempt, the SDK consults the provider once more and retries before throwing
+ *   [FeedbackException.VerificationRequired].
  */
 data class FeedbackClientConfig(
     val baseUrl: String,
     val appKey: String,
     val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current,
-    val requestIdProvider: (() -> String?)? = null
+    val requestIdProvider: (() -> String?)? = null,
+    val turnstileTokenProvider: TurnstileTokenProvider? = null
 ) {
     /**
      * Backward-compatible constructor for callers created before [requestIdProvider] existed.
@@ -94,7 +103,17 @@ data class FeedbackClientConfig(
         baseUrl: String,
         appKey: String,
         defaultPlatform: FeedbackPlatform
-    ) : this(baseUrl, appKey, defaultPlatform, null)
+    ) : this(baseUrl, appKey, defaultPlatform, null, null)
+
+    /**
+     * Backward-compatible constructor for callers created before [turnstileTokenProvider] existed.
+     */
+    constructor(
+        baseUrl: String,
+        appKey: String,
+        defaultPlatform: FeedbackPlatform,
+        requestIdProvider: (() -> String?)?
+    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider, null)
 }
 
 /**
@@ -488,6 +507,9 @@ data class SdkAppearance(
  * @property allowAnonymousChangelog Whether changelog release notes can be viewed anonymously.
  * @property requireAnonymousVoteTurnstile Whether anonymous feature request votes require Cloudflare Turnstile human verification.
  * @property sdk Remote theme and surface appearance bundle ([SdkAppearance]).
+ * @property turnstile Public Turnstile widget configuration, or `null` while the deployment publishes
+ *   no site key (absence means the hosted challenge page cannot mint tokens for this app and intake
+ *   needs a host-supplied [TurnstileTokenProvider]).
  */
 data class PublicAppConfig(
     val appId: String,
@@ -507,7 +529,24 @@ data class PublicAppConfig(
     val allowAnonymousFeedback: Boolean,
     val allowAnonymousChangelog: Boolean,
     val requireAnonymousVoteTurnstile: Boolean = false,
-    val sdk: SdkAppearance = SdkAppearance.defaults
+    val sdk: SdkAppearance = SdkAppearance.defaults,
+    val turnstile: TurnstileConfig? = null
+)
+
+/**
+ * Public Cloudflare Turnstile widget configuration (`turnstile`) from
+ * `GET /api/v1/public/config/{appKey}`.
+ *
+ * Carries the site key native clients render in an embedded WebView against the portal's hosted
+ * challenge page (`https://app.cupthread.com/turnstile/verify`); site keys are public by design.
+ * The object is absent entirely while the deployment publishes no key, so
+ * [PublicAppConfig.turnstile] being non-null is the signal that an in-app challenge can be
+ * presented at all.
+ *
+ * @property siteKey The public widget site key (e.g. `0x…`), or `null` while the deployment publishes none.
+ */
+data class TurnstileConfig(
+    val siteKey: String? = null
 )
 
 /**

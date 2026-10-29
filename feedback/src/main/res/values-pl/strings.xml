@@ -25,6 +25,7 @@
     <string name="cupthread_attachment_exceeds_limit">Załącznik przekracza maksymalny dozwolony rozmiar %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Nieobsługiwany format obrazu. Wybierz obraz PNG, JPEG, WebP lub GIF.</string>
     <string name="cupthread_feedback_attachment_scan_rejected">Załącznik został odrzucony podczas skanowania zawartości i nie mógł zostać przesłany.</string>
+    <string name="cupthread_feedback_verification_required">Ukończ weryfikację, czy jesteś człowiekiem, i spróbuj ponownie.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Propozycje funkcji</string>
