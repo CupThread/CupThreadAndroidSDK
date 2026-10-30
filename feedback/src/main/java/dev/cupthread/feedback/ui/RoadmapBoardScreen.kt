@@ -48,6 +48,7 @@ import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
+import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -155,6 +156,12 @@ private fun RoadmapBoardScreenContent(
     var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
     var votingIds by remember { mutableStateOf(setOf<String>()) }
     val defaultLoadError = stringResource(R.string.cupthread_roadmap_load_failed)
+    val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Searches share a strict per-IP budget with every other client (30/min); the throttler
+    // keeps ordinary typing inside it (issue #23).
+    val searchThrottler = remember { SearchThrottler() }
 
     // Reads the current search filter on every request, so one pager serves all queries.
     val pager = remember(client) {
@@ -179,11 +186,24 @@ private fun RoadmapBoardScreenContent(
             columns = fetchedColumns
             requests = page.requests
             hasMore = pager.hasMore
+            hasLoaded = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FeedbackException.RateLimited) {
+            searchThrottler.penalize()
+            if (hasLoaded) {
+                // Keep the last successful board on screen: a search rate limit must not
+                // wipe already-rendered content (issue #23). The pager already reset its
+                // paging position, so paging must not continue into the retained results.
+                hasMore = false
+                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+            } else {
+                error = e.message
+            }
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
             loading = false
-            hasLoaded = true
         }
     }
 
@@ -197,6 +217,12 @@ private fun RoadmapBoardScreenContent(
             hasMore = pager.hasMore
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FeedbackException.RateLimited) {
+            // The failed page keeps its cursor inside the pager, so the retry footer stays
+            // and paging can resume where it stopped; cool down before further auto loads.
+            searchThrottler.penalize()
+            loadMoreFailed = true
+            snackbarHostState.showSnackbar(searchRateLimitedMessage)
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -205,10 +231,19 @@ private fun RoadmapBoardScreenContent(
     }
 
     LaunchedEffect(client, userToken) {
+        // The first emission of every (re)started collector is user-initiated (initial load);
+        // later emissions are genuine query changes.
+        var userInitiated = true
         snapshotFlow { search }
             .distinctUntilChanged()
             .collectLatest { query ->
-                if (query.isNotEmpty()) delay(350)
+                // The previous query's paging state is obsolete the moment the query changes:
+                // reset before the throttled wait so a scroll-triggered loadMore cannot fetch
+                // with the old cursor while the pager callback reads the new query.
+                pager.reset()
+                hasMore = false
+                searchThrottler.awaitSearchTurn(query, bypassThrottle = userInitiated)
+                userInitiated = false
                 load()
             }
     }
@@ -221,7 +256,6 @@ private fun RoadmapBoardScreenContent(
         if (groups.isNotEmpty() && visible.isEmpty() && hasMore && !loadingMore && !loadMoreFailed) loadMore()
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
     val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
 
     Scaffold(

@@ -49,6 +49,7 @@
     <string name="cupthread_features_vote_desc">Votar, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Remover voto, %1$d</string>
     <string name="cupthread_features_vote_rate_limited">Você está votando rápido demais. Tente novamente em instantes.</string>
+    <string name="cupthread_search_rate_limited">Pesquisas demais. Aguarde um momento e tente novamente.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Roteiro</string>

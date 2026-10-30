@@ -2039,6 +2039,32 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchFeatureRequestsMapsSearchRateLimitToRateLimited() = runTest {
+        // #23: search/list 429s must surface as a typed error, not raw JSON inside
+        // UnexpectedStatus.message.
+        try {
+            client {
+                HttpResponse(429, """{"error":"Too many searches. Please try again shortly."}""")
+            }.fetchFeatureRequests(userToken = "usr_tok_429", query = "dark mode")
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many searches. Please try again shortly.", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestsMapsBlankBodyRateLimitToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(429, "   ")
+            }.fetchFeatureRequests(userToken = "usr_tok_429")
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+        }
+    }
+
+    @Test
     fun toggleVoteMapsHttp429ToRateLimitedWithServerMessage() = runTest {
         try {
             client {
