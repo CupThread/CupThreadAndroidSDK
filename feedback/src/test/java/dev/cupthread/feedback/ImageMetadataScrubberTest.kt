@@ -251,20 +251,16 @@ class ImageMetadataScrubberTest {
     }
 
     @Test
-    fun jpegScanRunningToEofStillScrubsTheHeader() {
-        // A final scan without EOI carries no parseable marker segment; the header segments
-        // must still be scrubbed rather than the file rejected.
+    fun jpegScanRunningToEofIsRejected() {
+        // A scan without a terminating marker means the file is truncated; bytes after SOS
+        // were never parsed, so they must not be uploaded.
         val base = jpegWithExif(bigEndian = false, includeGps = true)
         val sosInBase = indexOf(base, SOS_SEGMENT)
         val truncated = base.copyOfRange(0, sosInBase + SOS_SEGMENT.size + 4)
         // The cut lands mid-scan: no EOI follows.
         assertTrue(truncated[truncated.size - 1] != 0xD9.toByte())
 
-        val scrubbed = ImageMetadataScrubber.scrub(truncated)
-
-        assertNotNull(scrubbed)
-        assertFalse(indexOf(scrubbed!!, TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)) >= 0)
-        assertTrue(indexOf(scrubbed, jfifPayload()) >= 0)
+        assertNull(ImageMetadataScrubber.scrub(truncated))
     }
 
     @Test

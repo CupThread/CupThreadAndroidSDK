@@ -139,10 +139,9 @@ internal object ImageMetadataScrubber {
                         }
                     }
                     if (terminator < 0) {
-                        // The scan runs to end of file: no marker segment can follow, so the
-                        // remaining bytes carry nothing parseable.
-                        kept.add(data.copyOfRange(i, data.size))
-                        return concat(kept, changed, data)
+                        // The scan never terminates: the file is truncated, and any bytes
+                        // after SOS went unparsed. Fail closed instead of copying them.
+                        return null
                     }
                     kept.add(data.copyOfRange(i, terminator))
                     i = terminator
