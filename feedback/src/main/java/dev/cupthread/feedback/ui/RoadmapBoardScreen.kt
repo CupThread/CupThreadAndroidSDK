@@ -48,6 +48,7 @@ import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
+import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -155,6 +156,12 @@ private fun RoadmapBoardScreenContent(
     var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
     var votingIds by remember { mutableStateOf(setOf<String>()) }
     val defaultLoadError = stringResource(R.string.cupthread_roadmap_load_failed)
+    val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Searches share a strict per-IP budget with every other client (30/min); the throttler
+    // keeps ordinary typing inside it (issue #23).
+    val searchThrottler = remember { SearchThrottler() }
 
     // Reads the current search filter on every request, so one pager serves all queries.
     val pager = remember(client) {
@@ -179,6 +186,17 @@ private fun RoadmapBoardScreenContent(
             columns = fetchedColumns
             requests = page.requests
             hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FeedbackException.RateLimited) {
+            searchThrottler.penalize()
+            if (hasLoaded) {
+                // Keep the last successful board on screen: a search rate limit must not
+                // wipe already-rendered content (issue #23).
+                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+            } else {
+                error = e.message
+            }
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
@@ -209,6 +227,11 @@ private fun RoadmapBoardScreenContent(
             .distinctUntilChanged()
             .collectLatest { query ->
                 if (query.isNotEmpty()) delay(350)
+                // Automatic searches honor the shared per-IP budget: space them out and, after
+                // a 429, wait out the cool-down instead of retrying into the exhausted window.
+                val waitMs = searchThrottler.delayBeforeNext()
+                if (waitMs > 0) delay(waitMs)
+                searchThrottler.recordFired()
                 load()
             }
     }
@@ -221,7 +244,6 @@ private fun RoadmapBoardScreenContent(
         if (groups.isNotEmpty() && visible.isEmpty() && hasMore && !loadingMore && !loadMoreFailed) loadMore()
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
     val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
 
     Scaffold(

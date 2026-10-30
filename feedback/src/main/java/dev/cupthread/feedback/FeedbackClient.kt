@@ -531,7 +531,10 @@ class FeedbackClient internal constructor(
      * @param cursor Optional opaque keyset cursor from a previous page's
      *   [ListFeatureRequestsResult.nextCursor]. Malformed cursors are rejected with HTTP 400.
      * @return [ListFeatureRequestsResult] containing the list of requests and total match count.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.RateLimited when the per-IP search rate limit is exceeded (HTTP 429) —
+     *   queries, unlike unfiltered list reads, share a 30 requests / 60 s budget with every other
+     *   client behind the same egress IP.
+     * @throws FeedbackException.UnexpectedStatus on other HTTP errors.
      * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
      *
      * Example:
@@ -564,7 +567,13 @@ class FeedbackClient internal constructor(
         if (!query.isNullOrBlank()) params += "q" to query
         if (!cursor.isNullOrBlank()) params += "cursor" to cursor
         return parseListFeatureRequests(
-            get("/api/v1/feature-requests?${encodeQuery(params)}", userToken = userToken),
+            get(
+                path = "/api/v1/feature-requests?${encodeQuery(params)}",
+                userToken = userToken,
+                // Search 429s surface as a typed RateLimited error instead of a raw JSON body
+                // inside UnexpectedStatus (issue #23).
+                mapRateLimitErrors = true
+            ),
             offset
         )
     }

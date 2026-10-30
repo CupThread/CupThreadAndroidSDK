@@ -57,6 +57,7 @@ import dev.cupthread.feedback.UserTokenStore
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
+import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -70,7 +71,9 @@ import kotlinx.coroutines.launch
  * status badges, author avatars, and an interactive Floating Action Button to draft new requests.
  *
  * ### Key Behaviors & Architecture
- * - **Debounced Search**: Free-text search matching titles and descriptions, debounced at ~350 ms.
+ * - **Debounced Search**: Free-text search matching titles and descriptions, debounced at ~350 ms
+ *   and throttled to at most one request every 2 s so typing stays within the backend's shared
+ *   per-IP search budget; an HTTP 429 shows a banner and keeps the loaded list intact.
  * - **Incremental Paging**: Requests the next page as the list approaches its end, appending
  *   without duplicate ids. Search and version changes restart from the first page.
  * - **Version Filter**: Top app bar dropdown menu that filters requests by milestone release ([AppVersion]).
@@ -144,6 +147,12 @@ private fun FeatureRequestsScreenContent(
     var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
     var selectedProfileUserId by remember { mutableStateOf<String?>(null) }
     val defaultLoadError = stringResource(R.string.cupthread_features_load_failed)
+    val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Searches share a strict per-IP budget with every other client (30/min); the throttler
+    // keeps ordinary typing inside it (issue #23).
+    val searchThrottler = remember { SearchThrottler() }
 
     // Reads the current search and version filter on every request, so one pager serves all filters.
     val pager = remember(client) {
@@ -167,6 +176,17 @@ private fun FeatureRequestsScreenContent(
             val page = pager.loadFirstPage()
             items = page.requests
             hasMore = pager.hasMore
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FeedbackException.RateLimited) {
+            searchThrottler.penalize()
+            if (hasLoaded) {
+                // Keep the last successful results on screen: a search rate limit must not
+                // wipe already-rendered content (issue #23).
+                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+            } else {
+                error = e.message
+            }
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
@@ -209,6 +229,11 @@ private fun FeatureRequestsScreenContent(
             .distinctUntilChanged()
             .collectLatest { query ->
                 if (query.isNotEmpty()) delay(350)
+                // Automatic searches honor the shared per-IP budget: space them out and, after
+                // a 429, wait out the cool-down instead of retrying into the exhausted window.
+                val waitMs = searchThrottler.delayBeforeNext()
+                if (waitMs > 0) delay(waitMs)
+                searchThrottler.recordFired()
                 load()
             }
     }
@@ -220,7 +245,6 @@ private fun FeatureRequestsScreenContent(
         }
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
     val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
 
     Scaffold(
