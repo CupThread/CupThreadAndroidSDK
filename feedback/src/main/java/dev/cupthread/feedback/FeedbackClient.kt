@@ -8,6 +8,7 @@ import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.AttachmentLimits
+import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
@@ -256,6 +257,11 @@ class FeedbackClient internal constructor(
      *   server-side and answers `410 Gone`.
      * - Use [preferredKind] to explicitly override the destination storage backend.
      *
+     * Image payloads are scrubbed before upload regardless of the destination backend, including
+     * when [preferredKind] routes them to upload sessions (issue #21): EXIF GPS coordinates, XMP,
+     * IPTC and comment metadata are stripped so location data never leaves the device; pixel data
+     * is not re-encoded. Non-image payloads are passed through untouched.
+     *
      * Accepts HTTP 200 OK and 201 Created responses. If [userToken] is provided, it is forwarded
      * as the `X-User-Token` header to associate the upload with the anonymous user identity.
      * Non-image uploads require [userToken]: upload sessions are identity-bound, so the same
@@ -276,9 +282,10 @@ class FeedbackClient internal constructor(
      *   upload-session (non-image) path.
      * @return A populated [FeedbackAttachment] carrying the server-assigned `uploadId` (and legacy
      *   `key`/`url` for older image responses).
-     * @throws IllegalArgumentException if a non-image upload is attempted without a non-blank [userToken].
-     * @throws FeedbackException.AuthenticationRequired on HTTP 401.
-     * @throws FeedbackException.UnsupportedMediaType on HTTP 415 or when an unsupported image format (e.g. SVG) is uploaded.
+ * @throws IllegalArgumentException if a non-image upload is attempted without a non-blank [userToken].
+ * @throws FeedbackException.AuthenticationRequired on HTTP 401.
+ * @throws FeedbackException.UnsupportedMediaType on HTTP 415, when an unsupported image format (e.g. SVG) is uploaded,
+ *   or when a recognized image attachment is structurally corrupt so its metadata cannot be removed safely.
      * @throws FeedbackException.VerificationRequired if the upload-session human-verification gate rejects the request (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded the session's per-file byte budget).
@@ -310,10 +317,19 @@ class FeedbackClient internal constructor(
         } else {
             FeedbackAttachment.Kind.R2
         }
+        // Metadata (EXIF GPS coordinates in particular) never leaves the device, regardless of
+        // which storage backend the payload is routed to. Validation runs on the scrubbed bytes
+        // because they are what actually gets sent. A recognized image whose structure cannot
+        // be parsed confidently is rejected outright: unparseable bytes cannot be promised
+        // metadata-free.
+        val scrubbedData = ImageMetadataScrubber.scrub(data)
+            ?: throw FeedbackException.UnsupportedMediaType(
+                "Image metadata could not be removed safely ($mimeType). The upload was not sent."
+            )
         if (kind == FeedbackAttachment.Kind.IMAGE) {
-            AttachmentLimits.validateImageAttachment(data, filename, mimeType)
+            AttachmentLimits.validateImageAttachment(scrubbedData, filename, mimeType)
             val boundary = "Boundary-${UUID.randomUUID()}"
-            val body = multipartBody(boundary, config.appKey, filename, mimeType, data)
+            val body = multipartBody(boundary, config.appKey, filename, mimeType, scrubbedData)
             val json = sendMultipart(
                 path = "/api/v1/uploads/images",
                 boundary = boundary,
@@ -328,7 +344,7 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.UnreadableUploadResponse()
             }
         }
-        return uploadViaSession(data, filename, mimeType, userToken, turnstileToken)
+        return uploadViaSession(scrubbedData, filename, mimeType, userToken, turnstileToken)
     }
 
     /**

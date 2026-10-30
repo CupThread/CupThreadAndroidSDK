@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.shouldFollowRedirects
 import java.util.UUID
@@ -10,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -257,8 +259,10 @@ class FeedbackClientTest {
         0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(),
         0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte()
     )
-    private val validJpegBytes = byteArrayOf(
-        0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte()
+
+    /** A complete minimal JPEG: the scrubber rejects structurally truncated images outright. */
+    private val validJpegBytes = TestImageFixtures.jpeg(
+        TestImageFixtures.jpegSegment(0xE0, TestImageFixtures.jfifPayload())
     )
 
     @Test
@@ -294,6 +298,153 @@ class FeedbackClientTest {
         assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
         assertEquals("uploads/img-123.png", attachment.key)
         assertEquals("https://cdn.example.com/uploads/img-123.png", attachment.url)
+    }
+
+    @Test
+    fun uploadAttachmentStripsGpsMetadataFromImageBeforeUpload() = runTest {
+        // #21: the exact EXIF GPS bytes must never appear in the multipart body.
+        val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
+        val scrubbedPhoto = ImageMetadataScrubber.scrub(photoWithGps)!!
+        assertNotSame(photoWithGps, scrubbedPhoto)
+        var sentBody: ByteArray? = null
+        val json = """
+            {
+              "kind": "image",
+              "uploadId": "upl_img_21",
+              "status": "uploaded",
+              "stored": true,
+              "filename": "photo.jpg",
+              "mimeType": "image/jpeg",
+              "size": ${scrubbedPhoto.size}
+            }
+        """.trimIndent()
+
+        val attachment = client { request ->
+            sentBody = request.body
+            HttpResponse(201, json)
+        }.uploadAttachment(data = photoWithGps, filename = "photo.jpg", mimeType = "image/jpeg")
+
+        assertEquals("upl_img_21", attachment.uploadId)
+        val body = requireNotNull(sentBody)
+        // The scrubbed payload is what actually goes on the wire...
+        assertTrue(TestImageFixtures.indexOf(body, scrubbedPhoto) >= 0)
+        // ...and neither the GPS coordinate rationals nor any GPS IFD entry data survive.
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLongitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+    }
+
+    @Test
+    fun uploadAttachmentKeepsCleanImageBytesIntact() = runTest {
+        val cleanPhoto = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = false)
+        var sentBody: ByteArray? = null
+        client { request ->
+            sentBody = request.body
+            HttpResponse(201, """{"kind":"image","uploadId":"upl_2","stored":true}""")
+        }.uploadAttachment(data = cleanPhoto, filename = "photo.jpg", mimeType = "image/jpeg")
+
+        // A photo without metadata is forwarded byte-for-byte.
+        assertTrue(TestImageFixtures.indexOf(requireNotNull(sentBody), cleanPhoto) >= 0)
+    }
+
+    @Test
+    fun uploadAttachmentScrubsImageEvenWhenRoutedToUploadSessions() = runTest {
+        // #21: an explicit preferredKind=R2 must not bypass the scrubber for image bytes.
+        val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
+        val requests = mutableListOf<HttpRequest>()
+        client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(
+                    200,
+                    """{"uploadId":"upl_img_r2","clientFileId":"c","filename":"photo.jpg",""" +
+                        """"contentType":"image/jpeg","sizeBytes":${photoWithGps.size},"stored":true}"""
+                )
+            }
+        }.uploadAttachment(
+            data = photoWithGps,
+            filename = "photo.jpg",
+            mimeType = "image/jpeg",
+            preferredKind = FeedbackAttachment.Kind.R2,
+            userToken = "usr_tok_r2"
+        )
+
+        val putRequest = requests.last { it.method == "PUT" }
+        val body = requireNotNull(putRequest.body)
+        assertFalse(
+            TestImageFixtures.indexOf(
+                body,
+                TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)
+            ) >= 0
+        )
+        // Display-relevant metadata survives the scrub, proving the payload was scrubbed not dropped.
+        assertTrue(TestImageFixtures.indexOf(body, "CupThreadCam".toByteArray(Charsets.US_ASCII)) >= 0)
+    }
+
+    @Test
+    fun uploadAttachmentSendsNonImageBytesUntouched() = runTest {
+        val logBytes = "SEVERE: crash log with tokens".toByteArray(Charsets.US_ASCII)
+        val requests = mutableListOf<HttpRequest>()
+        client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(
+                    200,
+                    """{"uploadId":"upl_log","clientFileId":"c","filename":"log.txt",""" +
+                        """"contentType":"text/plain","sizeBytes":${logBytes.size},"stored":true}"""
+                )
+            }
+        }.uploadAttachment(
+            data = logBytes,
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_scrub"
+        )
+
+        // Non-image attachments bypass the scrubber entirely.
+        val putRequest = requests.last { it.method == "PUT" }
+        assertTrue(TestImageFixtures.indexOf(requireNotNull(putRequest.body), logBytes) >= 0)
+    }
+
+    @Test
+    fun uploadAttachmentRejectsStructurallyCorruptImageOnEveryBackend() = runTest {
+        // A recognized JPEG with corrupt framing cannot be promised metadata-free, so it must
+        // be rejected locally — even when preferredKind routes it to the upload-session backend.
+        val corrupt = TestImageFixtures.SOI +
+            TestImageFixtures.jpegSegment(0xE0, TestImageFixtures.jfifPayload()) +
+            byteArrayOf(0x12, 0x34) + // a marker was required here
+            TestImageFixtures.SCAN_BYTES + TestImageFixtures.EOI
+        var requests = 0
+        val failingClient = client { _ ->
+            requests++
+            HttpResponse(200, """{"uploadId":"upl_x","stored":true}""")
+        }
+        try {
+            failingClient.uploadAttachment(
+                data = corrupt,
+                filename = "broken.jpg",
+                mimeType = "image/jpeg",
+                preferredKind = FeedbackAttachment.Kind.R2,
+                userToken = "usr_tok_r2"
+            )
+            fail("structurally corrupt image uploads must be rejected")
+        } catch (expected: FeedbackException.UnsupportedMediaType) {
+            assertNull(expected.requestId)
+        }
+        assertEquals(0, requests) // rejected before any network I/O
     }
 
     @Test
@@ -909,7 +1060,7 @@ class FeedbackClientTest {
 
     @Test
     fun uploadAttachmentRejectsMismatchedMagicBytesClientSide() = runTest {
-        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val jpegBytes = validJpegBytes
         try {
             client {
                 HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")

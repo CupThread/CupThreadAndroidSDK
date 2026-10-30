@@ -127,7 +127,7 @@ lifecycleScope.launch {
 | Method | Endpoint / Description |
 | ------ | ---------------------- |
 | `submit(draft, userToken, turnstileToken?)` | `POST /api/v1/feedback` (sends `X-User-Token`) |
-| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images`; other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`) |
+| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images` (metadata-scrubbed, see [Image Metadata Privacy](#image-metadata-privacy)); other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`) |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
@@ -228,6 +228,42 @@ key when the deployment supports WebView challenges. Native clients can mint tok
 in an embedded WebView and reading the `{status:"success", token}` message posted to
 `window.AndroidTurnstileBridge.postMessage(JSON)` (`@JavascriptInterface`). Tokens are single-use
 with a ~300 s validity window — mint a fresh one per call.
+
+### Image Metadata Privacy
+
+`uploadAttachment` scrubs every image payload before it leaves the device, because CupThread
+attachments end up on publicly readable CDN URLs:
+
+- **JPEG**: the EXIF GPS Info IFD is zeroed in place, so location coordinates become
+  unrecoverable while display-relevant tags (orientation, color space) survive. APP1 XMP,
+  APP13 (IPTC/Photoshop), COM comments and unknown APPn metadata segments are dropped;
+  APP0 (JFIF), APP1 (EXIF), APP2 (ICC color profile) and APP14 (Adobe transform flag) are kept.
+  Marker segments between entropy-coded scans (progressive JPEGs) are scrubbed too.
+- **PNG**: `eXIf`, `tEXt`, `iTXt`, `zTXt` and `tIME` chunks are dropped.
+- **WebP**: `EXIF` and `XMP` chunks (fourcc `XMP` with a trailing space) are dropped.
+- **GIF**: Comment Extensions and `XMP Data` Application Extensions are dropped; animation
+  extensions such as `NETSCAPE2.0` are kept.
+- Non-image attachments (logs, crashes, text) are never touched.
+
+Scrubbing is lossless (pixel data is never re-encoded) and always on — there is no host opt-out,
+and it applies no matter which storage backend an image is routed to (including explicit
+`preferredKind` overrides). If a metadata structure is malformed beyond confident parsing, the
+whole structure is dropped rather than uploaded (fail closed). If the file structure of a
+recognized image is itself corrupt, the upload is rejected locally with
+`FeedbackException.UnsupportedMediaType` — bytes that cannot be parsed cannot be promised
+metadata-free. Content appended after the image's end marker (JPEG EOI, PNG IEND, GIF trailer) —
+e.g. motion-photo video, which can carry its own GPS track — is dropped as well: only bytes the
+scrubber parsed and vouched for are uploaded.
+
+Known limitations to be aware of:
+
+- **Only the GPS IFD is removed from EXIF.** Other EXIF fields survive by design, because
+  removing them requires rewriting the TIFF layout and would lose orientation (rotating photos
+  incorrectly). Camera make/model, capture timestamps, exposure settings and serial numbers, if
+  present, are still uploaded — hosts with stricter needs should re-encode images themselves
+  before calling `uploadAttachment`.
+- Maker-notes are left as-is; they do not carry GPS coordinates on mainstream phone cameras, but
+  exotic sources (e.g. some dashcams) may embed non-standard data there.
 
 ---
 
