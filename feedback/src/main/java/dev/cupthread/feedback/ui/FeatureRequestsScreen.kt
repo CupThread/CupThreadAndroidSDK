@@ -207,6 +207,12 @@ private fun FeatureRequestsScreenContent(
             hasMore = pager.hasMore
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FeedbackException.RateLimited) {
+            // The failed page keeps its cursor inside the pager, so the retry footer stays
+            // and paging can resume where it stopped; cool down before further auto loads.
+            searchThrottler.penalize()
+            loadMoreFailed = true
+            snackbarHostState.showSnackbar(searchRateLimitedMessage)
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -214,8 +220,8 @@ private fun FeatureRequestsScreenContent(
         }
     }
 
-    LaunchedEffect(listState, hasMore, items.size) {
-        if (!hasMore) return@LaunchedEffect
+    LaunchedEffect(listState, hasMore, items.size, loadMoreFailed) {
+        if (!hasMore || loadMoreFailed) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { lastVisible ->
                 if (lastVisible >= items.size - 3) loadMore()
@@ -227,12 +233,19 @@ private fun FeatureRequestsScreenContent(
     }
 
     LaunchedEffect(versionId) {
+        // The first emission of every (re)started collector is user-initiated — the initial
+        // load or a version-filter change; later emissions are genuine query changes.
+        var userInitiated = true
         snapshotFlow { search }
             .distinctUntilChanged()
             .collectLatest { query ->
-                // Debounce, minimum interval and 429 cool-down live in the throttler; a re-run
-                // of the unchanged query (initial load, version-filter change) bypasses them.
-                searchThrottler.awaitSearchTurn(query)
+                // The previous query's paging state is obsolete the moment the query changes:
+                // reset before the throttled wait so a scroll-triggered loadMore cannot fetch
+                // with the old cursor while the pager callback reads the new query.
+                pager.reset()
+                hasMore = false
+                searchThrottler.awaitSearchTurn(query, bypassThrottle = userInitiated)
+                userInitiated = false
                 load()
             }
     }

@@ -4,7 +4,6 @@ import dev.cupthread.feedback.internal.SearchThrottler
 import kotlin.math.floor
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,27 +66,35 @@ class SearchThrottlerTest {
     }
 
     @Test
-    fun shouldThrottleOnlyForChangedQueries() {
-        val throttler = SearchThrottler(now = { 0L })
-        assertTrue(throttler.shouldThrottle("dark")) // never fired yet
-        throttler.recordFired("dark")
-        assertFalse(throttler.shouldThrottle("dark")) // unchanged re-run: user-initiated
-        assertTrue(throttler.shouldThrottle("dark mode"))
-    }
-
-    @Test
-    fun awaitSearchTurnDebouncesThenRecordsTheQuery() = runTest {
+    fun awaitSearchTurnDebouncesThenSpacesOutRepeatedQueries() = runTest {
         var t = 0L
         val waits = mutableListOf<Long>()
         val throttler = SearchThrottler(now = { t })
 
         throttler.awaitSearchTurn("dark") { ms -> waits += ms; t += ms }
         assertEquals(listOf(SearchThrottler.DEBOUNCE_MS), waits)
-        assertEquals("dark", lastFiredQueryOf(throttler))
 
-        // An immediate re-run of the same query is user-initiated: no waits, no re-record.
+        // Even the same text re-emitted later is a genuine query change and gets throttled:
+        // after its own debounce (t = 700) the remaining interval is 2_000 + 350 - 700.
         throttler.awaitSearchTurn("dark") { ms -> waits += ms; t += ms }
-        assertEquals(listOf(SearchThrottler.DEBOUNCE_MS), waits)
+        assertEquals(
+            listOf(SearchThrottler.DEBOUNCE_MS, SearchThrottler.DEBOUNCE_MS, 1_650L),
+            waits
+        )
+    }
+
+    @Test
+    fun awaitSearchTurnBypassesThrottleWhenCallerMarksItUserInitiated() = runTest {
+        var t = 0L
+        val waits = mutableListOf<Long>()
+        val throttler = SearchThrottler(now = { t })
+        throttler.recordFired()
+        t += 100
+        throttler.penalize()
+
+        // Initial load / filter change: the caller marks the turn user-initiated.
+        throttler.awaitSearchTurn("dark", bypassThrottle = true) { ms -> waits += ms; t += ms }
+        assertTrue(waits.isEmpty())
     }
 
     @Test
@@ -114,8 +121,4 @@ class SearchThrottlerTest {
 
         assertEquals(listOf(350L, 350L, 29_650L, 30_000L), waits)
     }
-
-    /** Reads the recorded query via a fresh shouldThrottle probe (state is otherwise private). */
-    private fun lastFiredQueryOf(throttler: SearchThrottler): String =
-        listOf("dark", "dark mode", "").first { !throttler.shouldThrottle(it) }
 }
