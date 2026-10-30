@@ -22,8 +22,9 @@ import java.util.Arrays
  *
  * Pixel data is never re-encoded: scrubbing is lossless and cheap. When a metadata structure
  * is malformed beyond confident parsing the whole structure is dropped instead of passed
- * through (fail closed); when the surrounding file structure itself is corrupt, the original
- * bytes are returned because such a file would not decode for viewers either.
+ * through (fail closed); when the surrounding file structure itself is corrupt, `null` is
+ * returned so the caller can reject the upload outright — bytes we cannot parse cannot be
+ * promised metadata-free.
  */
 internal object ImageMetadataScrubber {
 
@@ -55,8 +56,12 @@ internal object ImageMetadataScrubber {
 
     private val JPEG_SOI = byteArrayOf(0xFF.toByte(), 0xD8.toByte())
 
-    /** Returns [data] with embedded metadata stripped, or [data] itself when there is nothing to strip. */
-    fun scrub(data: ByteArray): ByteArray {
+    /**
+     * Returns [data] with embedded metadata stripped, [data] itself when there is nothing to
+     * strip, or `null` when the payload is a recognized image whose file structure is too
+     * corrupt to guarantee metadata removal. Unrecognized content is never `null`.
+     */
+    fun scrub(data: ByteArray): ByteArray? {
         if (isJpeg(data)) return scrubJpeg(data)
         if (isPng(data)) return scrubPng(data)
         if (isWebP(data)) return scrubWebP(data)
@@ -71,22 +76,24 @@ internal object ImageMetadataScrubber {
             data[0] == 0xFF.toByte() && data[1] == 0xD8.toByte() && data[2] == 0xFF.toByte()
 
     /**
-     * Rewrites the JPEG header region (everything before the first SOS marker), dropping or
-     * rewriting metadata-bearing segments, and copies the SOS scan payload through verbatim.
+     * Rewrites the JPEG segment structure, dropping or rewriting metadata-bearing segments and
+     * copying entropy-coded scan payloads through verbatim. ITU-T T.81 allows marker segments
+     * between scans (progressive JPEGs interleave several SOS scans), so parsing resumes after
+     * every scan and metadata hidden there is stripped exactly like header metadata.
      */
-    private fun scrubJpeg(data: ByteArray): ByteArray {
+    private fun scrubJpeg(data: ByteArray): ByteArray? {
         val kept = mutableListOf(JPEG_SOI)
         var changed = false
         var i = 2
         while (i < data.size) {
             if (data[i] != 0xFF.toByte()) {
-                // A marker was required here; the header is corrupt, so keep the original bytes.
-                return data
+                // A marker was required here; the file structure is corrupt.
+                return null
             }
             // Collapse 0xFF fill bytes, then read the marker byte.
             var markerPos = i + 1
             while (markerPos < data.size && data[markerPos] == 0xFF.toByte()) markerPos++
-            if (markerPos >= data.size) return data
+            if (markerPos >= data.size) return null
             when (val marker = data[markerPos].toInt() and 0xFF) {
                 0xD8 -> i = markerPos + 1
                 0xD9 -> {
@@ -99,15 +106,45 @@ internal object ImageMetadataScrubber {
                     i = markerPos + 1
                 }
                 0xDA -> {
-                    // Start of Scan: entropy-coded data follows verbatim through end of file.
-                    kept.add(data.copyOfRange(i, data.size))
-                    return concat(kept, changed, data)
+                    // Start of Scan: copy the header, then the entropy-coded data verbatim.
+                    // Per ITU-T T.81 the scan ends at the first marker other than byte-stuffed
+                    // 0xFF 0x00 pairs, fill bytes and restart markers; marker segments that
+                    // follow may carry metadata (COM, APP1, ...), so parsing resumes there.
+                    val lengthPos = markerPos + 1
+                    if (lengthPos + 1 >= data.size) return null
+                    val length = u16At(data, lengthPos, bigEndian = true)
+                    if (length < 2 || lengthPos + length > data.size) return null
+                    var scan = lengthPos + 2
+                    var terminator = -1
+                    while (scan < data.size) {
+                        if (data[scan] != 0xFF.toByte()) {
+                            scan++
+                            continue
+                        }
+                        if (scan + 1 >= data.size) return null // dangling 0xFF: truncated file
+                        when (data[scan + 1].toInt() and 0xFF) {
+                            0x00, in 0xD0..0xD7 -> scan += 2 // stuffed byte or restart marker
+                            0xFF -> scan++ // fill byte; re-examine the following byte
+                            else -> {
+                                terminator = scan
+                                break
+                            }
+                        }
+                    }
+                    if (terminator < 0) {
+                        // The scan runs to end of file: no marker segment can follow, so the
+                        // remaining bytes carry nothing parseable.
+                        kept.add(data.copyOfRange(i, data.size))
+                        return concat(kept, changed, data)
+                    }
+                    kept.add(data.copyOfRange(i, terminator))
+                    i = terminator
                 }
                 else -> {
                     val lengthPos = markerPos + 1
-                    if (lengthPos + 1 >= data.size) return data
+                    if (lengthPos + 1 >= data.size) return null
                     val length = u16At(data, lengthPos, bigEndian = true)
-                    if (length < 2 || lengthPos + length > data.size) return data
+                    if (length < 2 || lengthPos + length > data.size) return null
                     val segmentEnd = lengthPos + length
                     val payloadStart = lengthPos + 2
                     when {
@@ -260,14 +297,14 @@ internal object ImageMetadataScrubber {
     private fun isPng(data: ByteArray): Boolean =
         data.size >= PNG_SIGNATURE.size && data.copyOfRange(0, PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)
 
-    private fun scrubPng(data: ByteArray): ByteArray {
+    private fun scrubPng(data: ByteArray): ByteArray? {
         val kept = mutableListOf(PNG_SIGNATURE)
         var changed = false
         var i = PNG_SIGNATURE.size
         while (i < data.size) {
-            if (i + 12 > data.size) return data // length + type + CRC cannot fit
+            if (i + 12 > data.size) return null // length + type + CRC cannot fit
             val length = u32At(data, i, bigEndian = true)
-            if (length > Int.MAX_VALUE || i + 12 + length > data.size) return data
+            if (length > Int.MAX_VALUE || i + 12 + length > data.size) return null
             val chunkEnd = i + 12 + length.toInt()
             val type = chunkType(data, i + 4)
             if (type in PNG_METADATA_CHUNK_TYPES) {
@@ -295,19 +332,19 @@ internal object ImageMetadataScrubber {
             data[8] == 'W'.code.toByte() && data[9] == 'E'.code.toByte() &&
             data[10] == 'B'.code.toByte() && data[11] == 'P'.code.toByte()
 
-    private fun scrubWebP(data: ByteArray): ByteArray {
+    private fun scrubWebP(data: ByteArray): ByteArray? {
         val riffSize = u32At(data, 4, bigEndian = false)
-        // The RIFF size field must describe the exact remaining bytes; otherwise leave as-is.
-        if (riffSize < 4 || 8 + riffSize != data.size.toLong()) return data
+        // The RIFF size field must describe the exact remaining bytes; otherwise fail closed.
+        if (riffSize < 4 || 8 + riffSize != data.size.toLong()) return null
         val kept = mutableListOf(riffHeader())
         var changed = false
         var vp8xKeptIndex = -1
         var i = 12
         while (i < data.size) {
-            if (i + 8 > data.size) return data
+            if (i + 8 > data.size) return null
             val fourcc = chunkType(data, i)
             val length = u32At(data, i + 4, bigEndian = false)
-            if (length > Int.MAX_VALUE || i + 8 + length > data.size) return data
+            if (length > Int.MAX_VALUE || i + 8 + length > data.size) return null
             val chunkEnd = i + 8 + length.toInt()
             // RIFF pads odd-length chunks to even sizes; the pad must travel with the chunk so
             // the reassembled file keeps every following chunk header even-aligned.
@@ -358,15 +395,21 @@ internal object ImageMetadataScrubber {
     /**
      * Drops Comment Extensions and `XMP Data` Application Extensions, which can carry free-text
      * and XMP metadata. Animation-critical Application Extensions (e.g. `NETSCAPE2.0`) and all
-     * other blocks are copied verbatim. Any structural inconsistency returns the original bytes.
+     * other blocks are copied verbatim. Any structural inconsistency returns `null`.
+     *
+     * Spec-conformant `XMP Data` extensions (XMP Specification Part 3, §GIF) carry the raw UTF-8
+     * packet without sub-block length prefixes, closed by a 258-byte descending "magic trailer"
+     * whose final byte is the Block Terminator. The trailer is laid out so the ordinary
+     * sub-block walk skips exactly to that terminator, so [skipGifSubBlocks] covers both
+     * sub-block-encoded and raw-packet payloads.
      */
-    private fun scrubGif(data: ByteArray): ByteArray {
-        if (data.size < 14) return data // header + logical screen descriptor + trailer at minimum
+    private fun scrubGif(data: ByteArray): ByteArray? {
+        if (data.size < 14) return null // header + logical screen descriptor + trailer at minimum
         val packed = data[10].toInt() and 0xFF
         var i = 13
         if (packed and 0x80 != 0) {
             i += 3 * (1 shl (packed and 0x07) + 1) // global color table
-            if (i >= data.size) return data
+            if (i >= data.size) return null
         }
         val out = java.io.ByteArrayOutputStream()
         out.write(data, 0, i)
@@ -378,29 +421,29 @@ internal object ImageMetadataScrubber {
                     i = data.size
                 }
                 0x2C -> { // image descriptor: header, optional local color table, LZW sub-blocks
-                    if (i + 10 > data.size) return data
+                    if (i + 10 > data.size) return null
                     val localPacked = data[i + 9].toInt() and 0xFF
                     var j = i + 10
                     if (localPacked and 0x80 != 0) {
                         j += 3 * (1 shl (localPacked and 0x07) + 1)
                     }
-                    if (j >= data.size) return data
-                    val subBlocks = skipGifSubBlocks(data, j + 1) ?: return data
+                    if (j >= data.size) return null
+                    val subBlocks = skipGifSubBlocks(data, j + 1) ?: return null
                     out.write(data, i, subBlocks - i)
                     i = subBlocks
                 }
                 0x21 -> { // extension: label + sub-blocks (the first sub-block holds the intro data)
-                    if (i + 2 > data.size) return data
+                    if (i + 2 > data.size) return null
                     when (data[i + 1].toInt() and 0xFF) {
                         0xFE -> { // comment extension
-                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            val end = skipGifSubBlocks(data, i + 2) ?: return null
                             changed = true
                             i = end
                         }
                         0xFF -> { // application extension: identify via its 8-byte identifier
-                            if (i + 12 > data.size) return data
+                            if (i + 12 > data.size) return null
                             val identifier = String(data, i + 3, 8, Charsets.ISO_8859_1)
-                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            val end = skipGifSubBlocks(data, i + 2) ?: return null
                             if (identifier == "XMP Data") {
                                 changed = true
                             } else {
@@ -409,13 +452,13 @@ internal object ImageMetadataScrubber {
                             i = end
                         }
                         else -> { // graphic control, plain text, ...: keep whole extension
-                            val end = skipGifSubBlocks(data, i + 2) ?: return data
+                            val end = skipGifSubBlocks(data, i + 2) ?: return null
                             out.write(data, i, end - i)
                             i = end
                         }
                     }
                 }
-                else -> return data // unknown block: leave the file alone
+                else -> return null // unknown block: the structure is not confidently parseable
             }
         }
         return if (changed) out.toByteArray() else data

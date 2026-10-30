@@ -421,13 +421,51 @@ internal object TestImageFixtures {
         byteArrayOf(0x21, 0xFE.toByte()) + gifSubBlock(text.toByteArray(Charsets.US_ASCII)) +
             byteArrayOf(0x00)
 
-    /** Identifier is the 8-byte field (plus 3-byte auth code), e.g. "NETSCAPE" / "2.0" or "XMP Data". */
-    internal fun gifApplicationExtension(identifier: String, payload: ByteArray): ByteArray {
+    /**
+     * Generic Application Extension with a sub-block-encoded payload:
+     * `21 FF 0B` + 8-byte identifier + 3-byte authentication code + data sub-block + terminator.
+     */
+    internal fun gifApplicationExtension(
+        identifier: String,
+        authCode: String,
+        payload: ByteArray
+    ): ByteArray {
         require(identifier.length <= 8)
-        val paddedId = identifier.toByteArray(Charsets.US_ASCII) +
-            ByteArray(8 - identifier.length) + ByteArray(3) // auth code
-        return byteArrayOf(0x21, 0xFF.toByte(), 0x0B) + paddedId +
+        require(authCode.length <= 3)
+        val header = identifier.toByteArray(Charsets.US_ASCII) +
+            ByteArray(8 - identifier.length) +
+            authCode.toByteArray(Charsets.US_ASCII) +
+            ByteArray(3 - authCode.length)
+        return byteArrayOf(0x21, 0xFF.toByte(), 0x0B) + header +
             gifSubBlock(payload) + byteArrayOf(0x00)
+    }
+
+    /** Standard NETSCAPE2.0 animation-loop extension (sub-block ID 1, loop count 0 = forever). */
+    internal fun gifNetscapeExtension(): ByteArray =
+        gifApplicationExtension("NETSCAPE", "2.0", byteArrayOf(0x01, 0x00, 0x00))
+
+    /**
+     * Spec-conformant `XMP Data` Application Extension (XMP Specification Part 3, §GIF): the
+     * UTF-8 packet follows the 11-byte application header raw, without sub-block length
+     * prefixes, and is closed by the 258-byte "magic trailer" — `0x01`, `0xFF` descending to
+     * `0x01`, then `0x00 0x00` — whose final byte is the Block Terminator. No extra terminator
+     * is appended.
+     */
+    internal fun gifXmpApplicationExtension(packet: String): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(0x21, 0xFF.toByte(), 0x0B))
+        out.write("XMP Data".toByteArray(Charsets.US_ASCII))
+        out.write("XMP".toByteArray(Charsets.US_ASCII))
+        out.write(packet.toByteArray(Charsets.UTF_8))
+        out.write(0x01)
+        var value = 0xFF
+        while (value >= 0x01) {
+            out.write(value)
+            value--
+        }
+        out.write(0x00)
+        out.write(0x00)
+        return out.toByteArray()
     }
 
     internal fun gifGraphicControlExtension(): ByteArray = byteArrayOf(

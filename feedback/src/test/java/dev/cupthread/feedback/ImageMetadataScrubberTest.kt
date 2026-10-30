@@ -29,6 +29,8 @@ import dev.cupthread.feedback.TestImageFixtures.webpChunk
 import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,7 +42,7 @@ class ImageMetadataScrubberTest {
     @Test
     fun jpegGpsIfdIsZeroedWhileDisplayTagsSurviveLittleEndian() {
         val original = jpegWithExif(bigEndian = false, includeGps = true)
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         // GPS zeroing preserves the file size and overall structure.
         assertEquals(original.size, scrubbed.size)
@@ -71,7 +73,7 @@ class ImageMetadataScrubberTest {
     @Test
     fun jpegGpsIfdIsZeroedWhileDisplayTagsSurviveBigEndian() {
         val original = jpegWithExif(bigEndian = true, includeGps = true)
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         assertEquals(original.size, scrubbed.size)
         val tiff = exifTiffOf(scrubbed)
@@ -98,7 +100,7 @@ class ImageMetadataScrubberTest {
             includeGps = true,
             includeThumbnailIfd = true
         )
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         val tiff = exifTiffOf(scrubbed)
         val gpsOffset = findGpsIfdOffset(tiff, bigEndian = false)
@@ -138,7 +140,7 @@ class ImageMetadataScrubberTest {
             jpegSegment(0xFE, comment)
         )
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         // Everything needed for faithful display survives...
         assertTrue(indexOf(scrubbed, jfifPayload()) >= 0)
@@ -159,7 +161,7 @@ class ImageMetadataScrubberTest {
             jpegSegment(0xE1, exifApp1Payload(malformed))
         )
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         assertTrue(indexOf(scrubbed, malformed) < 0)
         assertTrue(indexOf(scrubbed, jfifPayload()) >= 0)
@@ -188,7 +190,7 @@ class ImageMetadataScrubberTest {
         assertTrue(patched)
         val original = jpeg(jpegSegment(0xE0, jfifPayload()), jpegSegment(0xE1, exifApp1Payload(bogus)))
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         // Fail closed: the unparsable EXIF block is removed instead of uploaded with GPS intact.
         assertTrue(indexOf(scrubbed, "Exif".toByteArray(Charsets.US_ASCII)) < 0)
@@ -198,7 +200,7 @@ class ImageMetadataScrubberTest {
     @Test
     fun jpegScanDataIsCopiedVerbatim() {
         val original = jpegWithExif(bigEndian = false, includeGps = true)
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         val sosInOriginal = indexOf(original, SOS_SEGMENT)
         val sosInScrubbed = indexOf(scrubbed, SOS_SEGMENT)
@@ -216,16 +218,66 @@ class ImageMetadataScrubberTest {
     }
 
     @Test
-    fun jpegWithCorruptHeaderReturnsOriginalBytes() {
-        val corrupt = SOI + jpegSegment(0xE0, jfifPayload()) + byteArrayOf(0x12, 0x34) + SCAN_BYTES + EOI
-        assertSame(corrupt, ImageMetadataScrubber.scrub(corrupt))
+    fun jpegMetadataBetweenScansIsStripped() {
+        // ITU-T T.81 allows marker segments between scans, so a progressive file can hide
+        // metadata after the first scan. The scan walker must resume segment parsing there.
+        val hiddenComment = "note hidden after the first scan".toByteArray(Charsets.US_ASCII)
+        val hiddenXmp = "http://ns.adobe.com/xap/1.0/\u0000<x:xmpmeta/>".toByteArray(Charsets.US_ASCII)
+        // Scan bytes exercising byte stuffing (0xFF 0x00) and a restart marker (RST7) —
+        // neither terminates a scan — plus legal 0xFF fill bytes ahead of the next marker.
+        val secondScan = byteArrayOf(
+            0xAB.toByte(), 0xFF.toByte(), 0x00, 0xCD.toByte(),
+            0xFF.toByte(), 0xD7.toByte(), 0x11
+        )
+        val original = SOI +
+            jpegSegment(0xE0, jfifPayload()) +
+            SOS_SEGMENT + SCAN_BYTES +
+            jpegSegment(0xFE, hiddenComment) +
+            SOS_SEGMENT + secondScan +
+            byteArrayOf(0xFF.toByte(), 0xFF.toByte()) +
+            jpegSegment(0xE1, hiddenXmp) +
+            EOI
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        // Both scans survive byte-for-byte (the walker did not cut them early)...
+        assertTrue(indexOf(scrubbed, secondScan) >= 0)
+        // ...while metadata in the marker segments between and after scans is gone.
+        assertFalse(indexOf(scrubbed, hiddenComment) >= 0)
+        assertFalse(indexOf(scrubbed, hiddenXmp) >= 0)
+        assertTrue(
+            scrubbed[scrubbed.size - 2] == 0xFF.toByte() && scrubbed[scrubbed.size - 1] == 0xD9.toByte()
+        )
     }
 
     @Test
-    fun truncatedJpegReturnsOriginalBytes() {
+    fun jpegScanRunningToEofStillScrubsTheHeader() {
+        // A final scan without EOI carries no parseable marker segment; the header segments
+        // must still be scrubbed rather than the file rejected.
+        val base = jpegWithExif(bigEndian = false, includeGps = true)
+        val sosInBase = indexOf(base, SOS_SEGMENT)
+        val truncated = base.copyOfRange(0, sosInBase + SOS_SEGMENT.size + 4)
+        // The cut lands mid-scan: no EOI follows.
+        assertTrue(truncated[truncated.size - 1] != 0xD9.toByte())
+
+        val scrubbed = ImageMetadataScrubber.scrub(truncated)
+
+        assertNotNull(scrubbed)
+        assertFalse(indexOf(scrubbed!!, TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)) >= 0)
+        assertTrue(indexOf(scrubbed, jfifPayload()) >= 0)
+    }
+
+    @Test
+    fun jpegWithCorruptStructureIsRejected() {
+        val corrupt = SOI + jpegSegment(0xE0, jfifPayload()) + byteArrayOf(0x12, 0x34) + SCAN_BYTES + EOI
+        assertNull(ImageMetadataScrubber.scrub(corrupt))
+    }
+
+    @Test
+    fun truncatedJpegIsRejected() {
         val truncated = SOI + jpegSegment(0xE0, jfifPayload()) +
             byteArrayOf(0xFF.toByte(), 0xE1.toByte(), 0x10, 0x00, 0x45, 0x78) // promises 4096 bytes
-        assertSame(truncated, ImageMetadataScrubber.scrub(truncated))
+        assertNull(ImageMetadataScrubber.scrub(truncated))
     }
 
     // endregion
@@ -244,7 +296,7 @@ class ImageMetadataScrubberTest {
         val iend = pngChunk("IEND", ByteArray(0))
         val original = png(ihdr, text, itxt, ztxt, exif, time, idat, iend)
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         assertTrue(indexOf(scrubbed, ihdr) >= 0)
         assertTrue(indexOf(scrubbed, idat) >= 0)
@@ -269,12 +321,12 @@ class ImageMetadataScrubberTest {
     }
 
     @Test
-    fun pngWithOverrunningChunkReturnsOriginalBytes() {
+    fun pngWithOverrunningChunkIsRejected() {
         val broken = PNG_SIGNATURE +
             u32Bytes(1024, bigEndian = true) + // chunk length far beyond the data
             "tEXt".toByteArray(Charsets.US_ASCII) +
             byteArrayOf(1, 2, 3)
-        assertSame(broken, ImageMetadataScrubber.scrub(broken))
+        assertNull(ImageMetadataScrubber.scrub(broken))
     }
 
     // endregion
@@ -288,7 +340,7 @@ class ImageMetadataScrubberTest {
         val vp8 = webpChunk("VP8 ", byteArrayOf(1, 2, 3, 4, 5))
         val original = webp(webpChunk("VP8X", vp8xPayload()), exif, xmp, vp8)
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         assertEquals("RIFF", String(scrubbed, 0, 4, Charsets.ISO_8859_1))
         assertEquals("WEBP", String(scrubbed, 8, 4, Charsets.ISO_8859_1))
@@ -309,12 +361,12 @@ class ImageMetadataScrubberTest {
     }
 
     @Test
-    fun webpWithInconsistentRiffSizeReturnsOriginalBytes() {
+    fun webpWithInconsistentRiffSizeIsRejected() {
         val body = "WEBP".toByteArray(Charsets.US_ASCII) + webpChunk("VP8 ", byteArrayOf(1, 2, 3, 4))
         val broken = "RIFF".toByteArray(Charsets.US_ASCII) +
             u32Bytes(body.size + 999, bigEndian = false) +
             body
-        assertSame(broken, ImageMetadataScrubber.scrub(broken))
+        assertNull(ImageMetadataScrubber.scrub(broken))
     }
 
     @Test
@@ -326,7 +378,7 @@ class ImageMetadataScrubberTest {
         val vp8 = webpChunk("VP8 ", byteArrayOf(1, 2, 3, 4, 5))
         val original = webp(webpChunk("VP8X", vp8xPayload()), alph, exif, vp8)
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
         // The kept ALPH chunk still carries its pad byte...
         assertTrue(indexOf(scrubbed, alphWithPad) >= 0)
@@ -354,17 +406,17 @@ class ImageMetadataScrubberTest {
     // region GIF
 
     @Test
-    fun gifCommentAndXmpApplicationExtensionsAreDropped() {
+    fun gifCommentAndSubBlockEncodedXmpAreDropped() {
         val comment = TestImageFixtures.gifCommentExtension("taken at home address")
-        val xmpApp = TestImageFixtures.gifApplicationExtension("XMP Data", "<x/>".toByteArray(Charsets.US_ASCII))
-        val netscape = TestImageFixtures.gifApplicationExtension("NETSCAPE", byteArrayOf(1, 0, 0))
+        val xmpApp = TestImageFixtures.gifApplicationExtension("XMP Data", "", "<x/>".toByteArray(Charsets.US_ASCII))
+        val netscape = TestImageFixtures.gifNetscapeExtension()
         val gce = TestImageFixtures.gifGraphicControlExtension()
         val image = TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
         val original = TestImageFixtures.gif(gce, netscape, comment, xmpApp, image)
 
-        val scrubbed = ImageMetadataScrubber.scrub(original)
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
 
-        assertTrue(indexOf(scrubbed, netscape) >= 0) // animation looping survives
+        assertTrue(indexOf(scrubbed!!, netscape) >= 0) // animation looping survives
         assertTrue(indexOf(scrubbed, gce) >= 0)
         assertTrue(indexOf(scrubbed, image) >= 0)
         assertTrue(scrubbed.last() == TestImageFixtures.GIF_TRAILER_INT.toByte())
@@ -374,23 +426,43 @@ class ImageMetadataScrubberTest {
     }
 
     @Test
+    fun gifSpecConformantXmpDataExtensionIsDroppedWhole() {
+        // The XMP spec (part 3, §GIF) stores the packet raw — no sub-block length prefixes —
+        // closed by the 258-byte magic trailer. The whole extension must still be removed.
+        val packet = "<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>" +
+            "<x:xmpmeta xmlns:x='adobe:ns:meta/'>taken at home</x:xmpmeta><?xpacket end='w'?>"
+        val xmpApp = TestImageFixtures.gifXmpApplicationExtension(packet)
+        val netscape = TestImageFixtures.gifNetscapeExtension()
+        val gce = TestImageFixtures.gifGraphicControlExtension()
+        val image = TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
+        val original = TestImageFixtures.gif(gce, netscape, xmpApp, image)
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        // The surviving blocks are exactly the pre-XMP ones, byte-for-byte.
+        val expected = TestImageFixtures.gif(gce, netscape, image)
+        assertTrue(scrubbed!!.contentEquals(expected))
+        assertFalse(indexOf(scrubbed, packet.toByteArray(Charsets.UTF_8)) >= 0)
+    }
+
+    @Test
     fun gifWithoutMetadataIsReturnedUnchanged() {
         val original = TestImageFixtures.gif(
             TestImageFixtures.gifGraphicControlExtension(),
-            TestImageFixtures.gifApplicationExtension("NETSCAPE", byteArrayOf(1, 0, 0)),
+            TestImageFixtures.gifNetscapeExtension(),
             TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
         )
         assertSame(original, ImageMetadataScrubber.scrub(original))
     }
 
     @Test
-    fun gifWithMalformedSubBlocksReturnsOriginalBytes() {
+    fun gifWithMalformedSubBlocksIsRejected() {
         // Comment extension whose sub-block chain never terminates within the file.
         val broken = TestImageFixtures.gif(
             TestImageFixtures.gifGraphicControlExtension(),
             byteArrayOf(0x21, 0xFE.toByte(), 0x10, 1, 2, 3) // claims 16 data bytes, file ends
         )
-        assertSame(broken, ImageMetadataScrubber.scrub(broken))
+        assertNull(ImageMetadataScrubber.scrub(broken))
     }
 
     // endregion

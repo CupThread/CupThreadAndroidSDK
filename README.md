@@ -238,6 +238,7 @@ attachments end up on publicly readable CDN URLs:
   unrecoverable while display-relevant tags (orientation, color space) survive. APP1 XMP,
   APP13 (IPTC/Photoshop), COM comments and unknown APPn metadata segments are dropped;
   APP0 (JFIF), APP1 (EXIF), APP2 (ICC color profile) and APP14 (Adobe transform flag) are kept.
+  Marker segments between entropy-coded scans (progressive JPEGs) are scrubbed too.
 - **PNG**: `eXIf`, `tEXt`, `iTXt`, `zTXt` and `tIME` chunks are dropped.
 - **WebP**: `EXIF` and `XMP` chunks (fourcc `XMP` with a trailing space) are dropped.
 - **GIF**: Comment Extensions and `XMP Data` Application Extensions are dropped; animation
@@ -247,7 +248,10 @@ attachments end up on publicly readable CDN URLs:
 Scrubbing is lossless (pixel data is never re-encoded) and always on — there is no host opt-out,
 and it applies no matter which storage backend an image is routed to (including explicit
 `preferredKind` overrides). If a metadata structure is malformed beyond confident parsing, the
-whole structure is dropped rather than uploaded (fail closed).
+whole structure is dropped rather than uploaded (fail closed). If the file structure of a
+recognized image is itself corrupt, the upload is rejected locally with
+`FeedbackException.UnsupportedMediaType` — bytes that cannot be parsed cannot be promised
+metadata-free.
 
 Known limitations to be aware of:
 

@@ -259,8 +259,10 @@ class FeedbackClientTest {
         0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(),
         0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte()
     )
-    private val validJpegBytes = byteArrayOf(
-        0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte()
+
+    /** A complete minimal JPEG: the scrubber rejects structurally truncated images outright. */
+    private val validJpegBytes = TestImageFixtures.jpeg(
+        TestImageFixtures.jpegSegment(0xE0, TestImageFixtures.jfifPayload())
     )
 
     @Test
@@ -302,7 +304,7 @@ class FeedbackClientTest {
     fun uploadAttachmentStripsGpsMetadataFromImageBeforeUpload() = runTest {
         // #21: the exact EXIF GPS bytes must never appear in the multipart body.
         val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
-        val scrubbedPhoto = ImageMetadataScrubber.scrub(photoWithGps)
+        val scrubbedPhoto = ImageMetadataScrubber.scrub(photoWithGps)!!
         assertNotSame(photoWithGps, scrubbedPhoto)
         var sentBody: ByteArray? = null
         val json = """
@@ -415,6 +417,34 @@ class FeedbackClientTest {
         // Non-image attachments bypass the scrubber entirely.
         val putRequest = requests.last { it.method == "PUT" }
         assertTrue(TestImageFixtures.indexOf(requireNotNull(putRequest.body), logBytes) >= 0)
+    }
+
+    @Test
+    fun uploadAttachmentRejectsStructurallyCorruptImageOnEveryBackend() = runTest {
+        // A recognized JPEG with corrupt framing cannot be promised metadata-free, so it must
+        // be rejected locally — even when preferredKind routes it to the upload-session backend.
+        val corrupt = TestImageFixtures.SOI +
+            TestImageFixtures.jpegSegment(0xE0, TestImageFixtures.jfifPayload()) +
+            byteArrayOf(0x12, 0x34) + // a marker was required here
+            TestImageFixtures.SCAN_BYTES + TestImageFixtures.EOI
+        var requests = 0
+        val failingClient = client { _ ->
+            requests++
+            HttpResponse(200, """{"uploadId":"upl_x","stored":true}""")
+        }
+        try {
+            failingClient.uploadAttachment(
+                data = corrupt,
+                filename = "broken.jpg",
+                mimeType = "image/jpeg",
+                preferredKind = FeedbackAttachment.Kind.R2,
+                userToken = "usr_tok_r2"
+            )
+            fail("structurally corrupt image uploads must be rejected")
+        } catch (expected: FeedbackException.UnsupportedMediaType) {
+            assertNull(expected.requestId)
+        }
+        assertEquals(0, requests) // rejected before any network I/O
     }
 
     @Test
@@ -1030,7 +1060,7 @@ class FeedbackClientTest {
 
     @Test
     fun uploadAttachmentRejectsMismatchedMagicBytesClientSide() = runTest {
-        val jpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val jpegBytes = validJpegBytes
         try {
             client {
                 HttpResponse(200, """{"kind":"image","key":"k1","url":"https://cdn.example.com/k1"}""")
