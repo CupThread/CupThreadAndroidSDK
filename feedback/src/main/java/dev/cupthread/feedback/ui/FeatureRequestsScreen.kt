@@ -176,13 +176,16 @@ private fun FeatureRequestsScreenContent(
             val page = pager.loadFirstPage()
             items = page.requests
             hasMore = pager.hasMore
+            hasLoaded = true
         } catch (e: CancellationException) {
             throw e
         } catch (e: FeedbackException.RateLimited) {
             searchThrottler.penalize()
             if (hasLoaded) {
                 // Keep the last successful results on screen: a search rate limit must not
-                // wipe already-rendered content (issue #23).
+                // wipe already-rendered content (issue #23). The pager already reset its
+                // paging position, so paging must not continue into the retained results.
+                hasMore = false
                 snackbarHostState.showSnackbar(searchRateLimitedMessage)
             } else {
                 error = e.message
@@ -191,7 +194,6 @@ private fun FeatureRequestsScreenContent(
             error = ex.message ?: defaultLoadError
         } finally {
             loading = false
-            hasLoaded = true
         }
     }
 
@@ -228,12 +230,9 @@ private fun FeatureRequestsScreenContent(
         snapshotFlow { search }
             .distinctUntilChanged()
             .collectLatest { query ->
-                if (query.isNotEmpty()) delay(350)
-                // Automatic searches honor the shared per-IP budget: space them out and, after
-                // a 429, wait out the cool-down instead of retrying into the exhausted window.
-                val waitMs = searchThrottler.delayBeforeNext()
-                if (waitMs > 0) delay(waitMs)
-                searchThrottler.recordFired()
+                // Debounce, minimum interval and 429 cool-down live in the throttler; a re-run
+                // of the unchanged query (initial load, version-filter change) bypasses them.
+                searchThrottler.awaitSearchTurn(query)
                 load()
             }
     }
