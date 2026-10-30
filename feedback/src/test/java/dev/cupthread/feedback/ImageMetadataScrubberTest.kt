@@ -280,6 +280,52 @@ class ImageMetadataScrubberTest {
         assertNull(ImageMetadataScrubber.scrub(truncated))
     }
 
+    @Test
+    fun jpegExtendedXmpApp1IsDropped() {
+        // The extended-XMP namespace URI is 34 chars — longer than the previous 32-byte magic
+        // read window — so those segments must still be recognized via the longest prefix.
+        val guid = "B2A3B4C5D6E7F8091122334455667788" // 32-char GUID as the spec prescribes
+        val extendedXmp = "http://ns.adobe.com/xmp/extension/$guid"
+            .toByteArray(Charsets.US_ASCII) + "xmp-chunk-bytes".toByteArray(Charsets.US_ASCII)
+        val original = jpeg(jpegSegment(0xE0, jfifPayload()), jpegSegment(0xE1, extendedXmp))
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        assertTrue(indexOf(scrubbed, jfifPayload()) >= 0)
+        assertFalse(indexOf(scrubbed, extendedXmp) >= 0)
+        assertFalse(indexOf(scrubbed, "xmp-chunk-bytes".toByteArray(Charsets.US_ASCII)) >= 0)
+    }
+
+    @Test
+    fun jpegTrailingContentAfterEoiIsDropped() {
+        // Motion-photo style files append an embedded MP4 — which can carry its own GPS
+        // track — after the EOI. Only the parsed still image may leave the device.
+        val base = jpegWithExif(bigEndian = false, includeGps = true)
+        val motionData = "ftypmp42-motion-photo-video-with-gps".toByteArray(Charsets.US_ASCII)
+        val original = base + motionData
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        assertFalse(indexOf(scrubbed, motionData) >= 0)
+        assertFalse(indexOf(scrubbed, TestImageFixtures.fixtureGpsLatitudeBytes(bigEndian = false)) >= 0)
+        assertTrue(
+            scrubbed[scrubbed.size - 2] == 0xFF.toByte() && scrubbed[scrubbed.size - 1] == 0xD9.toByte()
+        )
+        // The output equals the scrub of the trailer-free file: identical size, GPS zeroed.
+        assertEquals(base.size, scrubbed.size)
+        assertTrue(scrubbed.contentEquals(ImageMetadataScrubber.scrub(base)!!))
+    }
+
+    @Test
+    fun jpegWithoutMetadataStillDropsTrailingBytes() {
+        val clean = jpeg(jpegSegment(0xE0, jfifPayload()))
+        val original = clean + byteArrayOf(1, 2, 3)
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        assertTrue(scrubbed.contentEquals(clean))
+    }
+
     // endregion
 
     // region PNG
@@ -327,6 +373,21 @@ class ImageMetadataScrubberTest {
             "tEXt".toByteArray(Charsets.US_ASCII) +
             byteArrayOf(1, 2, 3)
         assertNull(ImageMetadataScrubber.scrub(broken))
+    }
+
+    @Test
+    fun pngTrailingContentAfterIendIsDropped() {
+        val trailing = byteArrayOf(1, 2, 3, 4)
+        val original = png(
+            pngChunk("IHDR", ByteArray(13)),
+            pngChunk("IDAT", byteArrayOf(9, 8, 7)),
+            pngChunk("IEND", ByteArray(0))
+        ) + trailing
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        assertFalse(indexOf(scrubbed, trailing) >= 0)
+        assertTrue(indexOf(scrubbed, byteArrayOf(9, 8, 7)) >= 0)
     }
 
     // endregion
@@ -463,6 +524,20 @@ class ImageMetadataScrubberTest {
             byteArrayOf(0x21, 0xFE.toByte(), 0x10, 1, 2, 3) // claims 16 data bytes, file ends
         )
         assertNull(ImageMetadataScrubber.scrub(broken))
+    }
+
+    @Test
+    fun gifTrailingContentAfterTrailerIsDropped() {
+        val trailing = "extra-blocks-after-the-end-marker".toByteArray(Charsets.US_ASCII)
+        val original = TestImageFixtures.gif(
+            TestImageFixtures.gifGraphicControlExtension(),
+            TestImageFixtures.gifImageBlock(byteArrayOf(1, 2, 3))
+        ) + trailing
+
+        val scrubbed = ImageMetadataScrubber.scrub(original)!!
+
+        assertFalse(indexOf(scrubbed, trailing) >= 0)
+        assertTrue(scrubbed.last() == TestImageFixtures.GIF_TRAILER_INT.toByte())
     }
 
     // endregion

@@ -20,6 +20,10 @@ import java.util.Arrays
  * - **GIF**: drops Comment Extensions and `XMP Data` Application Extensions.
  * - Any other content is returned unchanged, so non-image attachments are never touched.
  *
+ * Content appended after the image's end marker (JPEG EOI, PNG IEND, GIF trailer) — motion-photo
+ * video and MPF secondary images, which can carry their own GPS tracks — is dropped: only bytes
+ * the scrubber parsed and vouched for leave the device.
+ *
  * Pixel data is never re-encoded: scrubbing is lossless and cheap. When a metadata structure
  * is malformed beyond confident parsing the whole structure is dropped instead of passed
  * through (fail closed); when the surrounding file structure itself is corrupt, `null` is
@@ -98,7 +102,10 @@ internal object ImageMetadataScrubber {
                 0xD8 -> i = markerPos + 1
                 0xD9 -> {
                     kept.add(data.copyOfRange(i, markerPos + 1))
-                    return concat(kept, changed, data)
+                    // Anything after EOI is auxiliary appended content (motion-photo video,
+                    // MPF secondary images) that can carry its own GPS track, so it is
+                    // dropped rather than uploaded.
+                    return concat(kept, changed || markerPos + 1 != data.size, data)
                 }
                 0x01, in 0xD0..0xD7 -> {
                     // Standalone markers (TEM, RST0-7) carry no length field.
@@ -194,7 +201,7 @@ internal object ImageMetadataScrubber {
                 )
             }
         }
-        val magicLength = minOf(32, payloadEnd - payloadStart)
+        val magicLength = minOf(JPEG_XMP_PREFIXES.maxOf { it.length }, payloadEnd - payloadStart)
         if (magicLength > 0) {
             val magic = String(data, payloadStart, magicLength, Charsets.ISO_8859_1)
             if (JPEG_XMP_PREFIXES.any { magic.startsWith(it) }) return App1Outcome.DROPPED
@@ -313,7 +320,11 @@ internal object ImageMetadataScrubber {
                 kept.add(data.copyOfRange(i, chunkEnd))
             }
             i = chunkEnd
-            if (type == "IEND") break
+            if (type == "IEND") {
+                // Bytes after IEND are auxiliary appended content and are dropped (same
+                // policy as the JPEG EOI trailer).
+                return concat(kept, changed || chunkEnd != data.size, data)
+            }
         }
         return concat(kept, changed, data)
     }
@@ -416,8 +427,10 @@ internal object ImageMetadataScrubber {
         var changed = false
         while (i < data.size) {
             when (data[i].toInt() and 0xFF) {
-                0x3B -> { // trailer: copy through end of file
-                    out.write(data, i, data.size - i)
+                0x3B -> { // trailer: the file is complete here
+                    out.write(data, i, 1)
+                    // Bytes after the trailer are auxiliary appended content; drop them.
+                    if (i + 1 != data.size) changed = true
                     i = data.size
                 }
                 0x2C -> { // image descriptor: header, optional local color table, LZW sub-blocks

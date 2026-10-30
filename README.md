@@ -251,7 +251,9 @@ and it applies no matter which storage backend an image is routed to (including 
 whole structure is dropped rather than uploaded (fail closed). If the file structure of a
 recognized image is itself corrupt, the upload is rejected locally with
 `FeedbackException.UnsupportedMediaType` — bytes that cannot be parsed cannot be promised
-metadata-free.
+metadata-free. Content appended after the image's end marker (JPEG EOI, PNG IEND, GIF trailer) —
+e.g. motion-photo video, which can carry its own GPS track — is dropped as well: only bytes the
+scrubber parsed and vouched for are uploaded.
 
 Known limitations to be aware of:
 
