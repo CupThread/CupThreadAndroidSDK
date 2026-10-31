@@ -88,13 +88,22 @@ enum class FeedbackPlatform(val wireValue: String) {
  *   (tokens are single-use) or `null` when none can be minted. When the server rejects the first
  *   attempt, the SDK consults the provider once more and retries before throwing
  *   [FeedbackException.VerificationRequired].
+ * @property sdkSigningSecret Optional per-app SDK signing secret generated in the CupThread
+ *   developer console (*App Access → App Credentials → SDK signing secret*). Required before
+ *   calling [FeedbackClient.updateUserAttributes] with any payment attribute (`isPaying`, `plan`,
+ *   `mrr`) or `currency`: the server rejects those unsigned with HTTP 422
+ *   `payment_attributes_require_signature`. When set, the SDK HMAC-SHA256 signs such calls with
+ *   the `cpt-user-attrs-v1` canonical string and attaches `signature` + `timestamp` to the body.
+ *   Treat the secret like a credential — keep it out of source control and obfuscate it in the
+ *   release build; it can only sign, never read, end-user data.
  */
 data class FeedbackClientConfig(
     val baseUrl: String,
     val appKey: String,
     val defaultPlatform: FeedbackPlatform = FeedbackPlatform.current,
     val requestIdProvider: (() -> String?)? = null,
-    val turnstileTokenProvider: TurnstileTokenProvider? = null
+    val turnstileTokenProvider: TurnstileTokenProvider? = null,
+    val sdkSigningSecret: String? = null
 ) {
     /**
      * Backward-compatible constructor for callers created before [requestIdProvider] existed.
@@ -103,7 +112,7 @@ data class FeedbackClientConfig(
         baseUrl: String,
         appKey: String,
         defaultPlatform: FeedbackPlatform
-    ) : this(baseUrl, appKey, defaultPlatform, null, null)
+    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider = null, turnstileTokenProvider = null, sdkSigningSecret = null)
 
     /**
      * Backward-compatible constructor for callers created before [turnstileTokenProvider] existed.
@@ -113,7 +122,7 @@ data class FeedbackClientConfig(
         appKey: String,
         defaultPlatform: FeedbackPlatform,
         requestIdProvider: (() -> String?)?
-    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider, null)
+    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider = requestIdProvider, turnstileTokenProvider = null, sdkSigningSecret = null)
 }
 
 /**
