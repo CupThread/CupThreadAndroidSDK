@@ -1276,6 +1276,8 @@ class FeedbackClient internal constructor(
      *
      * @param token Per-subscriber signed unsubscribe token from the changelog/confirmation email link.
      * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
+     * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
+     *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors (including HTTP 400 for a missing
      *   or invalid token).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
@@ -1287,6 +1289,15 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromChangelog(token: String): ChangelogUnsubscribeResult {
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${config.appKey}/changelog/unsubscribe")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
+        }
         val payload = JSONObject().put("token", token.trim())
         return parseChangelogUnsubscribe(
             sendJson(

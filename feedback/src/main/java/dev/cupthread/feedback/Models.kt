@@ -1171,6 +1171,11 @@ typealias ListPublicChangelogResponse = ListChangelogResult
  */
 data class ChangelogSubscriptionResult(
     val subscribed: Boolean,
+    @Deprecated(
+        message = "The server's double-opt-in subscribe response no longer reports whether the " +
+            "address was already subscribed; this field is always false.",
+        replaceWith = ReplaceWith("false")
+    )
     val alreadySubscribed: Boolean = false
 )
 

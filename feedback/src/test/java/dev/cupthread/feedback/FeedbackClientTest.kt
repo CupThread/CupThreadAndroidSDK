@@ -1878,6 +1878,21 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun unsubscribeFromChangelogRejectsHttpDestinationWhenTransmittingToken() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"unsubscribed":true}""") }
+        )
+
+        try {
+            insecureClient.unsubscribeFromChangelog("sub_token")
+            fail("Expected IllegalArgumentException when transmitting the unsubscribe token over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting the unsubscribe token"))
+        }
+    }
+
+    @Test
     fun toggleVoteHitsVoteEndpoint() = runTest {
         var url: String? = null
         val result = client { request ->
@@ -2115,7 +2130,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
@@ -2128,7 +2143,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
@@ -2141,7 +2156,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
