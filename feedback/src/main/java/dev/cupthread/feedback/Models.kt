@@ -123,6 +123,18 @@ data class FeedbackClientConfig(
         defaultPlatform: FeedbackPlatform,
         requestIdProvider: (() -> String?)?
     ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider = requestIdProvider, turnstileTokenProvider = null, sdkSigningSecret = null)
+
+    /**
+     * Preserves the five-parameter JVM constructor descriptor consumed by callers compiled
+     * before [sdkSigningSecret] existed.
+     */
+    constructor(
+        baseUrl: String,
+        appKey: String,
+        defaultPlatform: FeedbackPlatform,
+        requestIdProvider: (() -> String?)?,
+        turnstileTokenProvider: TurnstileTokenProvider?
+    ) : this(baseUrl, appKey, defaultPlatform, requestIdProvider = requestIdProvider, turnstileTokenProvider = turnstileTokenProvider, sdkSigningSecret = null)
 }
 
 /**

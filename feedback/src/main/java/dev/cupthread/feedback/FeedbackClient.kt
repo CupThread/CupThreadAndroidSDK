@@ -1307,12 +1307,13 @@ class FeedbackClient internal constructor(
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
-     * @throws IllegalArgumentException if a payment attribute or currency is supplied but no
-     *   [FeedbackClientConfig.sdkSigningSecret] is configured.
-     * @throws FeedbackException.UnexpectedStatus on HTTP rejection (HTTP 401 `invalid_signature` /
-     *   `stale_signature` when the configured secret does not match the app's, HTTP 422 when the
-     *   app has no SDK signing secret yet).
-     * @throws FeedbackException.InvalidResponse on network failure.
+ * @throws IllegalArgumentException if a payment attribute or currency is supplied but no
+ *   [FeedbackClientConfig.sdkSigningSecret] is configured.
+ * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
+ *   `stale_signature` when the configured secret does not match the app's).
+ * @throws FeedbackException.UnexpectedStatus on other HTTP rejection (HTTP 422
+ *   `payment_attributes_require_signature` when the app has no SDK signing secret yet).
+ * @throws FeedbackException.InvalidResponse on network failure.
      *
      * Example:
      * ```kotlin
