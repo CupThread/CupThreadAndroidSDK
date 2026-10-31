@@ -71,14 +71,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Novidades por e-mail</string>
     <string name="cupthread_whatsnew_email_label">seu@exemplo.com</string>
     <string name="cupthread_whatsnew_email_hint">Enviaremos e-mails apenas quando novas atualizações forem publicadas.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Você já está inscrito</string>
-    <string name="cupthread_whatsnew_subscribed">Inscrito</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Os e-mails de atualização serão enviados para %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Inscrição cancelada</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Você não receberá mais e-mails em %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Verifique sua caixa de entrada</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Enviamos um link de confirmação para %1$s. As atualizações começam após a confirmação.</string>
     <string name="cupthread_whatsnew_subscribing">Inscrevendo…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Cancelando inscrição…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Cancelar inscrição</string>
     <string name="cupthread_whatsnew_done">Concluído</string>
 
     <!-- Comments & Replies -->

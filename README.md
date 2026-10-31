@@ -141,9 +141,9 @@ lifecycleScope.launch {
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
-| `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` |
-| `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` |
-| `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
+| `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` (double opt-in: the address is pending until the emailed confirmation link is clicked) |
+| `unsubscribeFromChangelog(token)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` (requires the per-subscriber token from the unsubscribe link in the email) |
+| `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
 
 ### Signed User Attributes (isPaying / plan / mrr / currency)

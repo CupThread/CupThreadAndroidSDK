@@ -1198,7 +1198,8 @@ class FeedbackClient internal constructor(
      *
      * @param email Valid email address to subscribe.
      * @param userToken Stable anonymous token from [UserTokenStore].
-     * @return [ChangelogSubscriptionResult] indicating subscription success and whether the address was already registered.
+     * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
+     *   (pending confirmation).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      */
@@ -1211,13 +1212,20 @@ class FeedbackClient internal constructor(
      * Subscribes an email address to product update emails via
      * `POST /api/v1/public/apps/{appKey}/changelog/subscribe`.
      *
+     * The flow is double opt-in: a successful call places the address in the **pending** state
+     * and dispatches a confirmation email with a single-use link. Pending subscriptions never
+     * receive changelog emails and are not counted until the emailed link is confirmed. The
+     * server response is uniform — it no longer reports whether the address was already
+     * subscribed ([ChangelogSubscriptionResult.alreadySubscribed] is always `false`).
+     *
      * When human verification is enabled on the server, anonymous subscription requests require
      * a valid [turnstileToken].
      *
      * @param email Valid email address to subscribe.
      * @param userToken Stable anonymous token from [UserTokenStore].
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
-     * @return [ChangelogSubscriptionResult] indicating subscription success and whether the address was already registered.
+     * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
+     *   (pending confirmation).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as HTTP 403 when human verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
@@ -1228,10 +1236,8 @@ class FeedbackClient internal constructor(
      *     userToken = userToken,
      *     turnstileToken = "0.test_turnstile_token..."
      * )
-     * if (result.alreadySubscribed) {
-     *     println("Already subscribed!")
-     * } else {
-     *     println("Successfully subscribed to update emails.")
+     * if (result.subscribed) {
+     *     println("Check your inbox to confirm the subscription.")
      * }
      * ```
      */
@@ -1258,22 +1264,41 @@ class FeedbackClient internal constructor(
     }
 
     /**
-     * Unsubscribes an email address from product update emails via
-     * `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe`.
+     * Unsubscribes from product update emails via
+     * `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` using the per-subscriber token
+     * carried by the unsubscribe link in every changelog/confirmation email.
      *
-     * @param email Email address to remove from the subscriber list.
+     * The unauthenticated bare-email unsubscribe (`{"email": "..."}`) was removed from the API:
+     * only the signed `token` issued to a subscriber is accepted, so unsubscribe is a
+     * user-driven action performed from the emailed link (or that token pasted into an app),
+     * never from an in-app email entry alone. Responses are uniform whether or not the
+     * subscription existed; a missing or invalid token is rejected with HTTP 400.
+     *
+     * @param token Per-subscriber signed unsubscribe token from the changelog/confirmation email link.
      * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
+     *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors (including HTTP 400 for a missing
+     *   or invalid token).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
      * ```kotlin
-     * val result = client.unsubscribeFromChangelog("user@example.com")
+     * val result = client.unsubscribeFromChangelog(token = "sub_token_from_email_link")
      * println("Unsubscribed: ${result.unsubscribed}")
      * ```
      */
-    suspend fun unsubscribeFromChangelog(email: String): ChangelogUnsubscribeResult {
-        val payload = JSONObject().put("email", email.trim())
+    suspend fun unsubscribeFromChangelog(token: String): ChangelogUnsubscribeResult {
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${config.appKey}/changelog/unsubscribe")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
+        }
+        val payload = JSONObject().put("token", token.trim())
         return parseChangelogUnsubscribe(
             sendJson(
                 "POST",
@@ -1311,6 +1336,8 @@ class FeedbackClient internal constructor(
  *   [FeedbackClientConfig.sdkSigningSecret] is configured.
  * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
  *   `stale_signature` when the configured secret does not match the app's).
+ * @throws FeedbackException.RateLimited when the per-client-IP upsert rate limit is exceeded
+ *   (HTTP 429); retry with backoff, especially when syncing many users behind one shared IP.
  * @throws FeedbackException.UnexpectedStatus on other HTTP rejection (HTTP 422
  *   `payment_attributes_require_signature` when the app has no SDK signing secret yet).
  * @throws FeedbackException.InvalidResponse on network failure.
@@ -1370,7 +1397,8 @@ class FeedbackClient internal constructor(
                 "/api/v1/public/apps/${config.appKey}/user",
                 payload,
                 userToken = userToken,
-                accepted = setOf(200)
+                accepted = setOf(200),
+                mapRateLimitErrors = true
             )
         )
     }

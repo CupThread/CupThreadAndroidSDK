@@ -72,14 +72,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Updates by Email</string>
     <string name="cupthread_whatsnew_email_label">you@example.com</string>
     <string name="cupthread_whatsnew_email_hint">We\'ll only email you when this app publishes new updates.</string>
-    <string name="cupthread_whatsnew_already_subscribed">You\'re Already Subscribed</string>
-    <string name="cupthread_whatsnew_subscribed">You\'re Subscribed</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Update emails will go to %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Unsubscribed</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">You\'ll no longer receive update emails at %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Check Your Inbox</string>
+    <string name="cupthread_whatsnew_subscribed_sub">We sent a confirmation link to %1$s. Updates start once you confirm.</string>
     <string name="cupthread_whatsnew_subscribing">Subscribing…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Unsubscribing…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Unsubscribe</string>
     <string name="cupthread_whatsnew_done">Done</string>
 
     <!-- Comments & Replies -->

@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Nouveautés par e-mail</string>
     <string name="cupthread_whatsnew_email_label">nom@exemple.fr</string>
     <string name="cupthread_whatsnew_email_hint">Nous vous enverrons uniquement des e-mails lors de nouvelles mises à jour.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Vous êtes déjà abonné</string>
-    <string name="cupthread_whatsnew_subscribed">Vous êtes abonné</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Les e-mails de mise à jour seront envoyés à %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Désabonné</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Vous ne recevrez plus d\'e-mails de mise à jour à %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Vérifiez votre boîte de réception</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Nous avons envoyé un lien de confirmation à %1$s. Les mises à jour commenceront une fois votre confirmation effectuée.</string>
     <string name="cupthread_whatsnew_subscribing">Abonnement en cours…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Désabonnement en cours…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Se désabonner</string>
     <string name="cupthread_whatsnew_done">Terminé</string>
 
     <!-- Comments & Replies -->

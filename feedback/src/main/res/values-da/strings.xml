@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Opdateringer via e-mail</string>
     <string name="cupthread_whatsnew_email_label">navn@eksempel.dk</string>
     <string name="cupthread_whatsnew_email_hint">Vi sender dig kun e-mails, når denne app udgiver nye opdateringer.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Du abonnerer allerede</string>
-    <string name="cupthread_whatsnew_subscribed">Abonneret</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Opdaterings-e-mails sendes til %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Afmeldt</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Du modtager ikke længere opdaterings-e-mails på %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Tjek din indbakke</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Vi har sendt et bekræftelseslink til %1$s. Opdateringer starter, når du bekræfter.</string>
     <string name="cupthread_whatsnew_subscribing">Abonnerer…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Afmelder…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Afmeld abonnement</string>
     <string name="cupthread_whatsnew_done">Færdig</string>
 
     <!-- Comments & Replies -->

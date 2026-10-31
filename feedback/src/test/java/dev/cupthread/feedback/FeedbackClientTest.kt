@@ -1772,7 +1772,8 @@ class FeedbackClientTest {
             requestedUrl = req.url
             capturedHeaders = req.headers
             capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
-            HttpResponse(200, """{"subscribed":true,"alreadySubscribed":false}""")
+            // #26: the response is uniform (HTTP 201, no alreadySubscribed field).
+            HttpResponse(201, """{"subscribed":true}""")
         }.subscribeToChangelog("alice@example.com", userToken = userToken)
 
         assertEquals("https://api.example.com/api/v1/public/apps/$appKey/changelog/subscribe", requestedUrl)
@@ -1782,6 +1783,7 @@ class FeedbackClientTest {
         assertEquals("alice@example.com", payload.getString("email"))
         assertFalse(payload.has("turnstileToken"))
         assertTrue(result.subscribed)
+        // The server no longer reports prior subscriptions; the field stays for source compatibility.
         assertFalse(result.alreadySubscribed)
     }
 
@@ -1852,13 +1854,42 @@ class FeedbackClientTest {
             requestedUrl = req.url
             capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
             HttpResponse(200, """{"unsubscribed":true}""")
-        }.unsubscribeFromChangelog("user@example.com")
+        }.unsubscribeFromChangelog("  sub_token_from_email_link  ")
 
         assertEquals("https://api.example.com/api/v1/public/apps/$appKey/changelog/unsubscribe", requestedUrl)
         assertNotNull(capturedBody)
+        // #26: unsubscribing requires the signed per-subscriber token; the bare-email body was removed.
         val payload = org.json.JSONObject(capturedBody!!)
-        assertEquals("user@example.com", payload.getString("email"))
+        assertEquals("sub_token_from_email_link", payload.getString("token"))
+        assertFalse(payload.has("email"))
         assertTrue(result.unsubscribed)
+    }
+
+    @Test
+    fun unsubscribeFromChangelogSurfacesInvalidTokenAsUnexpectedStatus() = runTest {
+        try {
+            client {
+                HttpResponse(400, """{"error":"A valid unsubscribe token is required","code":"invalid_token"}""")
+            }.unsubscribeFromChangelog("bogus-token")
+            fail("Expected FeedbackException.UnexpectedStatus on 400 invalid token")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(400, ex.code)
+        }
+    }
+
+    @Test
+    fun unsubscribeFromChangelogRejectsHttpDestinationWhenTransmittingToken() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"unsubscribed":true}""") }
+        )
+
+        try {
+            insecureClient.unsubscribeFromChangelog("sub_token")
+            fail("Expected IllegalArgumentException when transmitting the unsubscribe token over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting the unsubscribe token"))
+        }
     }
 
     @Test
@@ -2099,7 +2130,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
@@ -2112,7 +2143,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
@@ -2125,7 +2156,7 @@ class FeedbackClientTest {
             fail("Expected FeedbackException.RateLimited on 429")
         } catch (ex: FeedbackException.RateLimited) {
             assertNull(ex.serverMessage)
-            assertEquals("You're voting too fast. Please try again shortly.", ex.message)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
         }
     }
 
@@ -2291,6 +2322,31 @@ class FeedbackClientTest {
             assertTrue(expected.message!!.contains("sdkSigningSecret"))
         }
         assertEquals(0, requests) // rejected locally; no network call was made
+    }
+
+    @Test
+    fun updateUserAttributesSurfacesHttp429AsRateLimited() = runTest {
+        // #26: PUT /user is rate limited per client IP; bursts surface as the typed error.
+        try {
+            signingClient { request ->
+                HttpResponse(429, """{"error":"Too many requests. Please retry later."}""")
+            }.updateUserAttributes(userToken = "tok-1", isPaying = true)
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please retry later.", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun updateUserAttributesSurfacesHttp429AsRateLimitedForIdentityOnlyUpdate() = runTest {
+        try {
+            client { request ->
+                HttpResponse(429, """{"error":"Too many requests"}""")
+            }.updateUserAttributes(userToken = "tok-1")
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests", ex.serverMessage)
+        }
     }
 
     @Test

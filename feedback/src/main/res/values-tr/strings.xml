@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">E-posta ile Güncellemeler</string>
     <string name="cupthread_whatsnew_email_label">ad@ornek.com</string>
     <string name="cupthread_whatsnew_email_hint">Yalnızca bu uygulama yeni güncellemeler yayınladığında e-posta göndereceğiz.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Zaten Abonesiniz</string>
-    <string name="cupthread_whatsnew_subscribed">Abone Oldunuz</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Güncelleme e-postaları %1$s adresine gönderilecektir.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Abonelikten Çıkıldı</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Artık %1$s adresine güncelleme e-postaları almayacaksınız.</string>
+    <string name="cupthread_whatsnew_subscribed">Gelen kutunuzu kontrol edin</string>
+    <string name="cupthread_whatsnew_subscribed_sub">%1$s adresine bir onay bağlantısı gönderdik. Onayladıktan sonra güncellemeler başlar.</string>
     <string name="cupthread_whatsnew_subscribing">Abone olunuyor…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Abonelikten çıkılıyor…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Abonelikten Çık</string>
     <string name="cupthread_whatsnew_done">Tamam</string>
 
     <!-- Comments & Replies -->
