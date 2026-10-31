@@ -1159,18 +1159,29 @@ typealias ListPublicChangelogResponse = ListChangelogResult
 /**
  * Result of subscribing an email to product updates via [FeedbackClient.subscribeToChangelog].
  *
- * @property subscribed Whether the email is active in the subscriber list.
- * @property alreadySubscribed Whether the email was already registered previously.
+ * The subscription flow is double opt-in: a `subscribed: true` response means the address was
+ * accepted and a confirmation email with a single-use link was dispatched. The subscription
+ * starts **pending** — it never receives changelog emails and is not counted until the emailed
+ * link is confirmed. The server no longer reports whether the address was already subscribed
+ * (the response is uniform), so [alreadySubscribed] is always `false` and kept only for
+ * source compatibility.
+ *
+ * @property subscribed Whether the subscription request was accepted (pending confirmation).
+ * @property alreadySubscribed Deprecated: the server no longer reports prior subscriptions; always `false`.
  */
 data class ChangelogSubscriptionResult(
     val subscribed: Boolean,
-    val alreadySubscribed: Boolean
+    val alreadySubscribed: Boolean = false
 )
 
 /**
- * Result of removing an email from product update emails via [FeedbackClient.unsubscribeFromChangelog].
+ * Result of unsubscribing from product update emails via [FeedbackClient.unsubscribeFromChangelog].
  *
- * @property unsubscribed Whether the email was successfully removed from the newsletter list.
+ * Unsubscribing requires the per-subscriber signed token carried by the unsubscribe link in
+ * every changelog/confirmation email; the bare-email unsubscribe was removed from the API.
+ *
+ * @property unsubscribed Whether the unsubscribe request was processed (uniform `true`, whether
+ *   or not a subscription existed).
  */
 data class ChangelogUnsubscribeResult(
     val unsubscribed: Boolean

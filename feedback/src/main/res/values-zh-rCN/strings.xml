@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">邮件订阅更新</string>
     <string name="cupthread_whatsnew_email_label">you@example.com</string>
     <string name="cupthread_whatsnew_email_hint">我们仅会在发布新版本更新时向您发送邮件。</string>
-    <string name="cupthread_whatsnew_already_subscribed">您已订阅过更新</string>
-    <string name="cupthread_whatsnew_subscribed">已成功订阅</string>
-    <string name="cupthread_whatsnew_subscribed_sub">更新邮件将发送至 %1$s。</string>
-    <string name="cupthread_whatsnew_unsubscribed">已退订</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">您将不再接收发送至 %1$s 的更新邮件。</string>
+    <string name="cupthread_whatsnew_subscribed">请查收电子邮箱</string>
+    <string name="cupthread_whatsnew_subscribed_sub">确认链接已发送至 %1$s。确认后即会开始接收更新。</string>
     <string name="cupthread_whatsnew_subscribing">订阅中…</string>
-    <string name="cupthread_whatsnew_unsubscribing">退订中…</string>
-    <string name="cupthread_whatsnew_unsubscribe">退订</string>
     <string name="cupthread_whatsnew_done">完成</string>
 
     <!-- Comments & Replies -->

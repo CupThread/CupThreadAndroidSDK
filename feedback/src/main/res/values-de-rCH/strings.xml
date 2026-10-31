@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Updates per E-Mail</string>
     <string name="cupthread_whatsnew_email_label">name@beispiel.ch</string>
     <string name="cupthread_whatsnew_email_hint">Wir senden Ihnen nur E-Mails, wenn diese App neue Updates veröffentlicht.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Sie haben sich bereits angemeldet</string>
-    <string name="cupthread_whatsnew_subscribed">Angemeldet</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Update-E-Mails werden an %1$s gesendet.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Abgemeldet</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Sie erhalten keine Update-E-Mails mehr an %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Prüfen Sie Ihren Posteingang</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Wir haben einen Bestätigungslink an %1$s gesendet. Updates beginnen, sobald Sie bestätigen.</string>
     <string name="cupthread_whatsnew_subscribing">Anmeldung läuft…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Abmeldung läuft…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Abmelden</string>
     <string name="cupthread_whatsnew_done">Fertig</string>
 
     <!-- Comments & Replies -->

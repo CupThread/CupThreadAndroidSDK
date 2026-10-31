@@ -287,7 +287,6 @@ private fun SubscribeSheet(
 ) {
     var email by remember { mutableStateOf("") }
     var phase by remember { mutableStateOf("form") }
-    var already by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -315,13 +314,11 @@ private fun SubscribeSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Subscription is double opt-in: the address is pending until the emailed
+                // single-use link is confirmed, so no changelog emails flow before that.
                 "subscribed" -> {
-                    Text(if (already) stringResource(R.string.cupthread_whatsnew_already_subscribed) else stringResource(R.string.cupthread_whatsnew_subscribed))
+                    Text(stringResource(R.string.cupthread_whatsnew_subscribed))
                     Text(stringResource(R.string.cupthread_whatsnew_subscribed_sub, email.trim()), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                else -> {
-                    Text(stringResource(R.string.cupthread_whatsnew_unsubscribed))
-                    Text(stringResource(R.string.cupthread_whatsnew_unsubscribed_sub, email.trim()), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (error != null) {
@@ -336,13 +333,8 @@ private fun SubscribeSheet(
                         try {
                             when (phase) {
                                 "form" -> {
-                                    val result = client.subscribeToChangelog(email, userToken)
-                                    already = result.alreadySubscribed
+                                    client.subscribeToChangelog(email, userToken)
                                     phase = "subscribed"
-                                }
-                                "subscribed" -> {
-                                    client.unsubscribeFromChangelog(email)
-                                    phase = "unsubscribed"
                                 }
                                 else -> onDismiss()
                             }
@@ -359,9 +351,7 @@ private fun SubscribeSheet(
                 Text(
                     when {
                         working && phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribing)
-                        working && phase == "subscribed" -> stringResource(R.string.cupthread_whatsnew_unsubscribing)
                         phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribe)
-                        phase == "subscribed" -> stringResource(R.string.cupthread_whatsnew_unsubscribe)
                         else -> stringResource(R.string.cupthread_whatsnew_done)
                     }
                 )

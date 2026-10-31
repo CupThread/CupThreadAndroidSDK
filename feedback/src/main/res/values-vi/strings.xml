@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Cập nhật qua email</string>
     <string name="cupthread_whatsnew_email_label">you@example.com</string>
     <string name="cupthread_whatsnew_email_hint">Chúng tôi chỉ gửi email khi ứng dụng này phát hành bản cập nhật mới.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Bạn đã đăng ký</string>
-    <string name="cupthread_whatsnew_subscribed">Đã đăng ký</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Email cập nhật sẽ được gửi đến %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Đã hủy đăng ký</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Bạn sẽ không còn nhận email cập nhật tại %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Kiểm tra hộp thư của bạn</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Chúng tôi đã gửi liên kết xác nhận đến %1$s. Cập nhật sẽ bắt đầu sau khi bạn xác nhận.</string>
     <string name="cupthread_whatsnew_subscribing">Đang đăng ký…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Đang hủy đăng ký…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Hủy đăng ký</string>
     <string name="cupthread_whatsnew_done">Xong</string>
 
     <!-- Comments & Replies -->

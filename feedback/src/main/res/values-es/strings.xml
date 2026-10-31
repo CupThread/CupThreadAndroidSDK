@@ -70,14 +70,9 @@
     <string name="cupthread_whatsnew_updates_by_email">Novedades por correo</string>
     <string name="cupthread_whatsnew_email_label">nombre@ejemplo.es</string>
     <string name="cupthread_whatsnew_email_hint">Solo te enviaremos correos cuando esta app publique nuevas actualizaciones.</string>
-    <string name="cupthread_whatsnew_already_subscribed">Ya estás suscrito</string>
-    <string name="cupthread_whatsnew_subscribed">Estás suscrito</string>
-    <string name="cupthread_whatsnew_subscribed_sub">Los correos de actualización se enviarán a %1$s.</string>
-    <string name="cupthread_whatsnew_unsubscribed">Dado de baja</string>
-    <string name="cupthread_whatsnew_unsubscribed_sub">Ya no recibirás correos de actualización en %1$s.</string>
+    <string name="cupthread_whatsnew_subscribed">Revisa tu bandeja de entrada</string>
+    <string name="cupthread_whatsnew_subscribed_sub">Enviamos un enlace de confirmación a %1$s. Las actualizaciones comienzan cuando confirmas.</string>
     <string name="cupthread_whatsnew_subscribing">Suscribiendo…</string>
-    <string name="cupthread_whatsnew_unsubscribing">Cancelando suscripción…</string>
-    <string name="cupthread_whatsnew_unsubscribe">Darse de baja</string>
     <string name="cupthread_whatsnew_done">Hecho</string>
 
     <!-- Comments & Replies -->
