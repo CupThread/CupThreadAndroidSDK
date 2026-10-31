@@ -4,8 +4,10 @@ import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.ImageMetadataScrubber
+import dev.cupthread.feedback.internal.hmacSha256Hex
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.shouldFollowRedirects
+import dev.cupthread.feedback.internal.userAttributesCanonicalString
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
@@ -20,10 +22,21 @@ import org.junit.Test
 
 class FeedbackClientTest {
     private val appKey = "app_testkey123456"
+    private val signingSecret = "cpt_signing_secret_test"
 
     private fun client(handler: (HttpRequest) -> HttpResponse): FeedbackClient =
         FeedbackClient(
             config = FeedbackClientConfig(baseUrl = "https://api.example.com", appKey = appKey),
+            transport = HttpTransport { handler(it) }
+        )
+
+    private fun signingClient(handler: (HttpRequest) -> HttpResponse): FeedbackClient =
+        FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = appKey,
+                sdkSigningSecret = signingSecret
+            ),
             transport = HttpTransport { handler(it) }
         )
 
@@ -2177,7 +2190,7 @@ class FeedbackClientTest {
         var header: String? = null
         var body: String? = null
         val token = UUID.randomUUID().toString()
-        client { request ->
+        signingClient { request ->
             header = request.headers["X-User-Token"]
             body = request.body?.toString(Charsets.UTF_8)
             HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
@@ -2186,6 +2199,98 @@ class FeedbackClientTest {
         val payload = requireNotNull(body)
         assertTrue(payload.contains("\"isPaying\":true"))
         assertTrue(payload.contains("\"plan\":\"pro\""))
+    }
+
+    @Test
+    fun updateUserAttributesSignsPaymentAttributesWithTimestamp() = runTest {
+        // #28: isPaying/plan/mrr require an HMAC-signed request (cpt-user-attrs-v1).
+        var body: String? = null
+        val token = "01234567-89ab-cdef-0123-456789abcdef"
+        signingClient { request ->
+            body = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }.updateUserAttributes(userToken = token, isPaying = true, plan = "pro", mrr = 9.99, currency = "USD")
+        val payload = requireNotNull(body)
+        val json = JSONObject(payload)
+        val timestamp = json.getLong("timestamp")
+        val signature = json.getString("signature")
+        // Timestamp is integer epoch seconds in a plausible range (2026..2038).
+        assertTrue(timestamp in 1_760_000_000..2_145_000_000)
+        // The signature covers the exact attribute values that were sent.
+        val expected = hmacSha256Hex(
+            secret = signingSecret,
+            message = userAttributesCanonicalString(
+                appKey = appKey,
+                userToken = token,
+                isPaying = true,
+                plan = "pro",
+                mrr = 9.99,
+                currency = "USD",
+                timestampSeconds = timestamp
+            )
+        )
+        assertEquals(expected, signature)
+        assertEquals(64, signature.length)
+    }
+
+    @Test
+    fun updateUserAttributesSignsCurrencyOnlyUpdate() = runTest {
+        // #44: currency is now a signed payment attribute; it can no longer ride along unsigned.
+        var body: String? = null
+        val token = "tok-currency-only"
+        signingClient { request ->
+            body = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }.updateUserAttributes(userToken = token, currency = "EUR")
+        val json = JSONObject(requireNotNull(body))
+        val timestamp = json.getLong("timestamp")
+        assertEquals(
+            hmacSha256Hex(
+                secret = signingSecret,
+                message = userAttributesCanonicalString(
+                    appKey = appKey,
+                    userToken = token,
+                    isPaying = null,
+                    plan = null,
+                    mrr = null,
+                    currency = "EUR",
+                    timestampSeconds = timestamp
+                )
+            ),
+            json.getString("signature")
+        )
+        assertFalse(json.has("isPaying"))
+        assertFalse(json.has("plan"))
+        assertFalse(json.has("mrr"))
+    }
+
+    @Test
+    fun updateUserAttributesWithoutSignedFieldsStaysUnsigned() = runTest {
+        // Requests without payment attributes keep working unchanged — and without a secret.
+        var body: String? = null
+        client { request ->
+            body = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }.updateUserAttributes(userToken = "tok-1")
+        val payload = requireNotNull(body)
+        assertFalse(payload.contains("signature"))
+        assertFalse(payload.contains("timestamp"))
+        assertEquals("{}", payload)
+    }
+
+    @Test
+    fun updateUserAttributesWithPaymentAttributesWithoutSecretFailsFast() = runTest {
+        var requests = 0
+        try {
+            client { request ->
+                requests++
+                HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+            }.updateUserAttributes(userToken = "tok-1", isPaying = true)
+            fail("Expected IllegalArgumentException when no SDK signing secret is configured")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message!!.contains("sdkSigningSecret"))
+        }
+        assertEquals(0, requests) // rejected locally; no network call was made
     }
 
     @Test

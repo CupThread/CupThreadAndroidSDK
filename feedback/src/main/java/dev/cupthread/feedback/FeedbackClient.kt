@@ -10,6 +10,7 @@ import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.AttachmentLimits
 import dev.cupthread.feedback.internal.ImageMetadataScrubber
 import dev.cupthread.feedback.internal.encodeQuery
+import dev.cupthread.feedback.internal.hmacSha256Hex
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
 import dev.cupthread.feedback.internal.MetadataSanitizer
@@ -36,6 +37,7 @@ import dev.cupthread.feedback.internal.parseUploadSession
 import dev.cupthread.feedback.internal.parseUploadedSessionFile
 import dev.cupthread.feedback.internal.parseVoteResult
 import dev.cupthread.feedback.internal.putOptString
+import dev.cupthread.feedback.internal.userAttributesCanonicalString
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -1288,6 +1290,12 @@ class FeedbackClient internal constructor(
      *
      * Parameters provided as `null` are left untouched on the server, allowing partial updates.
      *
+     * Calls that carry any payment attribute ([isPaying], [plan], [mrr]) or [currency] are
+     * HMAC-SHA256 signed with the app's SDK signing secret ([FeedbackClientConfig.sdkSigningSecret]):
+     * the request body gains `signature` + `timestamp` computed over the `cpt-user-attrs-v1`
+     * canonical string, and unsigned calls are rejected by the server with HTTP 422
+     * `payment_attributes_require_signature`. Identity-only calls (no attributes) stay unsigned.
+     *
      * > [!NOTE]
      * > Financial values such as [mrr] and [isPaying] are self-declared signals used for feedback prioritization
      * > and feature triage, never actual payment transaction details.
@@ -1296,10 +1304,16 @@ class FeedbackClient internal constructor(
      * @param isPaying Whether the user is on a paid subscription tier.
      * @param plan Identifier or name of the subscription plan (e.g. `"pro"`, `"enterprise"`).
      * @param mrr Monthly recurring revenue associated with the user account.
-     * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`).
+     * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
+     *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
-     * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
-     * @throws FeedbackException.InvalidResponse on network failure.
+ * @throws IllegalArgumentException if a payment attribute or currency is supplied but no
+ *   [FeedbackClientConfig.sdkSigningSecret] is configured.
+ * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
+ *   `stale_signature` when the configured secret does not match the app's).
+ * @throws FeedbackException.UnexpectedStatus on other HTTP rejection (HTTP 422
+ *   `payment_attributes_require_signature` when the app has no SDK signing secret yet).
+ * @throws FeedbackException.InvalidResponse on network failure.
      *
      * Example:
      * ```kotlin
@@ -1324,6 +1338,31 @@ class FeedbackClient internal constructor(
             putOptString("plan", plan)
             if (mrr != null) put("mrr", mrr)
             putOptString("currency", currency)
+        }
+        val carriesSignedAttributes = isPaying != null || plan != null || mrr != null || currency != null
+        if (carriesSignedAttributes) {
+            val secret = config.sdkSigningSecret?.trim()?.takeIf { it.isNotEmpty() }
+            require(secret != null) {
+                "updateUserAttributes with isPaying/plan/mrr/currency requires " +
+                    "FeedbackClientConfig.sdkSigningSecret (CupThread console: App Access → App " +
+                    "Credentials → SDK signing secret); the server rejects unsigned payment " +
+                    "attributes with HTTP 422 payment_attributes_require_signature"
+            }
+            val timestampSeconds = System.currentTimeMillis() / 1000
+            val signature = hmacSha256Hex(
+                secret = secret,
+                message = userAttributesCanonicalString(
+                    appKey = config.appKey,
+                    userToken = userToken,
+                    isPaying = isPaying,
+                    plan = plan,
+                    mrr = mrr,
+                    currency = currency,
+                    timestampSeconds = timestampSeconds
+                )
+            )
+            payload.put("timestamp", timestampSeconds)
+            payload.put("signature", signature)
         }
         return parseUserAttributesUpdate(
             sendJson(

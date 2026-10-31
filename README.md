@@ -146,6 +146,23 @@ lifecycleScope.launch {
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
 
+### Signed User Attributes (isPaying / plan / mrr / currency)
+
+The server rejects `PUT /api/v1/public/apps/{appKey}/user` calls that carry any payment attribute
+(`isPaying`, `plan`, `mrr`) or `currency` unless they are HMAC-SHA256 signed
+(`422 payment_attributes_require_signature`). Pass your app's SDK signing secret from the console
+(*App Access → App Credentials → SDK signing secret*) via `FeedbackClientConfig.sdkSigningSecret`
+and the SDK signs those calls automatically (the `cpt-user-attrs-v1` canonical string plus
+`signature` + `timestamp` on the body). Calls without signed attributes stay unsigned:
+
+```kotlin
+val config = FeedbackClientConfig(
+    baseUrl = "https://api.cupthread.com",
+    appKey = "app_xxx",
+    sdkSigningSecret = BuildConfig.CUPTHREAD_SDK_SIGNING_SECRET
+)
+```
+
 ### Paging
 
 `FeatureRequestsScreen` and `RoadmapBoardScreen` load further pages as the user scrolls, so boards
