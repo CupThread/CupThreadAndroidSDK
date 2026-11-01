@@ -806,11 +806,19 @@ class FeedbackClient internal constructor(
      * so submitting an upvote again with [shipNotifyEmail] on an already-voted request registers
      * the notification opt-in without toggling the vote.
      *
+     * The opt-in can be refused while the vote still succeeds: on a sign-in-required board the
+     * address must match a verified address of the session ([VoteWarning.CODE_EMAIL_NOT_VERIFIED]),
+     * and an anonymous opt-in must pass human verification
+     * ([VoteWarning.CODE_SHIP_NOTIFY_VERIFICATION_FAILED]). Both cases return HTTP 200 with the
+     * vote recorded and a [VoteResult.warning] describing the refusal; inspect it before telling
+     * the user they will be notified.
+     *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @param shipNotifyEmail Optional email address to opt into ship notifications for this request.
-     * @return [VoteResult] containing the updated vote state (`voted`) and current total count (`voteCount`).
+     * @return [VoteResult] containing the updated vote state (`voted`), current total count (`voteCount`),
+     *   and an optional [VoteResult.warning] when a secondary action was refused.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
