@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -1982,6 +1983,24 @@ class FeedbackClientTest {
         val warning = requireNotNull(result.warning)
         assertEquals("future_warning_code", warning.code)
         assertEquals("Something else was refused", warning.error)
+    }
+
+    @Test
+    fun toggleVotePreservesWarningCodesVerbatim() = runTest {
+        val body = """
+            {
+              "voted": true,
+              "voteCount": 4,
+              "warning": { "code": " email_not_verified ", "error": "Padded code" }
+            }
+        """.trimIndent()
+
+        val result = client { HttpResponse(200, body) }
+            .toggleVote("fr-307", UUID.randomUUID().toString())
+
+        val warning = requireNotNull(result.warning)
+        assertEquals(" email_not_verified ", warning.code)
+        assertNotEquals(VoteWarning.CODE_EMAIL_NOT_VERIFIED, warning.code)
     }
 
     @Test

@@ -236,7 +236,7 @@ internal fun parseVoteResult(json: JSONObject): VoteResult = VoteResult(
  */
 private fun parseVoteWarning(json: JSONObject?): VoteWarning? {
     if (json == null) return null
-    val code = (json.opt("code") as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val code = (json.opt("code") as? String)?.takeIf { it.isNotBlank() } ?: return null
     val error = (json.opt("error") as? String)?.ifBlank { null }
     return VoteWarning(code = code, error = error)
 }
