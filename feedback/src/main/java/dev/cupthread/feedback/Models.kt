@@ -1014,15 +1014,58 @@ data class FeatureRequestSubmissionResult(
 )
 
 /**
- * Result of toggling an upvote on a feature request via [FeedbackClient.toggleVote].
+ * Advisory warning attached to a successful vote response.
  *
- * @property voted Whether the user is currently upvoting the request after the toggle.
- * @property voteCount The reconciled total vote count on the server after the toggle.
+ * The vote itself was recorded; the warning reports that a secondary action — currently the
+ * optional ship-notification opt-in sent as `shipNotifyEmail` — was refused. Both codes are
+ * returned with HTTP 200 and `voted = true`, so callers must not treat the vote as failed.
+ *
+ * Unknown codes are preserved verbatim in [code], so newer server warnings decode without an
+ * SDK release.
+ *
+ * @property code Machine-readable warning code, such as [CODE_EMAIL_NOT_VERIFIED] or
+ *   [CODE_SHIP_NOTIFY_VERIFICATION_FAILED].
+ * @property error Human-readable explanation supplied by the server, when present.
+ */
+data class VoteWarning(
+    val code: String,
+    val error: String? = null
+) {
+    companion object {
+        /**
+         * The address in `shipNotifyEmail` does not match a verified address of the signed-in
+         * session, so no ship-notification consent was stored.
+         */
+        const val CODE_EMAIL_NOT_VERIFIED: String = "email_not_verified"
+
+        /**
+         * Human verification (Cloudflare Turnstile) was missing or rejected for an anonymous
+         * `shipNotifyEmail`, so no ship-notification consent was stored.
+         */
+        const val CODE_SHIP_NOTIFY_VERIFICATION_FAILED: String = "ship_notify_verification_failed"
+    }
+}
+
+/**
+ * Result of casting an upvote on a feature request via [FeedbackClient.toggleVote] or removing
+ * it via [FeedbackClient.deleteVote].
+ *
+ * @property voted Whether the user is currently upvoting the request.
+ * @property voteCount The reconciled total vote count on the server.
+ * @property warning Optional advisory warning returned alongside a successful vote, for example
+ *   when the ship-notification opt-in was refused. `null` when the server reported none.
  */
 data class VoteResult(
     val voted: Boolean,
-    val voteCount: Int
-)
+    val voteCount: Int,
+    val warning: VoteWarning? = null
+) {
+    /**
+     * Preserves binary backward compatibility with callers compiled against SDK versions
+     * prior to the addition of [warning].
+     */
+    constructor(voted: Boolean, voteCount: Int) : this(voted, voteCount, warning = null)
+}
 
 /**
  * Paginated list of feature requests returned by [FeedbackClient.fetchFeatureRequests].

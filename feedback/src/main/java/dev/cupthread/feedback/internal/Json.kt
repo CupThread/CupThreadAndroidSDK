@@ -32,6 +32,7 @@ import dev.cupthread.feedback.SdkTheme
 import dev.cupthread.feedback.TurnstileConfig
 import dev.cupthread.feedback.UserAttributesUpdateResult
 import dev.cupthread.feedback.VoteResult
+import dev.cupthread.feedback.VoteWarning
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -223,8 +224,22 @@ internal fun parseFeatureRequestSubmission(json: JSONObject): FeatureRequestSubm
 
 internal fun parseVoteResult(json: JSONObject): VoteResult = VoteResult(
     voted = json.getBoolean("voted"),
-    voteCount = json.intOr("voteCount", 0)
+    voteCount = json.intOr("voteCount", 0),
+    warning = parseVoteWarning(json.optJSONObject("warning"))
 )
+
+/**
+ * Decodes the optional `warning` object of a vote response.
+ *
+ * A warning without a usable `code` carries no machine-readable meaning, so it is dropped rather
+ * than failing the whole vote result. Unknown codes are kept verbatim for forward compatibility.
+ */
+private fun parseVoteWarning(json: JSONObject?): VoteWarning? {
+    if (json == null) return null
+    val code = (json.opt("code") as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val error = (json.opt("error") as? String)?.ifBlank { null }
+    return VoteWarning(code = code, error = error)
+}
 
 internal fun parseChangelogEntry(json: JSONObject): ChangelogEntry {
     val linked = json.optJSONArray("linkedRequests") ?: JSONArray()

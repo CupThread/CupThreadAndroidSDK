@@ -1905,6 +1905,125 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun toggleVoteDecodesEmailNotVerifiedWarning() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val body = """
+            {
+              "voted": true,
+              "voteCount": 3,
+              "warning": {
+                "code": "email_not_verified",
+                "error": "Ship notifications on this board are bound to your signed-in email address"
+              }
+            }
+        """.trimIndent()
+
+        val result = client { HttpResponse(200, body) }
+            .toggleVote("fr-300", userToken, shipNotifyEmail = "other@example.com")
+
+        assertTrue(result.voted)
+        assertEquals(3, result.voteCount)
+        val warning = requireNotNull(result.warning)
+        assertEquals(VoteWarning.CODE_EMAIL_NOT_VERIFIED, warning.code)
+        assertEquals(
+            "Ship notifications on this board are bound to your signed-in email address",
+            warning.error
+        )
+    }
+
+    @Test
+    fun toggleVoteDecodesShipNotifyVerificationFailedWarning() = runTest {
+        val userToken = UUID.randomUUID().toString()
+        val body = """
+            {
+              "voted": true,
+              "voteCount": 1,
+              "warning": {
+                "code": "ship_notify_verification_failed",
+                "error": "Human verification failed, so the ship-notification opt-in was not recorded."
+              }
+            }
+        """.trimIndent()
+
+        val result = client { HttpResponse(200, body) }
+            .toggleVote("fr-301", userToken, shipNotifyEmail = "voter@example.com")
+
+        assertTrue(result.voted)
+        val warning = requireNotNull(result.warning)
+        assertEquals(VoteWarning.CODE_SHIP_NOTIFY_VERIFICATION_FAILED, warning.code)
+        assertEquals(
+            "Human verification failed, so the ship-notification opt-in was not recorded.",
+            warning.error
+        )
+    }
+
+    @Test
+    fun toggleVoteLeavesWarningNullWhenServerOmitsIt() = runTest {
+        val result = client {
+            HttpResponse(200, """{"voted":true,"voteCount":2}""")
+        }.toggleVote("fr-302", UUID.randomUUID().toString())
+
+        assertNull(result.warning)
+    }
+
+    @Test
+    fun toggleVotePreservesUnknownWarningCodes() = runTest {
+        val body = """
+            {
+              "voted": true,
+              "voteCount": 5,
+              "warning": { "code": "future_warning_code", "error": "Something else was refused" }
+            }
+        """.trimIndent()
+
+        val result = client { HttpResponse(200, body) }
+            .toggleVote("fr-303", UUID.randomUUID().toString())
+
+        val warning = requireNotNull(result.warning)
+        assertEquals("future_warning_code", warning.code)
+        assertEquals("Something else was refused", warning.error)
+    }
+
+    @Test
+    fun toggleVoteIgnoresWarningWithoutMachineReadableCode() = runTest {
+        val missingCode = """
+            {"voted":true,"voteCount":6,"warning":{"error":"No code here"}}
+        """.trimIndent()
+        val nonObject = """{"voted":true,"voteCount":7,"warning":"refused"}"""
+
+        val withoutCode = client { HttpResponse(200, missingCode) }
+            .toggleVote("fr-304", UUID.randomUUID().toString())
+        assertNull(withoutCode.warning)
+        assertEquals(6, withoutCode.voteCount)
+
+        val stringWarning = client { HttpResponse(200, nonObject) }
+            .toggleVote("fr-305", UUID.randomUUID().toString())
+        assertNull(stringWarning.warning)
+        assertEquals(7, stringWarning.voteCount)
+    }
+
+    @Test
+    fun toggleVoteTreatsBlankWarningCodeAsAbsent() = runTest {
+        val body = """{"voted":true,"voteCount":8,"warning":{"code":"   ","error":"blank"}}"""
+
+        val result = client { HttpResponse(200, body) }
+            .toggleVote("fr-306", UUID.randomUUID().toString())
+
+        assertNull(result.warning)
+        assertTrue(result.voted)
+        assertEquals(8, result.voteCount)
+    }
+
+    @Test
+    fun voteResultTwoArgumentConstructorKeepsWarningNull() {
+        val result = VoteResult(voted = true, voteCount = 9)
+
+        assertTrue(result.voted)
+        assertEquals(9, result.voteCount)
+        assertNull(result.warning)
+    }
+
+    @Test
     fun toggleVoteIncludesTurnstileTokenInPayloadWhenProvided() = runTest {
         var capturedBody: String? = null
         val userToken = UUID.randomUUID().toString()
