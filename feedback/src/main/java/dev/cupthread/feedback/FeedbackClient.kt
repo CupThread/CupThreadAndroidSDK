@@ -19,6 +19,7 @@ import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.parseBoardColumn
 import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
+import dev.cupthread.feedback.internal.parseChangelogConfirmationResult
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
 import dev.cupthread.feedback.internal.parseListComments
@@ -59,7 +60,7 @@ import org.json.JSONObject
  * - Roadmap kanban boards and milestones ([fetchColumns], [fetchVersions])
  * - Feature request submissions, filtering, and voting ([fetchFeatureRequests], [submitFeatureRequest], [vote], [deleteVote])
  * - Threaded feature request comments and replies ([fetchComments], [postComment])
- * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [unsubscribeFromChangelog])
+ * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [confirmChangelogSubscription], [unsubscribeFromChangelog])
  * - User telemetry and customer segment attributes ([updateUserAttributes])
  * - Public user profiles ([fetchUserProfile])
  *
@@ -1414,6 +1415,56 @@ class FeedbackClient internal constructor(
                 accepted = setOf(200)
             )
         )
+    }
+
+    /**
+     * Confirms an email subscription to product updates via
+     * `POST /api/v1/public/apps/{appKey}/changelog/confirm` using the single-use token
+     * delivered in the confirmation email after calling [subscribeToChangelog].
+     *
+     * Per API contract updates (issue #30), confirmation requires a mutating `POST` request.
+     * The `GET` endpoint is non-destructive (rendering an HTML confirmation interstitial) and returns
+     * HTTP 405 Method Not Allowed to JSON clients.
+     *
+     * @param token Single-use confirmation token from the emailed confirmation link.
+     * @return [ChangelogConfirmationResult] indicating whether the subscription was confirmed.
+     * @throws IllegalArgumentException if [token] is blank or when the configured
+     *   [FeedbackClientConfig.baseUrl] is not HTTPS — the token is a bearer credential and is
+     *   never sent in cleartext.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors (including HTTP 400 for an invalid,
+     *   expired, or already-consumed token).
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.confirmChangelogSubscription(token = "conf_token_from_email")
+     * println("Confirmed: ${result.confirmed}")
+     * ```
+     */
+    suspend fun confirmChangelogSubscription(token: String): ChangelogConfirmationResult {
+        val cleanToken = token.trim()
+        require(cleanToken.isNotEmpty()) { "Confirmation token cannot be blank" }
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${config.appKey}/changelog/confirm")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "confirmChangelogSubscription destination must use HTTPS when transmitting the confirmation token: $targetUrl"
+        }
+        val payload = JSONObject().put("token", cleanToken)
+        val response = sendJson(
+            "POST",
+            "/api/v1/public/apps/${config.appKey}/changelog/confirm",
+            payload,
+            accepted = setOf(200)
+        )
+        return try {
+            parseChangelogConfirmationResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
     }
 
     /**

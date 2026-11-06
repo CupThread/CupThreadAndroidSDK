@@ -19,6 +19,7 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
   - `GET /api/v1/public/versions/:appKey` — App release versions.
   - `GET /api/v1/public/apps/:appKey/changelog` — Published release notes & changelog entries.
   - `POST /api/v1/public/apps/:appKey/changelog/subscribe` — Email subscription.
+  - `POST /api/v1/public/apps/:appKey/changelog/confirm` — Confirm email subscription.
   - `POST /api/v1/public/apps/:appKey/changelog/unsubscribe` — Unsubscribe from updates.
   - `PUT /api/v1/public/apps/:appKey/user` — Report user attributes (paying status, MRR).
   - `GET /api/v1/feature-requests` — Feature requests list and search with `q` query parameter.
