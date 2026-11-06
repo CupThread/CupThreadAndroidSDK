@@ -65,6 +65,7 @@ import androidx.compose.material3.ModalBottomSheet
 import dev.cupthread.feedback.PublicUserProfileResult
 import dev.cupthread.feedback.RecentCommenter
 import dev.cupthread.feedback.FeedbackClient
+import dev.cupthread.feedback.PublicImageUrls
 import dev.cupthread.feedback.internal.WebUrlPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -73,6 +74,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.BoardColumnKind
@@ -416,10 +418,15 @@ fun UserAvatar(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
-    var bitmap by remember(url) { mutableStateOf(url?.let { avatarCache[it] }) }
+    val density = LocalDensity.current
+    val requestedPixels = with(density) { size.roundToPx() }
+    val imageUrl = remember(url, requestedPixels) {
+        PublicImageUrls.withWidth(url, PublicImageUrls.widthForPixels(requestedPixels))
+    }
+    var bitmap by remember(imageUrl) { mutableStateOf(imageUrl?.let { avatarCache[it] }) }
 
-    LaunchedEffect(url) {
-        val secureUrl = WebUrlPolicy.normalizeSecureImageUrl(url)
+    LaunchedEffect(imageUrl) {
+        val secureUrl = imageUrl
         if (secureUrl == null) {
             bitmap = null
             return@LaunchedEffect
