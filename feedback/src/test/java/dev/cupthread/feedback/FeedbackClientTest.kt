@@ -2658,6 +2658,65 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun updateUserAttributesRejectsReservedPlanSentinelsClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        for (reserved in listOf("unset", "null")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", plan = reserved)
+                fail("Expected IllegalArgumentException for reserved plan '$reserved'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("reserved protocol sentinels"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesAllowsNearMissPlanNamesClientSide() = runTest {
+        val nearMisses = listOf("UNSET", "Unset", "unsettled", "nullify", "NULL", "Null")
+        for (planName in nearMisses) {
+            var capturedBody: String? = null
+            val testClient = signingClient { request ->
+                capturedBody = request.body?.toString(Charsets.UTF_8)
+                HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+            }
+            val result = testClient.updateUserAttributes(userToken = "tok-1", plan = planName)
+            assertTrue(result.ok)
+            assertNotNull(capturedBody)
+            assertTrue(capturedBody!!.contains("\"plan\":\"$planName\""))
+        }
+    }
+
+    @Test
+    fun updateUserAttributesMapsHttp400PlanReservedSentinelToDedicatedException() = runTest {
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": {
+                  "plan": ["plan_reserved_sentinel"]
+                }
+              }
+            }
+        """.trimIndent()
+        try {
+            signingClient { _ ->
+                HttpResponse(400, errorBody, headers = mapOf("X-Request-Id" to "req_plan_sentinel_1"))
+            }.updateUserAttributes(userToken = "tok-1", plan = "legacy_plan")
+            fail("Expected FeedbackException.ReservedPlanSentinel on HTTP 400 plan_reserved_sentinel")
+        } catch (ex: FeedbackException.ReservedPlanSentinel) {
+            assertEquals("Validation failed", ex.serverMessage)
+            assertEquals("plan_reserved_sentinel", ex.serverCode)
+            assertEquals("req_plan_sentinel_1", ex.requestId)
+        }
+    }
+
+    @Test
     fun withVoteStateOnlyChangesVoteFields() {
         val base = FeatureRequestItem(
             id = "fr-1",
