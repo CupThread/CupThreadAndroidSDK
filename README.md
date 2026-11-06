@@ -245,13 +245,16 @@ key when the deployment supports WebView challenges. Native clients can mint tok
 the hosted challenge page (`https://app.cupthread.com/turnstile/verify`) via `TurnstileChallengeDialog`:
 
 ```kotlin
+val scope = rememberCoroutineScope()
 if (showTurnstileChallenge) {
     TurnstileChallengeDialog(
         siteKey = appConfig.turnstile?.siteKey ?: return,
         challenge = TurnstileChallenge.feedback(appConfig.appKey),
         onToken = { token ->
             showTurnstileChallenge = false
-            client.submit(draft, userToken = userToken, turnstileToken = token)
+            scope.launch {
+                client.submit(draft, userToken = userToken, turnstileToken = token)
+            }
         },
         onDismiss = { showTurnstileChallenge = false }
     )

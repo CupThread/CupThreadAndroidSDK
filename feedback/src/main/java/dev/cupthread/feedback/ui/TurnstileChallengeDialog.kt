@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +79,11 @@ fun TurnstileChallengeDialog(
     locale: String? = null
 ) {
     var isLoading by remember { mutableStateOf(true) }
+    val currentOnToken by rememberUpdatedState(onToken)
+    val currentOnError by rememberUpdatedState(onError)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+    val currentPortalBaseUrl by rememberUpdatedState(portalBaseUrl)
+
     val challengeUrl = remember(siteKey, challenge, theme, locale, portalBaseUrl) {
         TurnstileHostedChallenge.buildChallengeUrl(
             siteKey = siteKey,
@@ -123,11 +129,11 @@ fun TurnstileChallengeDialog(
                                 post {
                                     when (msg) {
                                         is TurnstileBridgeMessage.Success -> {
-                                            onToken(msg.token)
-                                            onDismiss()
+                                            currentOnToken(msg.token)
+                                            currentOnDismiss()
                                         }
                                         is TurnstileBridgeMessage.Error -> {
-                                            onError?.invoke(msg.code)
+                                            currentOnError?.invoke(msg.code)
                                         }
                                         is TurnstileBridgeMessage.Expired -> {
                                             reload()
@@ -150,11 +156,17 @@ fun TurnstileChallengeDialog(
 
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                     val url = request?.url?.toString() ?: return false
-                                    return !url.startsWith(portalBaseUrl) && !url.contains("cloudflare.com")
+                                    val base = currentPortalBaseUrl
+                                    return !url.startsWith(base) && !url.contains("cloudflare.com")
                                 }
                             }
 
                             loadUrl(challengeUrl)
+                        }
+                    },
+                    update = { webView ->
+                        if (webView.url != challengeUrl) {
+                            webView.loadUrl(challengeUrl)
                         }
                     }
                 )
