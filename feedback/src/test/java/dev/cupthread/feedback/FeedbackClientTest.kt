@@ -2559,6 +2559,33 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun voteSurfaces400ValidationFailedWhenUserTokenMissing() = runTest {
+        // #64: a payload carrying the token in neither source (body `userToken` nor
+        // `X-User-Token` header) answers 400 with details.fieldErrors.userToken.
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": {
+                  "userToken": ["Required"]
+                }
+              }
+            }
+        """.trimIndent()
+        try {
+            client {
+                HttpResponse(400, errorBody, headers = mapOf("X-Request-Id" to "req_vote_400"))
+            }.vote("fr-11", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.ValidationFailed on 400 missing userToken")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals("Validation failed", ex.serverMessage)
+            assertEquals(mapOf("userToken" to listOf("Required")), ex.fieldErrors)
+            assertEquals("req_vote_400", ex.requestId)
+        }
+    }
+
+    @Test
     fun voteRejectsHttpWhenTransmittingShipNotifyEmail() = runTest {
         val insecureClient = FeedbackClient(
             FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
@@ -2995,12 +3022,14 @@ class FeedbackClientTest {
         var method: String? = null
         var url: String? = null
         var userTokenHeader: String? = null
+        var requestBody: String? = null
         val token = UUID.randomUUID().toString()
 
         val result = client { request ->
             method = request.method
             url = request.url
             userTokenHeader = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
             HttpResponse(200, """{"voted":false,"voteCount":3}""")
         }.deleteVote("fr-12", token)
 
@@ -3009,6 +3038,12 @@ class FeedbackClientTest {
         assertEquals(token, userTokenHeader)
         assertFalse(result.voted)
         assertEquals(3, result.voteCount)
+
+        // #64: the vote DELETE still requires a JSON body carrying appKey; the token travels
+        // in the body, so header-only transport without a body is not how the SDK calls it.
+        val json = JSONObject(requireNotNull(requestBody))
+        assertEquals(appKey, json.getString("appKey"))
+        assertEquals(token, json.getString("userToken"))
 
         try {
             client {
@@ -4521,6 +4556,9 @@ class FeedbackClientTest {
         val req = requireNotNull(capturedRequest)
         assertEquals("POST", req.method)
         assertTrue(req.url.endsWith("/api/v1/feature-requests"))
+        // #64: the requester token travels in the JSON body (requesterToken); the X-User-Token
+        // header is optional on this endpoint and the SDK does not rely on it.
+        assertNull(req.headers["X-User-Token"])
         val bodyJson = JSONObject(String(req.body!!, Charsets.UTF_8))
         assertEquals("app_testkey123456", bodyJson.getString("appKey"))
         assertEquals("Custom Keyboard Shortcuts", bodyJson.getString("title"))
