@@ -758,7 +758,8 @@ class FeedbackClient internal constructor(
      *   [TurnstileAction.FEATURE_REQUEST] action with the app key as `cdata`. When provided, the
      *   configured token provider is not consulted before the first attempt.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
-     * @throws FeedbackException.AuthenticationRequired if anonymous requests are disallowed (HTTP 401).
+     * @throws FeedbackException.AuthenticationRequired if the app's roadmap requires sign-in (`allowAnonymousRoadmap=false`)
+     *   and no end-user session is present (HTTP 401 `authentication_required`).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the proposal (HTTP 403 `turnstile_*`).
