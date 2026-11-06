@@ -508,6 +508,82 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentParsesPrivateImageResponseWithoutUrl() = runTest {
+        // #56 item 1: image uploads are private attachments — the response carries an uploadId
+        // and no public CDN url/variants delivery fields.
+        val json = """
+            {
+              "kind": "image",
+              "uploadId": "upl_img_private",
+              "status": "uploaded",
+              "stored": true,
+              "filename": "screenshot.png",
+              "mimeType": "image/png",
+              "size": ${validPngBytes.size}
+            }
+        """.trimIndent()
+
+        var capturedUrl: String? = null
+        val attachment = client { request ->
+            capturedUrl = request.url
+            HttpResponse(201, json)
+        }.uploadAttachment(data = validPngBytes, filename = "screenshot.png", mimeType = "image/png")
+
+        assertEquals("https://api.example.com/api/v1/uploads/images", capturedUrl)
+        assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
+        assertEquals("upl_img_private", attachment.uploadId)
+        assertEquals("upl_img_private", attachment.id)
+        assertNull(attachment.url)
+        assertNull(attachment.key)
+        assertEquals("screenshot.png", attachment.filename)
+    }
+
+    @Test
+    fun uploadAttachmentImageMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"error":"Rate limit exceeded"}""")
+            }.uploadAttachment(data = validPngBytes, filename = "screenshot.png", mimeType = "image/png")
+            fail("expected RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Rate limit exceeded", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun submitCarriesPrivateImageAttachmentUploadId() = runTest {
+        // #56: a private image attachment is finalized through its uploadId, not a public url.
+        var capturedBody: String? = null
+        client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"submissionId":"s-img","forwardedToGithub":false}""")
+        }.submit(
+            FeedbackDraft(
+                title = "Private image",
+                description = "Report with a private image attachment",
+                platform = FeedbackPlatform.ANDROID,
+                attachments = listOf(
+                    FeedbackAttachment(
+                        kind = FeedbackAttachment.Kind.IMAGE,
+                        uploadId = "upl_img_private",
+                        filename = "screenshot.png",
+                        mimeType = "image/png",
+                        size = validPngBytes.size.toLong()
+                    )
+                )
+            )
+        )
+
+        val payload = JSONObject(requireNotNull(capturedBody))
+        assertEquals("upl_img_private", payload.getJSONArray("uploadIds").getString(0))
+        val attachmentJson = payload.getJSONArray("attachments").getJSONObject(0)
+        assertEquals("image", attachmentJson.getString("kind"))
+        assertEquals("upl_img_private", attachmentJson.getString("uploadId"))
+        assertFalse(attachmentJson.has("url"))
+        assertFalse(attachmentJson.has("key"))
+    }
+
+    @Test
     fun uploadAttachmentScrubsImageEvenWhenRoutedToUploadSessions() = runTest {
         // #21: an explicit preferredKind=R2 must not bypass the scrubber for image bytes.
         val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
