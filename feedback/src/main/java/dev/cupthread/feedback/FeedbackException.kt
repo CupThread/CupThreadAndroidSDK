@@ -88,6 +88,39 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         )
 
     /**
+     * Raised when an image attachment upload HTTP request fails due to an unexpected server-side
+     * storage failure (HTTP 500 `image_upload_failed`).
+     *
+     * In contrast to client-side format or size errors (HTTP 415 [UnsupportedMediaType] or HTTP 413),
+     * this indicates an unexpected backend failure (R2 / Cloudflare Images / D1). Clients can inspect
+     * [serverCode] to offer a retry option instead of treating the failure as fatal.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_IMAGE_UPLOAD_FAILED]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class ImageUploadFailed @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_IMAGE_UPLOAD_FAILED,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "Image upload failed. Please try again."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned by `POST /api/v1/uploads/images` on storage failure. */
+            const val CODE_IMAGE_UPLOAD_FAILED = "image_upload_failed"
+
+            /**
+             * Determines whether the given [code] or [message] represents an image-upload-failed rejection.
+             */
+            internal fun isImageUploadFailed(code: String?, message: String?): Boolean =
+                code == CODE_IMAGE_UPLOAD_FAILED ||
+                    (code == null && message?.contains("image upload failed", ignoreCase = true) == true)
+        }
+    }
+
+    /**
      * Raised when the server responds with HTTP 402 `tier_limit_submissions`, indicating
      * that the application's workspace has reached its monthly submission quota.
      *

@@ -21,6 +21,7 @@
     <string name="cupthread_feedback_uploading_attachment">正在上傳附件…</string>
     <string name="cupthread_feedback_remove_attachment">刪除附件</string>
     <string name="cupthread_feedback_upload_failed">上傳附件失敗</string>
+    <string name="cupthread_feedback_image_upload_failed">圖片上傳失敗，請重試。</string>
     <string name="cupthread_attachment_oversized">附件（%1$s）超過咗允許嘅大小上限 %2$s。</string>
     <string name="cupthread_attachment_exceeds_limit">附件超過咗允許嘅大小上限 %1$s。</string>
     <string name="cupthread_feedback_unsupported_image_type">不支援的圖片格式。請選擇 PNG、JPEG、WebP 或 GIF 圖片。</string>
