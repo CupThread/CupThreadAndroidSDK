@@ -2454,6 +2454,37 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun unsubscribeFromChangelogSurfacesPublicSurfacesDisabledAsUnexpectedStatus403() = runTest {
+        // #58: on a private app the route keeps answering 403 (app existence is not disclosed)
+        // for a missing or unverifiable token; callers see the status code, not a false result.
+        try {
+            client {
+                HttpResponse(403, """{"error":"Public surfaces are disabled for this app"}""")
+            }.unsubscribeFromChangelog("bogus-token")
+            fail("Expected FeedbackException.UnexpectedStatus on 403 from a private app")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(403, ex.code)
+            assertTrue(ex.serverMessage.orEmpty().contains("Public surfaces are disabled"))
+        }
+    }
+
+    @Test
+    fun unsubscribeFromChangelogAcceptsAuthenticTokenAfterExpiry() = runTest {
+        // #58: an authentic signature is honored after `exp`; the SDK must not decode the token or
+        // pre-emptively reject it, so a link that outlived its 90-day claim still unsubscribes.
+        val expiredToken = "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2MDAwMDAwMDAsInN1YiI6InVzZXJAZXhhbXBsZS5jb20ifQ.c2lnbmF0dXJl"
+        var capturedBody: String? = null
+
+        val result = client { req ->
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"unsubscribed":true}""")
+        }.unsubscribeFromChangelog(expiredToken)
+
+        assertEquals(expiredToken, org.json.JSONObject(capturedBody!!).getString("token"))
+        assertTrue(result.unsubscribed)
+    }
+
+    @Test
     fun unsubscribeFromChangelogRejectsHttpDestinationWhenTransmittingToken() = runTest {
         val insecureClient = FeedbackClient(
             config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
