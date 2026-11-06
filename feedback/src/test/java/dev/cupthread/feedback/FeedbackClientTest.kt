@@ -3550,6 +3550,159 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeedbackMaps409AlreadyFinalizedToAttachmentAlreadyFinalized() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Upload object upl_123 has already been finalized into another submission","code":"already_finalized"}""",
+                headers = mapOf("X-Request-Id" to "req-409-af")
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentAlreadyFinalized exception")
+        } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+            assertEquals("Upload object upl_123 has already been finalized into another submission", ex.serverMessage)
+            assertEquals("Upload object upl_123 has already been finalized into another submission", ex.message)
+            assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED, ex.serverCode)
+            assertEquals("req-409-af", ex.requestId)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps409UploadFinalizedConcurrentlyToAttachmentAlreadyFinalized() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Concurrent finalization detected","code":"upload_finalized_concurrently"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentAlreadyFinalized exception")
+        } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+            assertEquals("Concurrent finalization detected", ex.serverMessage)
+            assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_UPLOAD_FINALIZED_CONCURRENTLY, ex.serverCode)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps409AlreadyFinalizedWithoutErrorFieldToDefaultMessage() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"code":"already_finalized"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentAlreadyFinalized exception")
+        } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+            assertNull(ex.serverMessage)
+            assertEquals("This attachment has already been submitted.", ex.message)
+            assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED, ex.serverCode)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps409AlreadyFinalizedWithExplicitNullErrorToDefaultMessage() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"code":"already_finalized","error":null}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentAlreadyFinalized exception")
+        } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+            assertNull(ex.serverMessage)
+            assertEquals("This attachment has already been submitted.", ex.message)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMaps409LegacyMessageWithoutCodeToAttachmentAlreadyFinalized() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Upload object upl_xyz has already been finalized into another submission"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected AttachmentAlreadyFinalized exception")
+        } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+            assertEquals("Upload object upl_xyz has already been finalized into another submission", ex.serverMessage)
+            assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED, ex.serverCode)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMapsOther409CodesToUnexpectedStatus() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Some other conflict occurred","code":"version_conflict"}"""
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected UnexpectedStatus exception")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(409, ex.code)
+            assertTrue(ex.serverMessage.contains("version_conflict"))
+        }
+    }
+
+    @Test
+    fun nonSubmitEndpointsDoNotMapHttp409ToAttachmentAlreadyFinalized() = runTest {
+        val client = client {
+            HttpResponse(
+                409,
+                """{"error":"Upload object upl_123 has already been finalized into another submission","code":"already_finalized"}"""
+            )
+        }
+        try {
+            client.fetchColumns()
+            fail("Expected UnexpectedStatus exception")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(409, ex.code)
+        }
+    }
+
+    @Test
+    fun attachmentAlreadyFinalizedConstructorsSupportCompatibility() {
+        val defaultEx = FeedbackException.AttachmentAlreadyFinalized()
+        assertNull(defaultEx.serverMessage)
+        assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED, defaultEx.serverCode)
+        assertNull(defaultEx.requestId)
+        assertEquals("This attachment has already been submitted.", defaultEx.message)
+
+        val oneArgEx = FeedbackException.AttachmentAlreadyFinalized("Custom error message")
+        assertEquals("Custom error message", oneArgEx.serverMessage)
+        assertEquals("Custom error message", oneArgEx.message)
+        assertEquals(FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED, oneArgEx.serverCode)
+        assertNull(oneArgEx.requestId)
+
+        val twoArgEx = FeedbackException.AttachmentAlreadyFinalized("Custom error message", "custom_code")
+        assertEquals("Custom error message", twoArgEx.serverMessage)
+        assertEquals("custom_code", twoArgEx.serverCode)
+        assertNull(twoArgEx.requestId)
+
+        val threeArgEx = FeedbackException.AttachmentAlreadyFinalized("Custom error message", "custom_code", "req-test")
+        assertEquals("Custom error message", threeArgEx.serverMessage)
+        assertEquals("custom_code", threeArgEx.serverCode)
+        assertEquals("req-test", threeArgEx.requestId)
+    }
+
+    @Test
     fun submissionQuotaExceptionsUseDefaultMessagesWhenServerMessageIsOmitted() {
         val quotaEx = FeedbackException.SubmissionQuotaExceeded(null)
         assertNull(quotaEx.serverMessage)

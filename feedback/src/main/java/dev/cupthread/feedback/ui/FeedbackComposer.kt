@@ -314,6 +314,7 @@ private fun FeedbackFormBody(
     val defaultGenericError = stringResource(R.string.cupthread_feedback_generic_error)
     val unsupportedImageTypeError = stringResource(R.string.cupthread_feedback_unsupported_image_type)
     val scanRejectedError = stringResource(R.string.cupthread_feedback_attachment_scan_rejected)
+    val alreadyFinalizedError = stringResource(R.string.cupthread_feedback_attachment_already_finalized)
     val verificationRequiredError = stringResource(R.string.cupthread_feedback_verification_required)
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -590,6 +591,8 @@ private fun FeedbackFormBody(
                         throw ce
                     } catch (ex: FeedbackException.AttachmentScanRejected) {
                         error = ex.serverMessage ?: scanRejectedError
+                    } catch (ex: FeedbackException.AttachmentAlreadyFinalized) {
+                        error = ex.serverMessage ?: alreadyFinalizedError
                     } catch (ex: FeedbackException.VerificationRequired) {
                         error = verificationRequiredError
                     } catch (ex: Exception) {

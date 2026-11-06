@@ -134,6 +134,44 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         )
 
     /**
+     * Raised when feedback submission via [FeedbackClient.submit] is rejected because an attachment
+     * was already finalized into another submission by a concurrent duplicate submit (HTTP 409
+     * `already_finalized`).
+     *
+     * The duplicate submission creates nothing on the backend and consumes no monthly submission
+     * quota. Callers should stop retrying the same payload with the consumed attachment and
+     * surface an "already submitted" notice, or resubmit without the consumed attachment.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_ALREADY_FINALIZED]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class AttachmentAlreadyFinalized @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_ALREADY_FINALIZED,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "This attachment has already been submitted."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned by `POST /api/v1/feedback`. */
+            const val CODE_ALREADY_FINALIZED = "already_finalized"
+
+            /** Legacy/concurrent code variant for duplicate attachment finalization. */
+            const val CODE_UPLOAD_FINALIZED_CONCURRENTLY = "upload_finalized_concurrently"
+
+            /**
+             * Determines whether the given [code] or [message] represents an already-finalized attachment error.
+             */
+            internal fun isAlreadyFinalized(code: String?, message: String?): Boolean =
+                code == CODE_ALREADY_FINALIZED ||
+                    code == CODE_UPLOAD_FINALIZED_CONCURRENTLY ||
+                    (code == null && message?.contains("already been finalized", ignoreCase = true) == true)
+        }
+    }
+
+    /**
      * Raised when the server responds with HTTP 429 `too_many_requests`, indicating that the client
      * has exceeded a rate limit window (such as voting too frequently, or syncing user attributes
      * for many users behind one shared IP).

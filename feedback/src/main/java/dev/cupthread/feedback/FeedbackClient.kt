@@ -77,6 +77,8 @@ import org.json.JSONObject
  * - [FeedbackException.SubscriptionInactive]: Workspace subscription is inactive or canceled (HTTP 402 `subscription_inactive`).
  * - [FeedbackException.VerificationRequired]: Human-verification (Turnstile) gate rejected an intake call (HTTP 403 `turnstile_*`).
  * - [FeedbackException.UnsupportedMediaType]: File format or image media type is unsupported (HTTP 415 `unsupported_media_type`).
+ * - [FeedbackException.AttachmentScanRejected]: Attachment was rejected by backend virus/malware inspection (HTTP 422 `scan_rejected`).
+ * - [FeedbackException.AttachmentAlreadyFinalized]: Attachment was already consumed by a concurrent submission (HTTP 409 `already_finalized`).
  * - [FeedbackException.RateLimited]: Client exceeded request rate limit, such as voting too frequently (HTTP 429).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
@@ -165,6 +167,7 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the submission (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.AttachmentScanRejected if an attachment was rejected during backend content inspection (HTTP 422 `scan_rejected`).
+     * @throws FeedbackException.AttachmentAlreadyFinalized if an attachment was already consumed by a concurrent submission (HTTP 409 `already_finalized`).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
@@ -200,6 +203,7 @@ class FeedbackClient internal constructor(
                 accepted = setOf(200, 201, 202),
                 mapSubmissionQuotaErrors = true,
                 mapAttachmentScanErrors = true,
+                mapAttachmentAlreadyFinalizedErrors = true,
                 mapVerificationErrors = true
             )
         )
@@ -1656,6 +1660,7 @@ class FeedbackClient internal constructor(
         accepted: Set<Int> = setOf(200),
         mapSubmissionQuotaErrors: Boolean = false,
         mapAttachmentScanErrors: Boolean = false,
+        mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false
     ): JSONObject {
@@ -1671,6 +1676,7 @@ class FeedbackClient internal constructor(
             accepted,
             mapSubmissionQuotaErrors = mapSubmissionQuotaErrors,
             mapAttachmentScanErrors = mapAttachmentScanErrors,
+            mapAttachmentAlreadyFinalizedErrors = mapAttachmentAlreadyFinalizedErrors,
             mapRateLimitErrors = mapRateLimitErrors,
             mapVerificationErrors = mapVerificationErrors
         )
@@ -1727,6 +1733,7 @@ class FeedbackClient internal constructor(
         mapSubmissionQuotaErrors: Boolean = false,
         mapUnsupportedMediaType: Boolean = false,
         mapAttachmentScanErrors: Boolean = false,
+        mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false
     ): JSONObject =
@@ -1756,6 +1763,18 @@ class FeedbackClient internal constructor(
                     when (errorPayload?.first) {
                         "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second, requestId)
                         "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second, requestId)
+                    }
+                }
+                if (response.code == 409 && mapAttachmentAlreadyFinalizedErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second
+                    if (FeedbackException.AttachmentAlreadyFinalized.isAlreadyFinalized(code, message ?: response.body.ifBlank { null })) {
+                        throw FeedbackException.AttachmentAlreadyFinalized(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.AttachmentAlreadyFinalized.CODE_ALREADY_FINALIZED,
+                            requestId = requestId
+                        )
                     }
                 }
                 if (response.code == 415 && mapUnsupportedMediaType) {
