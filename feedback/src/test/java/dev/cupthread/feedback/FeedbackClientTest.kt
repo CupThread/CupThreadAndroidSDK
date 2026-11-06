@@ -3595,6 +3595,48 @@ class FeedbackClientTest {
         }
     }
 
+
+    @Test
+    fun postCommentMapsHttp429MessageFieldToServerMessage() = runTest {
+        val errorJson = """
+            {
+              "message": "Gateway rate limit reached. Retry in a minute.",
+              "code": "rate_limited"
+            }
+        """.trimIndent()
+
+        try {
+            client { _ ->
+                HttpResponse(429, errorJson, headers = mapOf("X-Request-Id" to "req_comment_429_msg"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(body = "Fast comment"),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Gateway rate limit reached. Retry in a minute.", ex.serverMessage)
+            assertEquals("req_comment_429_msg", ex.requestId)
+        }
+    }
+
+    @Test
+    fun postCommentMapsHttp429MessageFieldFallsBackToDefaultWhenBlank() = runTest {
+        try {
+            client { _ ->
+                HttpResponse(429, """{"message": "", "code": "rate_limited"}""")
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(body = "Fast comment"),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
+            assertNull(ex.serverMessage)
+        }
+    }
+
     @Test
     fun invalidParentCommentDefaultConstructorPreservesCodeAndDefaultMessage() {
         val ex = FeedbackException.InvalidParentComment()
@@ -4656,6 +4698,25 @@ class FeedbackClientTest {
         } catch (ex: FeedbackException.RateLimited) {
             assertEquals("Too many submissions. Please try again shortly.", ex.serverMessage)
             assertEquals("req_submit_429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun submitFeedbackMapsHttp429MessageFieldToServerMessage() = runTest {
+        val client = client {
+            HttpResponse(
+                429,
+                """{"message":"Gateway rate limit reached. Retry in a minute.","code":"rate_limited"}""",
+                headers = mapOf("X-Request-Id" to "req_submit_429_msg")
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Gateway rate limit reached. Retry in a minute.", ex.serverMessage)
+            assertEquals("req_submit_429_msg", ex.requestId)
         }
     }
 
