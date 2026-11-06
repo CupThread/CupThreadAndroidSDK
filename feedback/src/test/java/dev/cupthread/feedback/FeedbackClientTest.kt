@@ -2342,11 +2342,96 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun nonVoteEndpointsDoNotMapHttp429ToRateLimited() = runTest {
+    fun fetchColumnsMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many requests. Please try again shortly."}""",
+                    headers = mapOf("X-Request-Id" to "req-cols-429")
+                )
+            }.fetchColumns()
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many requests. Please try again shortly.", ex.message)
+            assertEquals("req-cols-429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun fetchVersionsMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many requests. Please try again shortly."}""",
+                    headers = mapOf("X-Request-Id" to "req-vers-429")
+                )
+            }.fetchVersions()
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many requests. Please try again shortly.", ex.message)
+            assertEquals("req-vers-429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun fetchVersionsMapsHttp429WithBlankBodyToDefaultRateLimitedMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, "   ")
+            }.fetchVersions()
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun fetchChangelogPageMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many requests. Please try again shortly."}""",
+                    headers = mapOf("X-Request-Id" to "req-cl-page-429")
+                )
+            }.fetchChangelogPage(limit = 10)
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many requests. Please try again shortly.", ex.message)
+            assertEquals("req-cl-page-429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun fetchChangelogMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many requests. Please try again shortly."}""",
+                    headers = mapOf("X-Request-Id" to "req-cl-429")
+                )
+            }.fetchChangelog()
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many requests. Please try again shortly.", ex.message)
+            assertEquals("req-cl-429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun unmappedEndpointPreservesUnexpectedStatusOnHttp429() = runTest {
         try {
             client {
                 HttpResponse(429, """{"error":"Rate limited"}""")
-            }.fetchColumns()
+            }.fetchAppConfig()
             fail("Expected FeedbackException.UnexpectedStatus on 429")
         } catch (ex: FeedbackException.UnexpectedStatus) {
             assertEquals(429, ex.code)
