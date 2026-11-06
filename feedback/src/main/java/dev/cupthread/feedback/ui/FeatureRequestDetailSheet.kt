@@ -250,8 +250,13 @@ fun FeatureRequestDetailSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val countSuffix = when {
+                    comments.isNotEmpty() -> " (${comments.size})"
+                    item.commentCount > 0 -> " (${item.commentCount})"
+                    else -> ""
+                }
                 Text(
-                    text = stringResource(R.string.cupthread_comments_title) + if (comments.isNotEmpty()) " (${comments.size})" else "",
+                    text = stringResource(R.string.cupthread_comments_title) + countSuffix,
                     style = MaterialTheme.typography.titleMedium
                 )
             }

@@ -705,6 +705,7 @@ data class AppVersion(
  * @property updatedAt ISO 8601 last update timestamp.
  * @property importedVotes Historical upvotes copied from an external source at import time (e.g. GitHub/Linear).
  *   Already included in [voteCount] (not additive on top of it). Defaults to 0 for native requests.
+ * @property commentCount Total number of comments posted to this feature request.
  */
 data class FeatureRequestItem(
     val id: String,
@@ -730,11 +731,69 @@ data class FeatureRequestItem(
     val hasMoreCommenters: Boolean = false,
     val createdAt: String,
     val updatedAt: String,
-    val importedVotes: Int = 0
+    val importedVotes: Int = 0,
+    val commentCount: Int = 0
 ) {
     /**
      * Preserves binary backward compatibility with callers compiled against SDK versions
-     * prior to the addition of [importedVotes].
+     * prior to the addition of [commentCount].
+     */
+    constructor(
+        id: String,
+        appId: String,
+        title: String,
+        description: String,
+        status: String,
+        columnId: String?,
+        columnSlug: String?,
+        columnName: String?,
+        columnColor: String? = null,
+        versionId: String?,
+        versionLabel: String?,
+        releasedVersion: String?,
+        requesterName: String?,
+        requesterAvatarUrl: String? = null,
+        requesterClerkId: String? = null,
+        approved: Boolean,
+        voteCount: Int,
+        hasVoted: Boolean,
+        isOwnRequest: Boolean,
+        recentCommenters: List<RecentCommenter> = emptyList(),
+        hasMoreCommenters: Boolean = false,
+        createdAt: String,
+        updatedAt: String,
+        importedVotes: Int = 0
+    ) : this(
+        id = id,
+        appId = appId,
+        title = title,
+        description = description,
+        status = status,
+        columnId = columnId,
+        columnSlug = columnSlug,
+        columnName = columnName,
+        columnColor = columnColor,
+        versionId = versionId,
+        versionLabel = versionLabel,
+        releasedVersion = releasedVersion,
+        requesterName = requesterName,
+        requesterAvatarUrl = requesterAvatarUrl,
+        requesterClerkId = requesterClerkId,
+        approved = approved,
+        voteCount = voteCount,
+        hasVoted = hasVoted,
+        isOwnRequest = isOwnRequest,
+        recentCommenters = recentCommenters,
+        hasMoreCommenters = hasMoreCommenters,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        importedVotes = importedVotes,
+        commentCount = 0
+    )
+
+    /**
+     * Preserves binary backward compatibility with callers compiled against SDK versions
+     * prior to the addition of [importedVotes] and [commentCount].
      */
     constructor(
         id: String,
@@ -784,7 +843,8 @@ data class FeatureRequestItem(
         hasMoreCommenters = hasMoreCommenters,
         createdAt = createdAt,
         updatedAt = updatedAt,
-        importedVotes = 0
+        importedVotes = 0,
+        commentCount = 0
     )
 
     /**
