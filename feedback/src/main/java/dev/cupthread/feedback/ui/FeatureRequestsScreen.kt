@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -107,6 +108,9 @@ import kotlinx.coroutines.launch
  *
  * @param client Shared [FeedbackClient] instance used for network queries and mutations.
  * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state and ownership.
+ *   When the host supplies a new token (for example after [UserTokenStore.rotateToken] or
+ *   [UserTokenStore.clearToken] following erasure), the screen re-fetches the first page and every
+ *   later page with the new identity.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] container.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -154,11 +158,13 @@ private fun FeatureRequestsScreenContent(
     // keeps ordinary typing inside it (issue #23).
     val searchThrottler = remember { SearchThrottler() }
 
-    // Reads the current search and version filter on every request, so one pager serves all filters.
+    // Reads the current token, search, and version filter on every request, so one pager serves
+    // all filters and survives token rotation or erasure (the token must not be captured by value).
+    val currentUserToken by rememberUpdatedState(userToken)
     val pager = remember(client) {
         FeatureRequestPager { request ->
             client.fetchFeatureRequests(
-                userToken = userToken,
+                userToken = currentUserToken,
                 limit = request.limit,
                 offset = request.offset,
                 versionId = versionId,
@@ -232,9 +238,11 @@ private fun FeatureRequestsScreenContent(
         versions = runCatching { client.fetchVersions() }.getOrDefault(emptyList())
     }
 
-    LaunchedEffect(versionId) {
+    LaunchedEffect(versionId, userToken) {
         // The first emission of every (re)started collector is user-initiated — the initial
-        // load or a version-filter change; later emissions are genuine query changes.
+        // load, a version-filter change, or a new end-user token; later emissions are genuine
+        // query changes. Restarting on the token re-fetches the first page for the new identity
+        // so vote/ownership flags are not left over from the previous token (issue #142).
         var userInitiated = true
         snapshotFlow { search }
             .distinctUntilChanged()
