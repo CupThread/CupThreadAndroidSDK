@@ -36,6 +36,36 @@ class ChangelogStoreConcurrencyTest {
     }
 
     @Test
+    fun concurrentSeenMarksAcrossSeparateStoreInstancesSharingPrefsAreBothPersisted() {
+        // Mirrors production: ChangelogOverlay and FeedbackClient.markChangelogSeen each
+        // call ChangelogStore.create(context), so concurrent callers race through distinct
+        // instances on the same SharedPreferences file. Only a process-wide lock closes this.
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val overlayStore = ChangelogStore(prefs)
+        val clientStore = ChangelogStore(prefs)
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+
+        val fromOverlay = pool.submit {
+            start.await()
+            overlayStore.markChangelogSeen("version-overlay")
+        }
+        val fromClient = pool.submit {
+            start.await()
+            clientStore.markChangelogSeen("version-client")
+        }
+        start.countDown()
+        fromOverlay.get(10, TimeUnit.SECONDS)
+        fromClient.get(10, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        assertEquals(
+            setOf("version-overlay", "version-client"),
+            ChangelogStore(prefs).getSeenChangelogs()
+        )
+    }
+
+    @Test
     fun manyConcurrentSeenMarksAllPersist() {
         val prefs = ThreadSafeFakeSharedPreferences()
         val store = ChangelogStore(prefs)

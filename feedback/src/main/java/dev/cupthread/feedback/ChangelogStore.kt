@@ -25,9 +25,9 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
 
     // Guards the read-modify-write cycles on the seen set. Callers may arrive from the UI
     // (auto-mark on overlay presentation) and any host thread (public FeedbackClient API)
-    // concurrently; without the lock, two stale snapshots write back disjoint full
-    // replacements and one mark is silently lost.
-    private val lock = Any()
+    // concurrently, and every call site constructs its own ChangelogStore instance via
+    // [create] (ChangelogOverlay, FeedbackClient) — so the lock must live in the companion
+    // object: an instance lock would not exclude instances sharing the same prefs file.
 
     /**
      * Checks whether the user has already seen a changelog identified by [versionOrId].
@@ -94,6 +94,10 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
     }
 
     companion object {
+        // Process-wide: ChangelogStore instances are cheap throwaways created per call site
+        // on top of the same SharedPreferences file, so mutual exclusion must be per-process,
+        // not per-instance (mirrors the UserTokenStore lock).
+        private val lock = Any()
         private const val PREFS = "cupthread_feedback"
         private const val KEY_SEEN = "seen_changelogs"
 
