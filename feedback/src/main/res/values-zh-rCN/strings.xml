@@ -89,7 +89,7 @@
     <string name="cupthread_comments_submitting">发布中…</string>
     <string name="cupthread_comments_load_failed">加载评论失败</string>
     <string name="cupthread_comments_post_failed">发布评论失败</string>
-    <string name="cupthread_comments_parent_invalid">你回复的评论已不存在或已被删除</string>
+    <string name="cupthread_comments_parent_invalid">你回复的评论已不可用</string>
     <string name="cupthread_comments_more_commenters">更多评论者</string>
 
     <!-- User Profile -->

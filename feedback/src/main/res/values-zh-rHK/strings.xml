@@ -89,7 +89,7 @@
     <string name="cupthread_comments_submitting">發佈中…</string>
     <string name="cupthread_comments_load_failed">加載留言失敗</string>
     <string name="cupthread_comments_post_failed">發佈留言失敗</string>
-    <string name="cupthread_comments_parent_invalid">你回覆的留言已不存在或已被刪除</string>
+    <string name="cupthread_comments_parent_invalid">你回覆的留言已不可用</string>
     <string name="cupthread_comments_more_commenters">更多留言用戶</string>
 
     <!-- User Profile -->
