@@ -327,7 +327,7 @@ private fun RoadmapBoardScreenContent(
                         val result = if (previous.hasVoted) {
                             client.deleteVote(currentItem.id, userToken)
                         } else {
-                            client.toggleVote(currentItem.id, userToken)
+                            client.vote(currentItem.id, userToken)
                         }
                         requests = requests.map {
                             if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it

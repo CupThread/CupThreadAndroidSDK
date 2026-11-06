@@ -1894,6 +1894,91 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun voteHitsVoteEndpointWithPostAndPayload() = runTest {
+        var method: String? = null
+        var url: String? = null
+        var userTokenHeader: String? = null
+        var requestBody: String? = null
+        val token = UUID.randomUUID().toString()
+
+        val result = client { request ->
+            method = request.method
+            url = request.url
+            userTokenHeader = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":4}""")
+        }.vote("fr-9", token)
+
+        assertEquals("POST", method)
+        assertEquals("https://api.example.com/api/v1/feature-requests/fr-9/vote", url)
+        assertEquals(token, userTokenHeader)
+        assertTrue(result.voted)
+        assertEquals(4, result.voteCount)
+
+        val json = JSONObject(requireNotNull(requestBody))
+        assertEquals(appKey, json.getString("appKey"))
+        assertEquals(token, json.getString("userToken"))
+        assertFalse(json.has("turnstileToken"))
+        assertFalse(json.has("shipNotifyEmail"))
+    }
+
+    @Test
+    fun voteOverloadsSupportTurnstileAndShipNotifyEmail() = runTest {
+        val token = UUID.randomUUID().toString()
+        val turnstile = "0.test_turnstile_token"
+        val email = "voter@example.com"
+        var requestBody: String? = null
+
+        val result = client { request ->
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":5}""")
+        }.vote("fr-100", token, turnstileToken = turnstile, shipNotifyEmail = email)
+
+        assertTrue(result.voted)
+        assertEquals(5, result.voteCount)
+        val json = JSONObject(requireNotNull(requestBody))
+        assertEquals(turnstile, json.getString("turnstileToken"))
+        assertEquals(email, json.getString("shipNotifyEmail"))
+
+        val twoParamResult = client {
+            HttpResponse(200, """{"voted":true,"voteCount":6}""")
+        }.vote("fr-101", token)
+        assertTrue(twoParamResult.voted)
+
+        val threeParamResult = client {
+            HttpResponse(200, """{"voted":true,"voteCount":7}""")
+        }.vote("fr-102", token, turnstileToken = turnstile)
+        assertTrue(threeParamResult.voted)
+    }
+
+    @Test
+    fun voteMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(429, """{"error":"Too many votes. Please try again shortly."}""")
+            }.vote("fr-10", UUID.randomUUID().toString())
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many votes. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many votes. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun voteRejectsHttpWhenTransmittingShipNotifyEmail() = runTest {
+        val insecureClient = FeedbackClient(
+            FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
+        )
+        try {
+            insecureClient.vote("fr-204", "tok", shipNotifyEmail = "user@example.com")
+            fail("Expected IllegalArgumentException on HTTP transmission of email")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
+        }
+    }
+
+    @Test
     fun toggleVoteHitsVoteEndpoint() = runTest {
         var url: String? = null
         val result = client { request ->

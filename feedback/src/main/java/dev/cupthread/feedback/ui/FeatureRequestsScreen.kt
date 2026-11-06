@@ -360,7 +360,7 @@ private fun FeatureRequestsScreenContent(
                                             val result = if (previous.hasVoted) {
                                                 client.deleteVote(item.id, userToken)
                                             } else {
-                                                client.toggleVote(item.id, userToken)
+                                                client.vote(item.id, userToken)
                                             }
                                             items = items.map {
                                                 if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
@@ -435,7 +435,7 @@ private fun FeatureRequestsScreenContent(
                         val result = if (previous.hasVoted) {
                             client.deleteVote(currentItem.id, userToken)
                         } else {
-                            client.toggleVote(currentItem.id, userToken)
+                            client.vote(currentItem.id, userToken)
                         }
                         items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)

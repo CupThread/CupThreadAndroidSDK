@@ -57,7 +57,7 @@ import org.json.JSONObject
  * - Feedback drafting and binary attachment uploads ([submit], [uploadAttachment])
  * - Public application configuration and styling ([fetchAppConfig])
  * - Roadmap kanban boards and milestones ([fetchColumns], [fetchVersions])
- * - Feature request submissions, filtering, and voting ([fetchFeatureRequests], [submitFeatureRequest], [toggleVote])
+ * - Feature request submissions, filtering, and voting ([fetchFeatureRequests], [submitFeatureRequest], [vote], [deleteVote])
  * - Threaded feature request comments and replies ([fetchComments], [postComment])
  * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [unsubscribeFromChangelog])
  * - User telemetry and customer segment attributes ([updateUserAttributes])
@@ -768,6 +768,10 @@ class FeedbackClient internal constructor(
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
+     * Repeating the call is idempotent: it records the upvote and returns the reconciled
+     * vote count (`voted = true`). It does not toggle or remove the vote. To remove an existing
+     * upvote, call [deleteVote] instead.
+     *
      * Preserved for binary backward compatibility with callers who do not pass [turnstileToken]
      * or [shipNotifyEmail].
      *
@@ -775,13 +779,17 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @return [VoteResult] containing the reconciled vote state (`voted`) and current total count (`voteCount`).
      */
-    suspend fun toggleVote(
+    suspend fun vote(
         featureRequestId: String,
         userToken: String
-    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = null, shipNotifyEmail = null)
+    ): VoteResult = vote(featureRequestId, userToken, turnstileToken = null, shipNotifyEmail = null)
 
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
+     *
+     * Repeating the call is idempotent: it records the upvote and returns the reconciled
+     * vote count (`voted = true`). It does not toggle or remove the vote. To remove an existing
+     * upvote, call [deleteVote] instead.
      *
      * Preserved for binary backward compatibility with callers who do not pass [shipNotifyEmail].
      *
@@ -797,17 +805,18 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      */
-    suspend fun toggleVote(
+    suspend fun vote(
         featureRequestId: String,
         userToken: String,
         turnstileToken: String?
-    ): VoteResult = toggleVote(featureRequestId, userToken, turnstileToken = turnstileToken, shipNotifyEmail = null)
+    ): VoteResult = vote(featureRequestId, userToken, turnstileToken = turnstileToken, shipNotifyEmail = null)
 
     /**
      * Submits an upvote on a feature request via `POST /api/v1/feature-requests/{id}/vote`.
      *
-     * To remove an existing upvote, call [deleteVote] instead.
-     * Returns the reconciled server vote state for optimistic UI synchronization.
+     * The endpoint is insert-only and idempotent: submitting a vote leaves the vote in place
+     * and returns the reconciled server vote state (`voted = true`, `voteCount`). It no longer
+     * removes a vote when called a second time. To remove an existing upvote, call [deleteVote] instead.
      *
      * When [PublicAppConfig.requireAnonymousVoteTurnstile] is enabled, anonymous voters must provide
      * a valid [turnstileToken] (solved with action `"vote"` or `"ship-notify"` and cdata matching the configured `appKey`).
@@ -837,7 +846,7 @@ class FeedbackClient internal constructor(
      *
      * Example:
      * ```kotlin
-     * val result = client.toggleVote(
+     * val result = client.vote(
      *     featureRequestId = "req_123",
      *     userToken = userToken,
      *     turnstileToken = "0.test_turnstile_token...",
@@ -846,7 +855,7 @@ class FeedbackClient internal constructor(
      * println("Voted: ${result.voted}, New total: ${result.voteCount}")
      * ```
      */
-    suspend fun toggleVote(
+    suspend fun vote(
         featureRequestId: String,
         userToken: String,
         turnstileToken: String? = null,
@@ -861,7 +870,7 @@ class FeedbackClient internal constructor(
                 null
             }
             require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
-                "toggleVote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
+                "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
             }
         }
         val payload = JSONObject().apply {
@@ -887,7 +896,52 @@ class FeedbackClient internal constructor(
     }
 
     /**
+     * @deprecated The API endpoint `POST /api/v1/feature-requests/{id}/vote` is insert-only and no longer
+     *   toggles off when called a second time. Use [vote] to cast an upvote and [deleteVote] to remove it.
+     */
+    @Deprecated(
+        message = "POST /api/v1/feature-requests/{id}/vote is insert-only and no longer toggles. Use vote() to cast an upvote or deleteVote() to remove it.",
+        replaceWith = ReplaceWith("vote(featureRequestId, userToken)")
+    )
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String
+    ): VoteResult = vote(featureRequestId, userToken)
+
+    /**
+     * @deprecated The API endpoint `POST /api/v1/feature-requests/{id}/vote` is insert-only and no longer
+     *   toggles off when called a second time. Use [vote] to cast an upvote and [deleteVote] to remove it.
+     */
+    @Deprecated(
+        message = "POST /api/v1/feature-requests/{id}/vote is insert-only and no longer toggles. Use vote() to cast an upvote or deleteVote() to remove it.",
+        replaceWith = ReplaceWith("vote(featureRequestId, userToken, turnstileToken)")
+    )
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String,
+        turnstileToken: String?
+    ): VoteResult = vote(featureRequestId, userToken, turnstileToken = turnstileToken)
+
+    /**
+     * @deprecated The API endpoint `POST /api/v1/feature-requests/{id}/vote` is insert-only and no longer
+     *   toggles off when called a second time. Use [vote] to cast an upvote and [deleteVote] to remove it.
+     */
+    @Deprecated(
+        message = "POST /api/v1/feature-requests/{id}/vote is insert-only and no longer toggles. Use vote() to cast an upvote or deleteVote() to remove it.",
+        replaceWith = ReplaceWith("vote(featureRequestId, userToken, turnstileToken, shipNotifyEmail)")
+    )
+    suspend fun toggleVote(
+        featureRequestId: String,
+        userToken: String,
+        turnstileToken: String? = null,
+        shipNotifyEmail: String? = null
+    ): VoteResult = vote(featureRequestId, userToken, turnstileToken, shipNotifyEmail)
+
+    /**
      * Removes an upvote from a feature request via `DELETE /api/v1/feature-requests/{id}/vote`.
+     *
+     * The endpoint is idempotent: removing a vote that is not present returns HTTP 200 with
+     * `voted = false` and the current total count (`voteCount`), not an error.
      *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
