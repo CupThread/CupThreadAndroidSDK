@@ -1469,6 +1469,39 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentHttp500WithNearMissLegacyMessageDegradesToUnexpectedStatus() = runTest {
+        // Without code, near-miss substring matches must not trigger ImageUploadFailed
+        val nearMissJson = """{"error":"No image upload failed; database timed out"}"""
+        try {
+            client {
+                HttpResponse(500, nearMissJson, headers = mapOf("X-Request-Id" to "req_img_near_miss"))
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(500, ex.code)
+            assertTrue(ex.serverMessage.contains("No image upload failed; database timed out"))
+            assertEquals("req_img_near_miss", ex.requestId)
+        }
+    }
+
+    @Test
+    fun isImageUploadFailedClassificationLogic() {
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed("image_upload_failed", null))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed("image_upload_failed", "arbitrary error"))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed. Please try again."))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed"))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed: internal storage error"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "No image upload failed; database timed out"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed("unrelated_code", "Image upload failed"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, null))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "   "))
+    }
+
+    @Test
     fun nonImageUploadsDoNotMapHttp500ToImageUploadFailed() = runTest {
         try {
             client {

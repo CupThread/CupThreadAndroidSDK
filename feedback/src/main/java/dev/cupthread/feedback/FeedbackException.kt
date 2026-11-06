@@ -111,12 +111,27 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
             /** Standard machine-readable code returned by `POST /api/v1/uploads/images` on storage failure. */
             const val CODE_IMAGE_UPLOAD_FAILED = "image_upload_failed"
 
+            private val RECOGNIZED_LEGACY_MESSAGES = setOf(
+                "image upload failed. please try again.",
+                "image upload failed. please try again",
+                "image upload failed",
+                "image upload failed.",
+                "image upload failed: internal storage error"
+            )
+
             /**
              * Determines whether the given [code] or [message] represents an image-upload-failed rejection.
+             *
+             * Matches when [code] is [CODE_IMAGE_UPLOAD_FAILED], or when no code was returned and
+             * [message] matches one of the observed complete legacy image-upload error messages.
+             * Unrecognized messages or near-misses fail closed to prevent false positive retry prompts.
              */
-            internal fun isImageUploadFailed(code: String?, message: String?): Boolean =
-                code == CODE_IMAGE_UPLOAD_FAILED ||
-                    (code == null && message?.contains("image upload failed", ignoreCase = true) == true)
+            internal fun isImageUploadFailed(code: String?, message: String?): Boolean {
+                if (code == CODE_IMAGE_UPLOAD_FAILED) return true
+                if (code != null) return false
+                val normalized = message?.trim()?.lowercase() ?: return false
+                return normalized in RECOGNIZED_LEGACY_MESSAGES
+            }
         }
     }
 
