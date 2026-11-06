@@ -3318,6 +3318,174 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun validationFailedBodyWithFieldErrorsMapsToValidationFailed() = runTest {
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": {
+                  "appKey": ["Required"],
+                  "title": ["String must contain at least 1 character(s)", "Required"]
+                }
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ ->
+                HttpResponse(400, errorBody, headers = mapOf("X-Request-Id" to "req_validation_1"))
+            }.updateUserAttributes(userToken = "tok-1")
+            fail("Expected FeedbackException.ValidationFailed on 400 Validation failed with details")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals("Validation failed", ex.serverMessage)
+            assertNull(ex.serverCode)
+            assertEquals(emptyList<String>(), ex.formErrors)
+            assertEquals(
+                mapOf(
+                    "appKey" to listOf("Required"),
+                    "title" to listOf("String must contain at least 1 character(s)", "Required")
+                ),
+                ex.fieldErrors
+            )
+            assertEquals("req_validation_1", ex.requestId)
+            assertEquals("Validation failed (appKey: Required)", ex.message)
+        }
+    }
+
+    @Test
+    fun validationFailedBodyWithFormErrorsMapsToValidationFailed() = runTest {
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "code": "unprocessable_entity",
+              "details": {
+                "formErrors": ["Body must be a valid JSON object"],
+                "fieldErrors": {}
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ -> HttpResponse(400, errorBody) }.updateUserAttributes(userToken = "tok-1")
+            fail("Expected FeedbackException.ValidationFailed on form-level validation error")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals("Validation failed", ex.serverMessage)
+            assertEquals("unprocessable_entity", ex.serverCode)
+            assertEquals(listOf("Body must be a valid JSON object"), ex.formErrors)
+            assertEquals(emptyMap<String, List<String>>(), ex.fieldErrors)
+            assertNull(ex.requestId)
+        }
+    }
+
+    @Test
+    fun http400WithoutValidationDetailsStaysUnexpectedStatus() = runTest {
+        val plainBodies = listOf(
+            """{"error":"App not found"}""",
+            """{"error":"Validation failed"}""",
+            """{"error":"Validation failed","details":{"formErrors":[],"fieldErrors":{}}}""",
+            "not-json-at-all"
+        )
+        for (body in plainBodies) {
+            try {
+                client { _ -> HttpResponse(400, body) }.updateUserAttributes(userToken = "tok-1")
+                fail("Expected UnexpectedStatus for body: $body")
+            } catch (ex: FeedbackException.UnexpectedStatus) {
+                assertEquals(400, ex.code)
+            }
+        }
+    }
+
+    @Test
+    fun specificInvalidParentMapperWinsOverGenericValidationFailed() = runTest {
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "code": "invalid_parent",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": { "parentId": ["invalid_parent"] }
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ ->
+                HttpResponse(400, errorBody, headers = mapOf("X-Request-Id" to "req_inv_parent_99"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(body = "Reply", parentId = "deleted-parent-id"),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.InvalidParentComment to take precedence")
+        } catch (ex: FeedbackException.InvalidParentComment) {
+            assertEquals("invalid_parent", ex.serverCode)
+            assertEquals("req_inv_parent_99", ex.requestId)
+        }
+    }
+
+    @Test
+    fun validationFailedFallsThroughWhenNoSpecificMapperMatches() = runTest {
+        // Same `Validation failed` + details shape, but no dedicated code: must surface as
+        // ValidationFailed even on a comment submission (mapCommentErrors = true path).
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": { "body": ["String must contain at least 1 character(s)"] }
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ ->
+                HttpResponse(400, errorBody, headers = mapOf("X-Request-Id" to "req_val_77"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(body = "Reply"),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.ValidationFailed when no specific mapper claims the body")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals(mapOf("body" to listOf("String must contain at least 1 character(s)")), ex.fieldErrors)
+            assertEquals("req_val_77", ex.requestId)
+        }
+    }
+
+    @Test
+    fun mapperFreeEndpointStillFallsBackToValidationFailed() = runTest {
+        // `unsubscribeFromChangelog` has no dedicated 400 mapper: the generic validation
+        // fallback must still fire on its send() path, not only on mapper-enabled endpoints.
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": { "token": ["Required"] }
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ -> HttpResponse(400, errorBody) }.unsubscribeFromChangelog(token = "")
+            fail("Expected FeedbackException.ValidationFailed on a mapper-free endpoint")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals(mapOf("token" to listOf("Required")), ex.fieldErrors)
+        }
+    }
+
+    @Test
+    fun validationFailedFromErrorBodyRejectsNonValidationErrors() {
+        assertNull(FeedbackException.ValidationFailed.fromErrorBody("""{"error":"Too many requests"}"""))
+        assertNull(FeedbackException.ValidationFailed.fromErrorBody("[]"))
+        assertNull(FeedbackException.ValidationFailed.fromErrorBody(""))
+        val parsed = FeedbackException.ValidationFailed.fromErrorBody(
+            """{"error":"Validation failed","details":{"formErrors":["Bad"],"fieldErrors":{"a":["x"]}}}""",
+            requestId = "req_direct_1"
+        )
+        assertNotNull(parsed)
+        assertEquals("req_direct_1", parsed!!.requestId)
+        assertEquals(listOf("Bad"), parsed.formErrors)
+    }
+
+
+    @Test
     fun withVoteStateOnlyChangesVoteFields() {
         val base = FeatureRequestItem(
             id = "fr-1",
