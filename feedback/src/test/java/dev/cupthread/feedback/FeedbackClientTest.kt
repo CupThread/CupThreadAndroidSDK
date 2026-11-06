@@ -259,6 +259,10 @@ class FeedbackClientTest {
         assertTrue("Expected 20-param copy method for primary constructor with allowedEmbedOrigins", copyMethods.any { it.parameterCount == 20 })
         assertTrue("Expected 19-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 19 })
 
+        val copyDefaultMethods = PublicAppConfig::class.java.declaredMethods.filter { it.name == "copy\$default" }
+        assertTrue("Expected 23-param copy\$default for primary constructor with allowedEmbedOrigins", copyDefaultMethods.any { it.parameterCount == 23 })
+        assertTrue("Expected 22-param copy\$default for binary backward compatibility", copyDefaultMethods.any { it.parameterCount == 22 })
+
         val constructors = PublicAppConfig::class.java.declaredConstructors
         assertTrue("Expected 20-param constructor with allowedEmbedOrigins", constructors.any { it.parameterTypes.size == 20 })
         assertTrue("Expected 19-param constructor for binary backward compatibility", constructors.any { it.parameterTypes.size == 19 })
