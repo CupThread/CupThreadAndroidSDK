@@ -1412,6 +1412,127 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentMapsHttp500WithCodeToImageUploadFailed() = runTest {
+        // #62: POST /api/v1/uploads/images returns stable { "error": "Image upload failed. Please try again.", "code": "image_upload_failed" } on 500
+        val errorJson = """{"error":"Image upload failed. Please try again.","code":"image_upload_failed"}"""
+        try {
+            client {
+                HttpResponse(500, errorJson, headers = mapOf("X-Request-Id" to "req_img_500"))
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected ImageUploadFailed")
+        } catch (ex: FeedbackException.ImageUploadFailed) {
+            assertEquals("Image upload failed. Please try again.", ex.serverMessage)
+            assertEquals("image_upload_failed", ex.serverCode)
+            assertEquals("req_img_500", ex.requestId)
+            assertEquals("Image upload failed. Please try again.", ex.message)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentMapsHttp500WithLegacyMessageToImageUploadFailed() = runTest {
+        val legacyJson = """{"error":"Image upload failed: internal storage error"}"""
+        try {
+            client {
+                HttpResponse(500, legacyJson, headers = mapOf("X-Request-Id" to "req_img_legacy"))
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected ImageUploadFailed")
+        } catch (ex: FeedbackException.ImageUploadFailed) {
+            assertEquals("Image upload failed: internal storage error", ex.serverMessage)
+            assertEquals("image_upload_failed", ex.serverCode)
+            assertEquals("req_img_legacy", ex.requestId)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentHttp500WithUnrelatedErrorDegradesToUnexpectedStatus() = runTest {
+        try {
+            client {
+                HttpResponse(500, """{"error":"Database connection timed out","code":"database_timeout"}""")
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(500, ex.code)
+            assertTrue(ex.serverMessage.contains("Database connection timed out"))
+        }
+    }
+
+    @Test
+    fun uploadAttachmentHttp500WithNearMissLegacyMessageDegradesToUnexpectedStatus() = runTest {
+        // Without code, near-miss substring matches must not trigger ImageUploadFailed
+        val nearMissJson = """{"error":"No image upload failed; database timed out"}"""
+        try {
+            client {
+                HttpResponse(500, nearMissJson, headers = mapOf("X-Request-Id" to "req_img_near_miss"))
+            }.uploadAttachment(
+                data = validPngBytes,
+                filename = "screenshot.png",
+                mimeType = "image/png"
+            )
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(500, ex.code)
+            assertTrue(ex.serverMessage.contains("No image upload failed; database timed out"))
+            assertEquals("req_img_near_miss", ex.requestId)
+        }
+    }
+
+    @Test
+    fun isImageUploadFailedClassificationLogic() {
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed("image_upload_failed", null))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed("image_upload_failed", "arbitrary error"))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed. Please try again."))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed"))
+        assertTrue(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "Image upload failed: internal storage error"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "No image upload failed; database timed out"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed("unrelated_code", "Image upload failed"))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, null))
+        assertFalse(FeedbackException.ImageUploadFailed.isImageUploadFailed(null, "   "))
+    }
+
+    @Test
+    fun nonImageUploadsDoNotMapHttp500ToImageUploadFailed() = runTest {
+        try {
+            client {
+                HttpResponse(500, """{"error":"Image upload failed. Please try again.","code":"image_upload_failed"}""")
+            }.submit(FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID))
+            fail("expected UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(500, ex.code)
+        }
+    }
+
+    @Test
+    fun imageUploadFailedDefaultConstructorAndProperties() {
+        val defaultEx = FeedbackException.ImageUploadFailed()
+        assertNull(defaultEx.serverMessage)
+        assertEquals("image_upload_failed", defaultEx.serverCode)
+        assertNull(defaultEx.requestId)
+        assertEquals("Image upload failed. Please try again.", defaultEx.message)
+
+        val customEx = FeedbackException.ImageUploadFailed(
+            serverMessage = "Custom error",
+            serverCode = "custom_code",
+            requestId = "req_custom"
+        )
+        assertEquals("Custom error", customEx.serverMessage)
+        assertEquals("custom_code", customEx.serverCode)
+        assertEquals("req_custom", customEx.requestId)
+        assertEquals("Custom error", customEx.message)
+    }
+
+    @Test
     fun nonUploadRequestsDoNotMapHttp415ToUnsupportedMediaType() = runTest {
         try {
             client {

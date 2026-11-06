@@ -127,7 +127,7 @@ lifecycleScope.launch {
 | Method | Endpoint / Description |
 | ------ | ---------------------- |
 | `submit(draft, userToken, turnstileToken?)` | `POST /api/v1/feedback` (sends `X-User-Token`; surfaces `FeedbackException.UploaderMismatch` or `FeedbackException.UploaderIdentityRequired` when upload sessions were created by a different identity) |
-| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images` (metadata-scrubbed, see [Image Metadata Privacy](#image-metadata-privacy)); other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`, surfaces `FeedbackException.UploaderIdentityRequired`) |
+| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images` (metadata-scrubbed, see [Image Metadata Privacy](#image-metadata-privacy); surfaces `FeedbackException.ImageUploadFailed` on HTTP 500 storage failure); other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`, surfaces `FeedbackException.UploaderIdentityRequired`) |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |

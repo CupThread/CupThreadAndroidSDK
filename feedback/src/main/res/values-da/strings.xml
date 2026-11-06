@@ -21,6 +21,7 @@
     <string name="cupthread_feedback_uploading_attachment">Uploader vedhæftet fil…</string>
     <string name="cupthread_feedback_remove_attachment">Fjern vedhæftet fil</string>
     <string name="cupthread_feedback_upload_failed">Kunne ikke uploade vedhæftet fil</string>
+    <string name="cupthread_feedback_image_upload_failed">Billedoverførsel mislykkedes. Prøv igen.</string>
     <string name="cupthread_attachment_oversized">Vedhæftet fil (%1$s) overskrider den maksimalt tilladte størrelse på %2$s.</string>
     <string name="cupthread_attachment_exceeds_limit">Vedhæftet fil overskrider den maksimalt tilladte størrelse på %1$s.</string>
     <string name="cupthread_feedback_unsupported_image_type">Ikke-understøttet billedformat. Vælg venligst et PNG-, JPEG-, WebP- eller GIF-billede.</string>

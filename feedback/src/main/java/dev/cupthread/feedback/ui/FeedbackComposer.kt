@@ -316,6 +316,7 @@ private fun FeedbackFormBody(
     val scanRejectedError = stringResource(R.string.cupthread_feedback_attachment_scan_rejected)
     val alreadyFinalizedError = stringResource(R.string.cupthread_feedback_attachment_already_finalized)
     val verificationRequiredError = stringResource(R.string.cupthread_feedback_verification_required)
+    val imageUploadFailedError = stringResource(R.string.cupthread_feedback_image_upload_failed)
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -433,6 +434,8 @@ private fun FeedbackFormBody(
                     throw ce
                 } catch (ex: FeedbackException.UnsupportedMediaType) {
                     error = unsupportedImageTypeError
+                } catch (ex: FeedbackException.ImageUploadFailed) {
+                    error = imageUploadFailedError
                 } catch (ex: Exception) {
                     error = ex.message ?: defaultUploadError
                 } finally {

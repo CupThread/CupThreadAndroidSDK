@@ -318,6 +318,7 @@ class FeedbackClient internal constructor(
  * @throws FeedbackException.AuthenticationRequired on HTTP 401.
  * @throws FeedbackException.UnsupportedMediaType on HTTP 415, when an unsupported image format (e.g. SVG) is uploaded,
  *   or when a recognized image attachment is structurally corrupt so its metadata cannot be removed safely.
+     * @throws FeedbackException.ImageUploadFailed if the server encounters an unexpected storage failure (HTTP 500 `image_upload_failed`).
      * @throws FeedbackException.UploaderIdentityRequired if creating an upload session without an uploader identity (HTTP 400 `uploader_identity_required`).
      * @throws FeedbackException.VerificationRequired if the upload-session human-verification gate rejects the request (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
@@ -369,7 +370,8 @@ class FeedbackClient internal constructor(
                 body = body,
                 userToken = userToken,
                 accepted = setOf(200, 201),
-                mapUnsupportedMediaType = true
+                mapUnsupportedMediaType = true,
+                mapImageUploadErrors = true
             )
             return try {
                 parseAttachment(json).copy(userToken = userToken?.trim()?.takeIf { it.isNotEmpty() })
@@ -1802,7 +1804,8 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200, 201),
-        mapUnsupportedMediaType: Boolean = false
+        mapUnsupportedMediaType: Boolean = false,
+        mapImageUploadErrors: Boolean = false
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
         return send(
@@ -1814,7 +1817,8 @@ class FeedbackClient internal constructor(
                 body = body
             ),
             accepted,
-            mapUnsupportedMediaType = mapUnsupportedMediaType
+            mapUnsupportedMediaType = mapUnsupportedMediaType,
+            mapImageUploadErrors = mapImageUploadErrors
         )
     }
 
@@ -1853,7 +1857,8 @@ class FeedbackClient internal constructor(
         mapVerificationErrors: Boolean = false,
         mapUserAttributeErrors: Boolean = false,
         mapUploaderErrors: Boolean = false,
-        mapCommentErrors: Boolean = false
+        mapCommentErrors: Boolean = false,
+        mapImageUploadErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1954,6 +1959,19 @@ class FeedbackClient internal constructor(
                     val errorPayload = parseErrorPayload(response.body)
                     val message = if (errorPayload != null) errorPayload.second else response.body.ifBlank { null }
                     throw FeedbackException.RateLimited(message, requestId)
+                }
+                if (response.code == 500 && mapImageUploadErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second
+                    val rawOrMessage = message ?: response.body.ifBlank { null }
+                    if (FeedbackException.ImageUploadFailed.isImageUploadFailed(code, rawOrMessage)) {
+                        throw FeedbackException.ImageUploadFailed(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.ImageUploadFailed.CODE_IMAGE_UPLOAD_FAILED,
+                            requestId = requestId
+                        )
+                    }
                 }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" }, requestId)
             }
