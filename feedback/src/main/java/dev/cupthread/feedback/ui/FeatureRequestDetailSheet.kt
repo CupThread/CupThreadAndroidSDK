@@ -1,5 +1,6 @@
 package dev.cupthread.feedback.ui
 
+import dev.cupthread.feedback.FeedbackException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -127,6 +128,7 @@ fun FeatureRequestDetailSheet(
     val stage = stageStyleForRequest(item)
     val defaultLoadError = stringResource(R.string.cupthread_comments_load_failed)
     val defaultPostError = stringResource(R.string.cupthread_comments_post_failed)
+    val parentInvalidError = stringResource(R.string.cupthread_comments_parent_invalid)
 
     suspend fun loadComments() {
         loadingComments = true
@@ -391,6 +393,9 @@ fun FeatureRequestDetailSheet(
                                     loadComments()
                                 } catch (e: CancellationException) {
                                     throw e
+                                } catch (_: FeedbackException.InvalidParentComment) {
+                                    postError = parentInvalidError
+                                    replyTarget = null
                                 } catch (ex: Exception) {
                                     postError = ex.message ?: defaultPostError
                                 } finally {

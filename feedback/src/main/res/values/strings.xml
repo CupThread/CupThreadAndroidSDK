@@ -91,6 +91,7 @@
     <string name="cupthread_comments_submitting">Posting…</string>
     <string name="cupthread_comments_load_failed">Failed to load comments</string>
     <string name="cupthread_comments_post_failed">Failed to post comment</string>
+    <string name="cupthread_comments_parent_invalid">The comment you are replying to is no longer available.</string>
     <string name="cupthread_comments_more_commenters">More commenters</string>
 
     <!-- User Profile -->

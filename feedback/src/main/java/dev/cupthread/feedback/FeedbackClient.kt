@@ -1112,6 +1112,7 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
+     * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
@@ -1147,7 +1148,8 @@ class FeedbackClient internal constructor(
                 path = "/api/v1/feature-requests/$featureRequestId/comments",
                 body = payload,
                 userToken = userToken,
-                accepted = setOf(200, 201)
+                accepted = setOf(200, 201),
+                mapCommentErrors = true
             )
         )
     }
@@ -1769,7 +1771,8 @@ class FeedbackClient internal constructor(
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
         mapUserAttributeErrors: Boolean = false,
-        mapUploaderErrors: Boolean = false
+        mapUploaderErrors: Boolean = false,
+        mapCommentErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -1787,7 +1790,8 @@ class FeedbackClient internal constructor(
             mapRateLimitErrors = mapRateLimitErrors,
             mapVerificationErrors = mapVerificationErrors,
             mapUserAttributeErrors = mapUserAttributeErrors,
-            mapUploaderErrors = mapUploaderErrors
+            mapUploaderErrors = mapUploaderErrors,
+            mapCommentErrors = mapCommentErrors
         )
     }
 
@@ -1848,7 +1852,8 @@ class FeedbackClient internal constructor(
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
         mapUserAttributeErrors: Boolean = false,
-        mapUploaderErrors: Boolean = false
+        mapUploaderErrors: Boolean = false,
+        mapCommentErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1862,6 +1867,18 @@ class FeedbackClient internal constructor(
                 val requestId = response.headers.entries
                     .firstOrNull { (name, _) -> name.equals(REQUEST_ID_HEADER, ignoreCase = true) }
                     ?.value?.trim()?.takeIf { it.isNotEmpty() }
+                if (response.code == 400 && mapCommentErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second
+                    if (FeedbackException.InvalidParentComment.isInvalidParent(code)) {
+                        throw FeedbackException.InvalidParentComment(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.InvalidParentComment.CODE_INVALID_PARENT,
+                            requestId = requestId
+                        )
+                    }
+                }
                 if (response.code == 400 && mapUserAttributeErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first

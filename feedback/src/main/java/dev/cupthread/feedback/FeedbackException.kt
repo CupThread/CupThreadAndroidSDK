@@ -236,6 +236,35 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
     }
 
     /**
+     * Raised when posting a feature request comment via [FeedbackClient.postComment] is rejected
+     * because [CommentDraft.parentId] does not resolve to a visible comment on the target
+     * feature request (HTTP 400 `invalid_parent`).
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_INVALID_PARENT]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class InvalidParentComment @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_INVALID_PARENT,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "The comment being replied to does not exist or is no longer available."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned by `POST /api/v1/feature-requests/{id}/comments`. */
+            const val CODE_INVALID_PARENT = "invalid_parent"
+
+            /**
+             * Determines whether the given [code] represents an invalid parent comment rejection.
+             */
+            internal fun isInvalidParent(code: String?): Boolean =
+                code == CODE_INVALID_PARENT
+        }
+    }
+
+    /**
      * Raised when the server responds with HTTP 429 `too_many_requests`, indicating that the client
      * has exceeded a rate limit window (such as voting too frequently, or syncing user attributes
      * for many users behind one shared IP).
