@@ -489,6 +489,103 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
     }
 
     /**
+     * Raised when request validation fails on an intake endpoint (HTTP 400 with
+     * `"error": "Validation failed"` and a `details` object), replacing a generic
+     * [UnexpectedStatus] so callers can present precise, field-level messages.
+     *
+     * The CupThread API validates every request with zod and answers 400 with the zod
+     * `flatten()` output:
+     *
+     * ```json
+     * {
+     *   "error": "Validation failed",
+     *   "details": {
+     *     "formErrors": [],
+     *     "fieldErrors": { "appKey": ["Required"] }
+     *   }
+     * }
+     * ```
+     *
+     * `formErrors` carries whole-payload problems and `fieldErrors` maps each rejected field to
+     * its message strings; both are empty/absent when unused. Specific 400 mappers (such as
+     * [InvalidParentComment], [ReservedPlanSentinel], and [UploaderIdentityRequired]) take
+     * precedence: when the server code or field messages match a dedicated rejection, that typed
+     * exception is thrown instead and no [ValidationFailed] is raised.
+     *
+     * @property serverMessage Raw top-level error text (typically `"Validation failed"`).
+     * @property serverCode Machine-readable rejection code from the server, when present.
+     * @property formErrors Whole-payload validation messages; empty when the failure is field-only.
+     * @property fieldErrors Map of rejected field name to its validation messages; empty when the
+     *   failure is form-level only.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class ValidationFailed @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = null,
+        val formErrors: List<String> = emptyList(),
+        val fieldErrors: Map<String, List<String>> = emptyMap(),
+        override val requestId: String? = null
+    ) : FeedbackException(
+        buildString {
+            append(serverMessage?.ifBlank { null } ?: "The request was rejected by validation.")
+            val firstField = fieldErrors.entries.firstOrNull { it.value.isNotEmpty() }
+            if (firstField != null) {
+                append(" (${firstField.key}: ${firstField.value.first()})")
+            } else {
+                formErrors.firstOrNull()?.let { append(" ($it)") }
+            }
+        }
+    ) {
+        companion object {
+            /** The fixed top-level `error` value the server sends on validation failures. */
+            const val ERROR_VALIDATION_FAILED = "Validation failed"
+
+            /**
+             * Parses the zod `flatten()` `details` envelope of a `Validation failed` body.
+             *
+             * Returns `null` when [body] is not a JSON object, the `error` field differs from
+             * [ERROR_VALIDATION_FAILED], or `details` is missing/blank — callers should fall back
+             * to [UnexpectedStatus] in that case. Malformed entries inside a present `details`
+             * object are skipped rather than failing the whole parse.
+             */
+            internal fun fromErrorBody(body: String, requestId: String? = null): ValidationFailed? {
+                val json = try {
+                    JSONObject(body)
+                } catch (_: Exception) {
+                    return null
+                }
+                val error = json.optString("error").takeIf { it.isNotBlank() }
+                if (error != ERROR_VALIDATION_FAILED) return null
+                val details = json.optJSONObject("details") ?: return null
+                val formErrors = details.optJSONArray("formErrors")?.stringList().orEmpty()
+                val fieldErrors = details.optJSONObject("fieldErrors")?.let { fields ->
+                    buildMap {
+                        fields.keys().forEach { field ->
+                            val messages = fields.optJSONArray(field)?.stringList()
+                            if (!messages.isNullOrEmpty()) put(field, messages)
+                        }
+                    }
+                }.orEmpty()
+                if (formErrors.isEmpty() && fieldErrors.isEmpty()) return null
+                return ValidationFailed(
+                    serverMessage = error,
+                    serverCode = json.optString("code").takeIf { it.isNotBlank() && it != "null" },
+                    formErrors = formErrors,
+                    fieldErrors = fieldErrors,
+                    requestId = requestId
+                )
+            }
+
+            private fun org.json.JSONArray.stringList(): List<String> =
+                buildList {
+                    for (i in 0 until length()) {
+                        (opt(i) as? String)?.takeIf { it.isNotBlank() }?.let(::add)
+                    }
+                }
+        }
+    }
+
+    /**
      * Raised when the server responds with an HTTP status code outside the accepted success range
      * for the specific endpoint.
      *

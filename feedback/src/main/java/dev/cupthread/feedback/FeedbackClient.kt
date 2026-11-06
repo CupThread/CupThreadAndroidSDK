@@ -2074,6 +2074,13 @@ class FeedbackClient internal constructor(
                         )
                     }
                 }
+                // Generic fallback: a 400 `Validation failed` body with the documented zod
+                // `details` envelope surfaces as typed ValidationFailed; anything else keeps
+                // the existing UnexpectedStatus behavior. Specific mappers above have already
+                // had the chance to claim dedicated rejection codes.
+                if (response.code == 400) {
+                    FeedbackException.ValidationFailed.fromErrorBody(response.body, requestId)?.let { throw it }
+                }
                 throw FeedbackException.UnexpectedStatus(response.code, response.body.ifBlank { "Unknown error" }, requestId)
             }
             try {
