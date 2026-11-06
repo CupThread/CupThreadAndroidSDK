@@ -1002,6 +1002,8 @@ class FeedbackClientTest {
         } catch (e: FeedbackException.UploaderMismatch) {
             assertFalse(requestSent)
             assertTrue(e.message?.contains("does not match submission userToken") == true)
+            assertFalse(e.message?.contains("tok_uploader_A") == true)
+            assertFalse(e.message?.contains("tok_uploader_B") == true)
         }
     }
 
@@ -1059,6 +1061,27 @@ class FeedbackClientTest {
         }.submit(draft, userToken = "tok_uploader_match")
         assertEquals("tok_uploader_match", capturedToken)
         assertEquals("sub_123", result.submissionId)
+    }
+
+    @Test
+    fun feedbackAttachmentBinaryBackwardCompatibility() {
+        val attachment7 = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.R2,
+            uploadId = "upl_test",
+            filename = "file.txt"
+        )
+        assertNull(attachment7.userToken)
+        val copy7 = attachment7.copy(filename = "new.txt")
+        assertEquals("new.txt", copy7.filename)
+        assertNull(copy7.userToken)
+
+        val copyMethods = FeedbackAttachment::class.java.declaredMethods.filter { it.name == "copy" }
+        assertTrue("Expected 8-param copy method for primary constructor with userToken", copyMethods.any { it.parameterCount == 8 })
+        assertTrue("Expected 7-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 7 })
+
+        val constructors = FeedbackAttachment::class.java.declaredConstructors
+        assertTrue("Expected 8-param constructor with userToken", constructors.any { it.parameterTypes.size == 8 })
+        assertTrue("Expected 7-param constructor for binary backward compatibility", constructors.any { it.parameterTypes.size == 7 })
     }
 
     @Test

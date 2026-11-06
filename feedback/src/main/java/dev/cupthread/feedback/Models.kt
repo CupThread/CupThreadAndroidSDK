@@ -199,6 +199,54 @@ data class FeedbackAttachment(
     )
 
     /**
+     * Preserves binary backward compatibility for callers compiled against SDK versions
+     * prior to the addition of [userToken].
+     */
+    @Deprecated("Preserved for binary backward compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(
+        kind: Kind,
+        key: String? = null,
+        url: String? = null,
+        filename: String? = null,
+        mimeType: String? = null,
+        size: Long? = null,
+        uploadId: String? = null
+    ) : this(
+        kind = kind,
+        key = key,
+        url = url,
+        filename = filename,
+        mimeType = mimeType,
+        size = size,
+        uploadId = uploadId,
+        userToken = null
+    )
+
+    /**
+     * Preserves binary backward compatibility for callers compiled against SDK versions
+     * prior to the addition of [userToken] who invoke `copy(...)`.
+     */
+    @Deprecated("Preserved for binary backward compatibility", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        kind: Kind = this.kind,
+        key: String? = this.key,
+        url: String? = this.url,
+        filename: String? = this.filename,
+        mimeType: String? = this.mimeType,
+        size: Long? = this.size,
+        uploadId: String? = this.uploadId
+    ): FeedbackAttachment = copy(
+        kind = kind,
+        key = key,
+        url = url,
+        filename = filename,
+        mimeType = mimeType,
+        size = size,
+        uploadId = uploadId,
+        userToken = this.userToken
+    )
+
+    /**
      * Unique identifier for this attachment, preferring [uploadId] when present,
      * falling back to [key].
      */

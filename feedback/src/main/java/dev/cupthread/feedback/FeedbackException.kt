@@ -198,12 +198,7 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
              * Determines whether the given [code] or [message] represents an uploader-identity-required error.
              */
             internal fun isUploaderIdentityRequired(code: String?, message: String?): Boolean =
-                code == CODE_UPLOADER_IDENTITY_REQUIRED ||
-                    (code == null && (
-                        message?.contains("uploader_identity_required", ignoreCase = true) == true ||
-                            (message?.contains("X-User-Token", ignoreCase = true) == true &&
-                                message.contains("required", ignoreCase = true))
-                    ))
+                code == CODE_UPLOADER_IDENTITY_REQUIRED
         }
     }
 
@@ -234,11 +229,7 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
              * Determines whether the given [code] or [message] represents an uploader-mismatch error.
              */
             internal fun isUploaderMismatch(code: String?, message: String?): Boolean =
-                code == CODE_UPLOADER_MISMATCH ||
-                    (code == null && (
-                        message?.contains("uploader_mismatch", ignoreCase = true) == true ||
-                            message?.contains("different uploader", ignoreCase = true) == true
-                    ))
+                code == CODE_UPLOADER_MISMATCH
         }
     }
 

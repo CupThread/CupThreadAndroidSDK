@@ -199,7 +199,7 @@ class FeedbackClient internal constructor(
                 val attachmentToken = attachment.userToken?.trim()?.takeIf { it.isNotEmpty() }
                 if (attachmentToken != null && trimmedToken != null && attachmentToken != trimmedToken) {
                     throw FeedbackException.UploaderMismatch(
-                        serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was created by userToken '$attachmentToken', which does not match submission userToken '$trimmedToken'."
+                        serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was uploaded with a userToken that does not match submission userToken."
                     )
                 }
                 if (attachmentToken != null && trimmedToken == null) {
