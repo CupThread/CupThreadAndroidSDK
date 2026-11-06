@@ -3450,6 +3450,27 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun mapperFreeEndpointStillFallsBackToValidationFailed() = runTest {
+        // `unsubscribeFromChangelog` has no dedicated 400 mapper: the generic validation
+        // fallback must still fire on its send() path, not only on mapper-enabled endpoints.
+        val errorBody = """
+            {
+              "error": "Validation failed",
+              "details": {
+                "formErrors": [],
+                "fieldErrors": { "token": ["Required"] }
+              }
+            }
+        """.trimIndent()
+        try {
+            client { _ -> HttpResponse(400, errorBody) }.unsubscribeFromChangelog(token = "")
+            fail("Expected FeedbackException.ValidationFailed on a mapper-free endpoint")
+        } catch (ex: FeedbackException.ValidationFailed) {
+            assertEquals(mapOf("token" to listOf("Required")), ex.fieldErrors)
+        }
+    }
+
+    @Test
     fun validationFailedFromErrorBodyRejectsNonValidationErrors() {
         assertNull(FeedbackException.ValidationFailed.fromErrorBody("""{"error":"Too many requests"}"""))
         assertNull(FeedbackException.ValidationFailed.fromErrorBody("[]"))

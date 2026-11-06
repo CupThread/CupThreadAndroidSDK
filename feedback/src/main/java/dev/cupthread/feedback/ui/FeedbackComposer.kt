@@ -312,6 +312,12 @@ private fun FeedbackFormBody(
 
     val defaultUploadError = stringResource(R.string.cupthread_feedback_upload_failed)
     val defaultGenericError = stringResource(R.string.cupthread_feedback_generic_error)
+    val fieldLabels = mapOf(
+        "title" to stringResource(R.string.cupthread_feedback_title_label),
+        "description" to stringResource(R.string.cupthread_feedback_desc_label),
+        "reporterName" to stringResource(R.string.cupthread_feedback_name_label),
+        "reporterEmail" to stringResource(R.string.cupthread_feedback_email_label)
+    )
     val unsupportedImageTypeError = stringResource(R.string.cupthread_feedback_unsupported_image_type)
     val scanRejectedError = stringResource(R.string.cupthread_feedback_attachment_scan_rejected)
     val alreadyFinalizedError = stringResource(R.string.cupthread_feedback_attachment_already_finalized)
@@ -598,6 +604,8 @@ private fun FeedbackFormBody(
                         error = ex.serverMessage ?: alreadyFinalizedError
                     } catch (ex: FeedbackException.VerificationRequired) {
                         error = verificationRequiredError
+                    } catch (ex: FeedbackException.ValidationFailed) {
+                        error = validationFailedMessage(ex, fieldLabels, defaultGenericError)
                     } catch (ex: Exception) {
                         error = ex.message ?: defaultGenericError
                     } finally {
@@ -682,6 +690,36 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024 -> "${bytes / 1024} KB"
     else -> "$bytes B"
 }
+
+/**
+ * Builds a user-presentable message from a [FeedbackException.ValidationFailed].
+ *
+ * Maps server field keys back to the composer's localized field labels so each rejection reads
+ * as "Label: message" (e.g. `Title: Required`). Fields the composer cannot edit — such as
+ * `appKey` — are excluded; unmapped but editable keys fall back to the raw server key name.
+ * Falls back to the exception message (or the generic error) when nothing is presentable.
+ */
+private fun validationFailedMessage(
+    ex: FeedbackException.ValidationFailed,
+    fieldLabels: Map<String, String>,
+    genericError: String
+): String {
+    val fieldMessages = ex.fieldErrors
+        .filterKeys { it !in NON_EDITABLE_DRAFT_FIELDS }
+        .map { (key, messages) ->
+            val label = fieldLabels[key] ?: key
+            messages.filter { it.isNotBlank() }.map { "$label: $it" }
+        }
+        .flatten()
+    val messages = ex.formErrors.filter { it.isNotBlank() } + fieldMessages
+    if (messages.isEmpty()) return ex.message ?: genericError
+    return messages.joinToString("\n")
+}
+
+/** Server field keys the composer does not collect as editable form inputs. */
+private val NON_EDITABLE_DRAFT_FIELDS = setOf(
+    "appKey", "platform", "appVersion", "buildNumber", "metadata", "attachments"
+)
 
 @Composable
 private fun FeedbackSent(

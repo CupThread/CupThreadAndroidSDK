@@ -82,7 +82,8 @@ import org.json.JSONObject
  * - [FeedbackException.AttachmentAlreadyFinalized]: Attachment was already consumed by a concurrent submission (HTTP 409 `already_finalized`).
  * - [FeedbackException.RateLimited]: Client exceeded request rate limit, such as voting too frequently (HTTP 429).
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
- * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
+ * - [FeedbackException.ValidationFailed]: Intake request rejected by server-side validation with
+ *   field-level details (HTTP 400 `Validation failed` envelope; see the endpoint's `@throws` docs).
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
  *
  * Every request carries an `X-Request-Id` header (a fresh UUID by default, or the value returned by
@@ -593,6 +594,8 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.RateLimited when the per-IP search rate limit is exceeded (HTTP 429) —
      *   queries, unlike unfiltered list reads, share a 30 requests / 60 s budget with every other
      *   client behind the same egress IP.
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope
+     *   (e.g. a malformed [cursor]); check [FeedbackException.ValidationFailed.fieldErrors] for details.
      * @throws FeedbackException.UnexpectedStatus on other HTTP errors.
      * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
      *
@@ -1018,8 +1021,10 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.CommentsUnavailable if the thread is not visible (HTTP 404), for
      *   example because the feature request is still awaiting approval. The request may still
      *   exist — treat this as "comments not available" rather than "request never existed".
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope
+     *   (e.g. a malformed [cursor]); check [FeedbackException.ValidationFailed.fieldErrors] for details.
      * @throws FeedbackException.UnexpectedStatus on other HTTP errors (such as HTTP 400 for an
-     *   invalid cursor).
+     *   invalid cursor without a validation envelope).
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
@@ -1411,8 +1416,10 @@ class FeedbackClient internal constructor(
      * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
      * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
      *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors (including HTTP 400 for a missing
-     *   or invalid token).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope
+     *   (including other HTTP 400 responses for a missing or invalid token).
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope
+     *   (e.g. a missing token); check [FeedbackException.ValidationFailed.fieldErrors] for details.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
@@ -1453,11 +1460,13 @@ class FeedbackClient internal constructor(
      *
      * @param token Single-use confirmation token from the emailed confirmation link.
      * @return [ChangelogConfirmationResult] indicating whether the subscription was confirmed.
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope
+     *   (including other HTTP 400 responses for an invalid, expired, or already-consumed token).
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope
+     *   (e.g. a missing token); check [FeedbackException.ValidationFailed.fieldErrors] for details.
      * @throws IllegalArgumentException if [token] is blank or when the configured
      *   [FeedbackClientConfig.baseUrl] is not HTTPS — the token is a bearer credential and is
      *   never sent in cleartext.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors (including HTTP 400 for an invalid,
-     *   expired, or already-consumed token).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
@@ -1701,7 +1710,10 @@ class FeedbackClient internal constructor(
      * @return [EndUserLinkResult] containing the linking status and profile identifiers.
      * @throws IllegalArgumentException if [sessionToken] or [userToken] is blank.
      * @throws FeedbackException.AuthenticationRequired if the session token is missing or expired (HTTP 401).
-     * @throws FeedbackException.UnexpectedStatus on HTTP 400, 404, 409 (conflict), or other server rejections.
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope;
+     *   check [FeedbackException.ValidationFailed.fieldErrors] for details.
+     * @throws FeedbackException.UnexpectedStatus on HTTP 400 without a validation envelope, 404,
+     *   409 (conflict), or other server rejections.
      * @throws FeedbackException.InvalidResponse on network failure or invalid response JSON.
      *
      * Example:
