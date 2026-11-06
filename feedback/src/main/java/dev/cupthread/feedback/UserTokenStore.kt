@@ -3,6 +3,7 @@ package dev.cupthread.feedback
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.UUID
+import java.util.WeakHashMap
 
 /**
  * Persistent anonymous device token store backed by Android [SharedPreferences].
@@ -15,7 +16,10 @@ import java.util.UUID
  *
  * ### Lifecycle and Storage
  * - Generates a new random RFC 4122 UUID v4 on first access and immediately persists it into private `SharedPreferences`.
- * - Subsequent reads reuse the cached token, surviving activity recreations, process death, and app updates.
+ * - Subsequent reads reuse a token cache shared per `SharedPreferences`, so every
+ *   instance created from the same prefs file observes `rotateToken()` / `clearToken()`
+ *   performed through any other instance; the token survives activity recreations,
+ *   process death, and app updates.
  * - The token resets only when the user clears app storage or uninstalls the application.
  * - Concurrency & Durability: Token generation is synchronized and thread-safe. First-time creation
  *   uses synchronous disk commit to guarantee identity stability across process restarts and prevent
@@ -44,9 +48,6 @@ import java.util.UUID
  * @param prefs [SharedPreferences] instance where the token key is stored.
  */
 class UserTokenStore internal constructor(private val prefs: SharedPreferences) {
-    @Volatile
-    private var cachedToken: String? = null
-
     /**
      * The stable anonymous user token.
      *
@@ -65,17 +66,17 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
      */
     val token: String
         get() {
-            cachedToken?.let { return it }
+            cacheFor(prefs)?.let { return it }
             return synchronized(lock) {
-                cachedToken?.let { return it }
+                cacheFor(prefs)?.let { return it }
                 val existing = prefs.getString(KEY, null)
                 if (!existing.isNullOrBlank()) {
-                    cachedToken = existing
+                    setCacheFor(prefs, existing)
                     existing
                 } else {
                     val created = UUID.randomUUID().toString()
                     prefs.edit().putString(KEY, created).commit()
-                    cachedToken = created
+                    setCacheFor(prefs, created)
                     created
                 }
             }
@@ -89,7 +90,7 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
      */
     fun clearToken() {
         synchronized(lock) {
-            cachedToken = null
+            removeCacheFor(prefs)
             prefs.edit().remove(KEY).commit()
         }
     }
@@ -105,7 +106,7 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
         return synchronized(lock) {
             val created = UUID.randomUUID().toString()
             prefs.edit().putString(KEY, created).commit()
-            cachedToken = created
+            setCacheFor(prefs, created)
             created
         }
     }
@@ -115,8 +116,29 @@ class UserTokenStore internal constructor(private val prefs: SharedPreferences) 
         private const val KEY = "user_token"
         private val lock = Any()
 
+        // Token cache shared per SharedPreferences: every UserTokenStore created from the
+        // same prefs file observes rotateToken()/clearToken() performed through any instance.
+        private val caches = WeakHashMap<SharedPreferences, MutableMap<String, String?>>()
+
+        private fun cacheFor(prefs: SharedPreferences): String? =
+            synchronized(caches) { caches[prefs]?.get(KEY) }
+
+        private fun setCacheFor(prefs: SharedPreferences, token: String) =
+            synchronized(caches) { caches.entryFor(prefs)[KEY] = token }
+
+        private fun removeCacheFor(prefs: SharedPreferences) =
+            synchronized(caches) { caches.entryFor(prefs)[KEY] = null }
+
+        private fun WeakHashMap<SharedPreferences, MutableMap<String, String?>>.entryFor(
+            prefs: SharedPreferences
+        ): MutableMap<String, String?> = getOrPut(prefs) { HashMap() }
+
         /**
          * Factory method to create a [UserTokenStore] using the application context's private preferences.
+         *
+         * All stores created from the same preferences file share one view of the token:
+         * [UserTokenStore.rotateToken] and [UserTokenStore.clearToken] performed through any
+         * instance are immediately visible to every other instance.
          *
          * @param context An Android [Context] (e.g., [android.app.Application] or [android.app.Activity]).
          *   The application context is automatically extracted to prevent memory leaks.
