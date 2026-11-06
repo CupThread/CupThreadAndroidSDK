@@ -137,7 +137,7 @@ lifecycleScope.launch {
 | `deleteVote(featureRequestId, userToken)` | `DELETE /api/v1/feature-requests/{id}/vote` (remove upvote, idempotent) |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
 | `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
-| `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
+| `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` (surfaces `FeedbackException.InvalidParentComment` on invalid parent) |
 | `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |

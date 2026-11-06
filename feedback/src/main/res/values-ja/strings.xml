@@ -89,6 +89,7 @@
     <string name="cupthread_comments_submitting">投稿中…</string>
     <string name="cupthread_comments_load_failed">コメントの読み込みに失敗しました</string>
     <string name="cupthread_comments_post_failed">コメントの投稿に失敗しました</string>
+    <string name="cupthread_comments_parent_invalid">返信先のコメントは存在しないか削除されました</string>
     <string name="cupthread_comments_more_commenters">その他のコメント投稿者</string>
 
     <!-- User Profile -->

@@ -3164,6 +3164,70 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun postCommentMapsHttp400InvalidParentToDedicatedException() = runTest {
+        val errorJson = """
+            {
+              "error": "The parent comment was not found on this feature request.",
+              "code": "invalid_parent"
+            }
+        """.trimIndent()
+
+        try {
+            client { _ ->
+                HttpResponse(400, errorJson, headers = mapOf("X-Request-Id" to "req_inv_parent_42"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(
+                    body = "Reply to deleted parent",
+                    parentId = "deleted-parent-id"
+                ),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.InvalidParentComment")
+        } catch (ex: FeedbackException.InvalidParentComment) {
+            assertEquals("The parent comment was not found on this feature request.", ex.serverMessage)
+            assertEquals("invalid_parent", ex.serverCode)
+            assertEquals("req_inv_parent_42", ex.requestId)
+            assertEquals("The parent comment was not found on this feature request.", ex.message)
+        }
+    }
+
+    @Test
+    fun postCommentMapsOtherHttp400ToUnexpectedStatus() = runTest {
+        val errorJson = """
+            {
+              "error": "Validation failed",
+              "code": "invalid_body"
+            }
+        """.trimIndent()
+
+        try {
+            client { _ ->
+                HttpResponse(400, errorJson, headers = mapOf("X-Request-Id" to "req_other_400"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(
+                    body = "Some comment"
+                ),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(400, ex.code)
+            assertEquals("req_other_400", ex.requestId)
+        }
+    }
+
+    @Test
+    fun invalidParentCommentDefaultConstructorPreservesCodeAndDefaultMessage() {
+        val ex = FeedbackException.InvalidParentComment()
+        assertEquals(FeedbackException.InvalidParentComment.CODE_INVALID_PARENT, ex.serverCode)
+        assertNull(ex.serverMessage)
+        assertNull(ex.requestId)
+        assertEquals("The comment being replied to does not exist or is no longer available.", ex.message)
+    }
+
+    @Test
     fun parseFeatureRequestCommentHandlesBothEnvelopeAndBareShapes() {
         val envelopedJson = org.json.JSONObject(
             """
