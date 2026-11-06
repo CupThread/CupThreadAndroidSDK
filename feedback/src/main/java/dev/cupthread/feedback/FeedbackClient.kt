@@ -84,6 +84,7 @@ import org.json.JSONObject
  * - [FeedbackException.UnexpectedStatus]: Server returned an unexpected HTTP error code.
  * - [FeedbackException.ValidationFailed]: Intake request rejected by server-side validation with
  *   field-level details (HTTP 400 `Validation failed` envelope; see the endpoint's `@throws` docs).
+ * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
  *
  * Every request carries an `X-Request-Id` header (a fresh UUID by default, or the value returned by
