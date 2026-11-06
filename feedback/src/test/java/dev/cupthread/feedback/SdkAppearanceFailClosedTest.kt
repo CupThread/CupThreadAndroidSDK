@@ -21,7 +21,8 @@ import org.junit.Test
 class SdkAppearanceFailClosedTest {
 
     private val appKey = "app_test_fail_closed"
-    private val clientConfig = FeedbackClientConfig(baseUrl = "https://api.example.com", appKey = appKey)
+    private val baseUrl = "https://api.example.com"
+    private val clientConfig = FeedbackClientConfig(baseUrl = baseUrl, appKey = appKey)
 
     @Before
     @After
@@ -107,21 +108,31 @@ class SdkAppearanceFailClosedTest {
     }
 
     @Test
-    fun sdkAppearanceCacheStoresAndRetrievesAppearancePerAppKey() {
-        assertNull(SdkAppearanceCache.get(appKey))
+    fun sdkAppearanceCacheStoresAndRetrievesAppearancePerBaseUrlAndAppKey() {
+        assertNull(SdkAppearanceCache.get(baseUrl, appKey))
 
         val customAppearance = SdkAppearance(
             theme = SdkTheme.FOREST,
             features = SdkFeatures(feedback = false, featureRequests = false, roadmap = false, changelog = true)
         )
-        SdkAppearanceCache.put(appKey, customAppearance)
-        assertEquals(customAppearance, SdkAppearanceCache.get(appKey))
+        SdkAppearanceCache.put(baseUrl, appKey, customAppearance)
+        assertEquals(customAppearance, SdkAppearanceCache.get(baseUrl, appKey))
 
         // Different app key does not collide
-        assertNull(SdkAppearanceCache.get("other_app_key"))
+        assertNull(SdkAppearanceCache.get(baseUrl, "other_app_key"))
+        // Different base URL does not collide either (issue #145)
+        assertNull(SdkAppearanceCache.get("https://other.example.com", appKey))
 
-        SdkAppearanceCache.remove(appKey)
-        assertNull(SdkAppearanceCache.get(appKey))
+        SdkAppearanceCache.remove(baseUrl, appKey)
+        assertNull(SdkAppearanceCache.get(baseUrl, appKey))
+    }
+
+    @Test
+    fun appearanceCacheKeyNormalizesTrailingSlashAndCase() {
+        val appearance = SdkAppearance.defaults
+        SdkAppearanceCache.put("https://api.example.com/", appKey, appearance)
+        assertEquals(appearance, SdkAppearanceCache.get("https://api.example.com", appKey))
+        assertEquals(appearance, SdkAppearanceCache.get("  https://API.example.com  ", appKey))
     }
 
     @Test
@@ -153,10 +164,10 @@ class SdkAppearanceFailClosedTest {
         """.trimIndent()
 
         val client = FeedbackClient(clientConfig, transport = { HttpResponse(200, json) })
-        assertNull(SdkAppearanceCache.get(appKey))
+        assertNull(SdkAppearanceCache.get(baseUrl, appKey))
 
         val config = client.fetchAppConfig()
-        val cached = SdkAppearanceCache.get(appKey)
+        val cached = SdkAppearanceCache.get(baseUrl, appKey)
         assertNotNull(cached)
         assertEquals(config.sdk, cached)
         assertEquals(SdkTheme.OCEAN, cached?.theme)
@@ -173,7 +184,7 @@ class SdkAppearanceFailClosedTest {
             theme = SdkTheme.MIDNIGHT,
             features = SdkFeatures(feedback = false, featureRequests = true, roadmap = false, changelog = false)
         )
-        SdkAppearanceCache.put(appKey, priorAppearance)
+        SdkAppearanceCache.put(baseUrl, appKey, priorAppearance)
 
         val failingClient = FeedbackClient(
             clientConfig,
@@ -185,7 +196,7 @@ class SdkAppearanceFailClosedTest {
             fail("Expected fetchAppConfig to throw")
         } catch (_: FeedbackException.UnexpectedStatus) {
             // Failure should not clear prior cache
-            val cached = SdkAppearanceCache.get(appKey)
+            val cached = SdkAppearanceCache.get(baseUrl, appKey)
             assertEquals(priorAppearance, cached)
             assertFalse(cached?.features?.isEnabled(SdkFeature.FEEDBACK) == true)
             assertTrue(cached?.features?.isEnabled(SdkFeature.FEATURE_REQUESTS) == true)
@@ -198,7 +209,7 @@ class SdkAppearanceFailClosedTest {
             theme = SdkTheme.FOREST,
             features = SdkFeatures(feedback = true, featureRequests = false, roadmap = false, changelog = false)
         )
-        SdkAppearanceCache.put(appKey, priorAppearance)
+        SdkAppearanceCache.put(baseUrl, appKey, priorAppearance)
 
         val privateClient = FeedbackClient(
             clientConfig,
@@ -211,7 +222,7 @@ class SdkAppearanceFailClosedTest {
         } catch (ex: FeedbackException.UnexpectedStatus) {
             assertEquals(404, ex.code)
             // A permanent rejection must not overwrite the last known-good appearance configuration.
-            assertEquals(priorAppearance, SdkAppearanceCache.get(appKey))
+            assertEquals(priorAppearance, SdkAppearanceCache.get(baseUrl, appKey))
         }
     }
 
