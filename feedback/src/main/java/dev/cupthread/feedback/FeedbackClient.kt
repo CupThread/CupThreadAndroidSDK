@@ -168,6 +168,8 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the submission (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.AttachmentScanRejected if an attachment was rejected during backend content inspection (HTTP 422 `scan_rejected`).
      * @throws FeedbackException.AttachmentAlreadyFinalized if an attachment was already consumed by a concurrent submission (HTTP 409 `already_finalized`).
+     * @throws FeedbackException.UploaderIdentityRequired if submitting upload-session attachments without an uploader identity (HTTP 400 `uploader_identity_required`).
+     * @throws FeedbackException.UploaderMismatch if an attachment was uploaded with a different identity than the submission (HTTP 400 `uploader_mismatch`).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
@@ -190,23 +192,42 @@ class FeedbackClient internal constructor(
         draft: FeedbackDraft,
         userToken: String? = null,
         turnstileToken: String? = null
-    ): FeedbackSubmissionResult = sendWithTurnstileRetry(
-        challenge = TurnstileChallenge.feedback(config.appKey),
-        explicitToken = turnstileToken
-    ) { token ->
-        parseFeedbackSubmission(
-            sendJson(
-                method = "POST",
-                path = "/api/v1/feedback",
-                body = feedbackSubmitPayload(draft, token),
-                userToken = userToken,
-                accepted = setOf(200, 201, 202),
-                mapSubmissionQuotaErrors = true,
-                mapAttachmentScanErrors = true,
-                mapAttachmentAlreadyFinalizedErrors = true,
-                mapVerificationErrors = true
+    ): FeedbackSubmissionResult {
+        val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+        for (attachment in draft.attachments) {
+            if (attachment.uploadId != null) {
+                val attachmentToken = attachment.userToken?.trim()?.takeIf { it.isNotEmpty() }
+                if (attachmentToken != null && trimmedToken != null && attachmentToken != trimmedToken) {
+                    throw FeedbackException.UploaderMismatch(
+                        serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was uploaded with a userToken that does not match submission userToken."
+                    )
+                }
+                if (attachmentToken != null && trimmedToken == null) {
+                    throw FeedbackException.UploaderIdentityRequired(
+                        serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was created with an anonymous userToken, but submission has no userToken."
+                    )
+                }
+            }
+        }
+        return sendWithTurnstileRetry(
+            challenge = TurnstileChallenge.feedback(config.appKey),
+            explicitToken = turnstileToken
+        ) { token ->
+            parseFeedbackSubmission(
+                sendJson(
+                    method = "POST",
+                    path = "/api/v1/feedback",
+                    body = feedbackSubmitPayload(draft, token),
+                    userToken = userToken,
+                    accepted = setOf(200, 201, 202),
+                    mapSubmissionQuotaErrors = true,
+                    mapAttachmentScanErrors = true,
+                    mapAttachmentAlreadyFinalizedErrors = true,
+                    mapVerificationErrors = true,
+                    mapUploaderErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -297,6 +318,7 @@ class FeedbackClient internal constructor(
  * @throws FeedbackException.AuthenticationRequired on HTTP 401.
  * @throws FeedbackException.UnsupportedMediaType on HTTP 415, when an unsupported image format (e.g. SVG) is uploaded,
  *   or when a recognized image attachment is structurally corrupt so its metadata cannot be removed safely.
+     * @throws FeedbackException.UploaderIdentityRequired if creating an upload session without an uploader identity (HTTP 400 `uploader_identity_required`).
      * @throws FeedbackException.VerificationRequired if the upload-session human-verification gate rejects the request (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded the session's per-file byte budget).
@@ -350,7 +372,7 @@ class FeedbackClient internal constructor(
                 mapUnsupportedMediaType = true
             )
             return try {
-                parseAttachment(json)
+                parseAttachment(json).copy(userToken = userToken?.trim()?.takeIf { it.isNotEmpty() })
             } catch (_: Exception) {
                 throw FeedbackException.UnreadableUploadResponse()
             }
@@ -433,7 +455,8 @@ class FeedbackClient internal constructor(
                 userToken = token,
                 accepted = setOf(200, 201),
                 mapRateLimitErrors = true,
-                mapVerificationErrors = true
+                mapVerificationErrors = true,
+                mapUploaderErrors = true
             )
         }
         val reservation = try {
@@ -449,7 +472,8 @@ class FeedbackClient internal constructor(
             bearerToken = reservation.sessionToken,
             accepted = setOf(200, 201),
             mapUnsupportedMediaType = true,
-            mapRateLimitErrors = true
+            mapRateLimitErrors = true,
+            mapUploaderErrors = true
         )
         val uploaded = try {
             parseUploadedSessionFile(uploadedJson)
@@ -461,7 +485,8 @@ class FeedbackClient internal constructor(
             uploadId = uploaded.uploadId,
             filename = uploaded.filename ?: filename,
             mimeType = uploaded.contentType ?: mimeType,
-            size = uploaded.sizeBytes ?: data.size.toLong()
+            size = uploaded.sizeBytes ?: data.size.toLong(),
+            userToken = token
         )
     }
 
@@ -1408,7 +1433,7 @@ class FeedbackClient internal constructor(
      * @param plan Identifier or name of the subscription plan (e.g. `"pro"`, `"enterprise"`).
      *   The literal strings `"unset"` and `"null"` are reserved sentinels in the `cpt-user-attrs-v1`
      *   signature protocol; supplying either throws [IllegalArgumentException] client-side and is rejected
-     *   by the server with HTTP 400 `plan_reserved_sentinel`. Pass `null` (or omit) to clear or keep unchanged.
+     *   by the server with HTTP 400 `plan_reserved_sentinel`. Pass `null` (or omit) to keep unchanged.
      * @param mrr Monthly recurring revenue associated with the user account.
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
@@ -1445,7 +1470,7 @@ class FeedbackClient internal constructor(
     ): UserAttributesUpdateResult {
         if (plan != null) {
             require(plan != "unset" && plan != "null") {
-                "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels; use null to clear the plan)"
+                "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
             }
         }
         val payload = JSONObject().apply {
@@ -1743,7 +1768,8 @@ class FeedbackClient internal constructor(
         mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
-        mapUserAttributeErrors: Boolean = false
+        mapUserAttributeErrors: Boolean = false,
+        mapUploaderErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -1760,7 +1786,8 @@ class FeedbackClient internal constructor(
             mapAttachmentAlreadyFinalizedErrors = mapAttachmentAlreadyFinalizedErrors,
             mapRateLimitErrors = mapRateLimitErrors,
             mapVerificationErrors = mapVerificationErrors,
-            mapUserAttributeErrors = mapUserAttributeErrors
+            mapUserAttributeErrors = mapUserAttributeErrors,
+            mapUploaderErrors = mapUploaderErrors
         )
     }
 
@@ -1795,7 +1822,8 @@ class FeedbackClient internal constructor(
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200),
         mapUnsupportedMediaType: Boolean = false,
-        mapRateLimitErrors: Boolean = false
+        mapRateLimitErrors: Boolean = false,
+        mapUploaderErrors: Boolean = false
     ): JSONObject = send(
         HttpRequest(
             method = method,
@@ -1806,7 +1834,8 @@ class FeedbackClient internal constructor(
         ),
         accepted,
         mapUnsupportedMediaType = mapUnsupportedMediaType,
-        mapRateLimitErrors = mapRateLimitErrors
+        mapRateLimitErrors = mapRateLimitErrors,
+        mapUploaderErrors = mapUploaderErrors
     )
 
     private suspend fun send(
@@ -1818,7 +1847,8 @@ class FeedbackClient internal constructor(
         mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
-        mapUserAttributeErrors: Boolean = false
+        mapUserAttributeErrors: Boolean = false,
+        mapUploaderErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1840,6 +1870,26 @@ class FeedbackClient internal constructor(
                         throw FeedbackException.ReservedPlanSentinel(
                             serverMessage = message,
                             serverCode = code ?: FeedbackException.ReservedPlanSentinel.CODE_PLAN_RESERVED_SENTINEL,
+                            requestId = requestId
+                        )
+                    }
+                }
+                if (response.code == 400 && mapUploaderErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second
+                    val rawOrMessage = message ?: response.body.ifBlank { null }
+                    if (FeedbackException.UploaderIdentityRequired.isUploaderIdentityRequired(code, rawOrMessage)) {
+                        throw FeedbackException.UploaderIdentityRequired(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.UploaderIdentityRequired.CODE_UPLOADER_IDENTITY_REQUIRED,
+                            requestId = requestId
+                        )
+                    }
+                    if (FeedbackException.UploaderMismatch.isUploaderMismatch(code, rawOrMessage)) {
+                        throw FeedbackException.UploaderMismatch(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.UploaderMismatch.CODE_UPLOADER_MISMATCH,
                             requestId = requestId
                         )
                     }

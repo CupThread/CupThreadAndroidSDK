@@ -841,6 +841,247 @@ class FeedbackClientTest {
         assertEquals("log.txt", attachment.filename)
         assertEquals("text/plain", attachment.mimeType)
         assertEquals(2L, attachment.size)
+        assertEquals("usr_tok_session", attachment.userToken)
+    }
+
+    @Test
+    fun uploadAttachmentPopulatesUserTokenInFeedbackAttachment() = runTest {
+        val uploadedJson = """
+            {"uploadId":"upl_slot1","clientFileId":"c1","filename":"log.txt","contentType":"text/plain","sizeBytes":2,"sha256":"aa","stored":true}
+        """.trimIndent()
+        val attachment = client { request ->
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(
+            data = byteArrayOf(0x0A, 0x0D),
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_session"
+        )
+        assertEquals("usr_tok_session", attachment.userToken)
+    }
+
+    @Test
+    fun uploadAttachmentMapsHttp400UploaderIdentityRequiredToException() = runTest {
+        try {
+            client { _ ->
+                HttpResponse(
+                    400,
+                    """{"error":"A valid X-User-Token UUID is required to create an upload session when not signed in","code":"uploader_identity_required"}""",
+                    headers = mapOf("X-Request-Id" to "req_upl_id_1")
+                )
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "invalid_non_uuid_token"
+            )
+            fail("expected UploaderIdentityRequired")
+        } catch (e: FeedbackException.UploaderIdentityRequired) {
+            assertEquals("A valid X-User-Token UUID is required to create an upload session when not signed in", e.serverMessage)
+            assertEquals("uploader_identity_required", e.serverCode)
+            assertEquals("req_upl_id_1", e.requestId)
+        }
+    }
+
+    @Test
+    fun uploadAttachmentMapsHttp400UploaderIdentityRequiredWithBlankBodyToDefaultMessage() = runTest {
+        try {
+            client { _ ->
+                HttpResponse(
+                    400,
+                    """{"code":"uploader_identity_required"}""",
+                    headers = mapOf("X-Request-Id" to "req_upl_id_blank")
+                )
+            }.uploadAttachment(
+                data = byteArrayOf(1),
+                filename = "log.txt",
+                mimeType = "text/plain",
+                userToken = "invalid_token"
+            )
+            fail("expected UploaderIdentityRequired")
+        } catch (e: FeedbackException.UploaderIdentityRequired) {
+            assertNull(e.serverMessage)
+            assertEquals("A valid user token is required to create an upload session.", e.message)
+            assertEquals("uploader_identity_required", e.serverCode)
+            assertEquals("req_upl_id_blank", e.requestId)
+        }
+    }
+
+    @Test
+    fun submitMapsHttp400UploaderMismatchToException() = runTest {
+        val draft = FeedbackDraft(
+            title = "Bug",
+            description = "Repro steps",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(
+                FeedbackAttachment(
+                    kind = FeedbackAttachment.Kind.R2,
+                    uploadId = "upl_session_1",
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    size = 100L
+                )
+            )
+        )
+        try {
+            client { _ ->
+                HttpResponse(
+                    400,
+                    """{"error":"Upload session was created by a different uploader","code":"uploader_mismatch"}""",
+                    headers = mapOf("X-Request-Id" to "req_upl_mis_1")
+                )
+            }.submit(draft, userToken = "tok_different")
+            fail("expected UploaderMismatch")
+        } catch (e: FeedbackException.UploaderMismatch) {
+            assertEquals("Upload session was created by a different uploader", e.serverMessage)
+            assertEquals("uploader_mismatch", e.serverCode)
+            assertEquals("req_upl_mis_1", e.requestId)
+        }
+    }
+
+    @Test
+    fun submitMapsHttp400UploaderIdentityRequiredToException() = runTest {
+        val draft = FeedbackDraft(
+            title = "Bug",
+            description = "Repro steps",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(
+                FeedbackAttachment(
+                    kind = FeedbackAttachment.Kind.R2,
+                    uploadId = "upl_session_2",
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    size = 100L
+                )
+            )
+        )
+        try {
+            client { _ ->
+                HttpResponse(
+                    400,
+                    """{"error":"A valid X-User-Token UUID is required","code":"uploader_identity_required"}""",
+                    headers = mapOf("X-Request-Id" to "req_upl_id_2")
+                )
+            }.submit(draft, userToken = "tok_unbound")
+            fail("expected UploaderIdentityRequired")
+        } catch (e: FeedbackException.UploaderIdentityRequired) {
+            assertEquals("A valid X-User-Token UUID is required", e.serverMessage)
+            assertEquals("uploader_identity_required", e.serverCode)
+            assertEquals("req_upl_id_2", e.requestId)
+        }
+    }
+
+    @Test
+    fun submitRejectsMismatchedAttachmentUserTokenClientSide() = runTest {
+        var requestSent = false
+        val draft = FeedbackDraft(
+            title = "Bug",
+            description = "Repro steps",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(
+                FeedbackAttachment(
+                    kind = FeedbackAttachment.Kind.R2,
+                    uploadId = "upl_slot1",
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    size = 10L,
+                    userToken = "tok_uploader_A"
+                )
+            )
+        )
+        try {
+            client { _ ->
+                requestSent = true
+                HttpResponse(200, """{"submissionId":"s-1","forwardedToGithub":false}""")
+            }.submit(draft, userToken = "tok_uploader_B")
+            fail("expected UploaderMismatch")
+        } catch (e: FeedbackException.UploaderMismatch) {
+            assertFalse(requestSent)
+            assertTrue(e.message?.contains("does not match submission userToken") == true)
+            assertFalse(e.message?.contains("tok_uploader_A") == true)
+            assertFalse(e.message?.contains("tok_uploader_B") == true)
+        }
+    }
+
+    @Test
+    fun submitRejectsMissingUserTokenForSessionAttachmentClientSide() = runTest {
+        var requestSent = false
+        val draft = FeedbackDraft(
+            title = "Bug",
+            description = "Repro steps",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(
+                FeedbackAttachment(
+                    kind = FeedbackAttachment.Kind.R2,
+                    uploadId = "upl_slot1",
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    size = 10L,
+                    userToken = "tok_uploader_A"
+                )
+            )
+        )
+        try {
+            client { _ ->
+                requestSent = true
+                HttpResponse(200, """{"submissionId":"s-1","forwardedToGithub":false}""")
+            }.submit(draft, userToken = null)
+            fail("expected UploaderIdentityRequired")
+        } catch (e: FeedbackException.UploaderIdentityRequired) {
+            assertFalse(requestSent)
+            assertTrue(e.message?.contains("has no userToken") == true)
+        }
+    }
+
+    @Test
+    fun submitAllowsMatchingUserTokenWithSessionAttachment() = runTest {
+        var capturedToken: String? = null
+        val draft = FeedbackDraft(
+            title = "Bug",
+            description = "Repro steps",
+            platform = FeedbackPlatform.ANDROID,
+            attachments = listOf(
+                FeedbackAttachment(
+                    kind = FeedbackAttachment.Kind.R2,
+                    uploadId = "upl_slot1",
+                    filename = "log.txt",
+                    mimeType = "text/plain",
+                    size = 10L,
+                    userToken = "tok_uploader_match"
+                )
+            )
+        )
+        val result = client { request ->
+            capturedToken = request.headers["X-User-Token"]
+            HttpResponse(200, """{"submissionId":"sub_123","forwardedToGithub":false}""")
+        }.submit(draft, userToken = "tok_uploader_match")
+        assertEquals("tok_uploader_match", capturedToken)
+        assertEquals("sub_123", result.submissionId)
+    }
+
+    @Test
+    fun feedbackAttachmentBinaryBackwardCompatibility() {
+        val attachment7 = FeedbackAttachment(
+            kind = FeedbackAttachment.Kind.R2,
+            uploadId = "upl_test",
+            filename = "file.txt"
+        )
+        assertNull(attachment7.userToken)
+        val copy7 = attachment7.copy(filename = "new.txt")
+        assertEquals("new.txt", copy7.filename)
+        assertNull(copy7.userToken)
+
+        val copyMethods = FeedbackAttachment::class.java.declaredMethods.filter { it.name == "copy" }
+        assertTrue("Expected 8-param copy method for primary constructor with userToken", copyMethods.any { it.parameterCount == 8 })
+        assertTrue("Expected 7-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 7 })
+
+        val constructors = FeedbackAttachment::class.java.declaredConstructors
+        assertTrue("Expected 8-param constructor with userToken", constructors.any { it.parameterTypes.size == 8 })
+        assertTrue("Expected 7-param constructor for binary backward compatibility", constructors.any { it.parameterTypes.size == 7 })
     }
 
     @Test
@@ -2714,6 +2955,13 @@ class FeedbackClientTest {
             assertEquals("plan_reserved_sentinel", ex.serverCode)
             assertEquals("req_plan_sentinel_1", ex.requestId)
         }
+
+        val defaultEx = FeedbackException.ReservedPlanSentinel()
+        assertEquals(
+            "The plan value is reserved ('unset' and 'null' are protocol sentinels).",
+            defaultEx.message
+        )
+        assertFalse(defaultEx.message!!.contains("clear the plan"))
     }
 
     @Test

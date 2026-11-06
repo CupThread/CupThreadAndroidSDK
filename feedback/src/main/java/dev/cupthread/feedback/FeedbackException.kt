@@ -164,12 +164,74 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
             const val CODE_UPLOAD_FINALIZED_CONCURRENTLY = "upload_finalized_concurrently"
 
             /**
-             * Determines whether the given [code] or [message] represents an already-finalized attachment error.
-             */
+              * Determines whether the given [code] or [message] represents an already-finalized attachment error.
+              */
             internal fun isAlreadyFinalized(code: String?, message: String?): Boolean =
                 code == CODE_ALREADY_FINALIZED ||
                     code == CODE_UPLOAD_FINALIZED_CONCURRENTLY ||
                     (code == null && message?.contains("already been finalized", ignoreCase = true) == true)
+        }
+    }
+
+    /**
+     * Raised when an upload session creation or feedback attachment submission is rejected
+     * because an uploader identity is required (HTTP 400 `uploader_identity_required`).
+     *
+     * Anonymous callers must provide a valid `X-User-Token` UUID to create upload sessions.
+     * Submissions referencing upload-session attachments also require a matching `userToken`.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_UPLOADER_IDENTITY_REQUIRED]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class UploaderIdentityRequired @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_UPLOADER_IDENTITY_REQUIRED,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "A valid user token is required to create an upload session."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned by `POST /api/v1/uploads/sessions` and `POST /api/v1/feedback`. */
+            const val CODE_UPLOADER_IDENTITY_REQUIRED = "uploader_identity_required"
+
+            /**
+             * Determines whether the given [code] or [message] represents an uploader-identity-required error.
+             */
+            internal fun isUploaderIdentityRequired(code: String?, message: String?): Boolean =
+                code == CODE_UPLOADER_IDENTITY_REQUIRED
+        }
+    }
+
+    /**
+     * Raised when feedback submission via [FeedbackClient.submit] is rejected because an attachment
+     * upload session was created by a different uploader identity (HTTP 400 `uploader_mismatch`).
+     *
+     * Submissions referencing upload-session attachments must present the same identity (`X-User-Token`
+     * or Clerk session) used when reserving the session. The referenced file remains unfinalized.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_UPLOADER_MISMATCH]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class UploaderMismatch @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_UPLOADER_MISMATCH,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "Upload session was created by a different uploader."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned by `POST /api/v1/feedback`. */
+            const val CODE_UPLOADER_MISMATCH = "uploader_mismatch"
+
+            /**
+             * Determines whether the given [code] or [message] represents an uploader-mismatch error.
+             */
+            internal fun isUploaderMismatch(code: String?, message: String?): Boolean =
+                code == CODE_UPLOADER_MISMATCH
         }
     }
 
@@ -258,7 +320,7 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
      *
      * In the `cpt-user-attrs-v1` canonical signature protocol, `"unset"` denotes an omitted field and
      * `"null"` denotes clearing a field. These literals are reserved whole-string byte-exact identifiers.
-     * Callers should use `null` to clear a plan, omit the argument to leave it unchanged, or use a distinct
+     * Callers should omit the argument to leave it unchanged, or use a valid
      * plan name (e.g., `"free"`, `"pro"`, `"enterprise"`).
      *
      * @property serverMessage Raw error message text returned by the server, if any.
@@ -271,7 +333,7 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
         override val requestId: String? = null
     ) : FeedbackException(
         serverMessage?.ifBlank { null }
-            ?: "The plan value is reserved ('unset' and 'null' are protocol sentinels). Use null to clear the plan."
+            ?: "The plan value is reserved ('unset' and 'null' are protocol sentinels)."
     ) {
         companion object {
             /** Standard machine-readable code returned in `details.fieldErrors.plan` on `PUT /api/v1/public/apps/{appKey}/user`. */

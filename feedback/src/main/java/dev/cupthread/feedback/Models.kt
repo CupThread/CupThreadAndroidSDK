@@ -165,6 +165,7 @@ data class FeedbackClientConfig(
  * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
  * @property size File size in bytes as reported by the storage backend, or `null`.
  * @property uploadId Unique upload identifier assigned by the storage backend, or `null`.
+ * @property userToken User token associated with the attachment upload session, or `null`.
  */
 data class FeedbackAttachment(
     val kind: Kind,
@@ -173,7 +174,8 @@ data class FeedbackAttachment(
     val filename: String? = null,
     val mimeType: String? = null,
     val size: Long? = null,
-    val uploadId: String? = null
+    val uploadId: String? = null,
+    val userToken: String? = null
 ) {
     /**
      * Backward-compatible constructor for callers providing [key] and [url].
@@ -192,7 +194,56 @@ data class FeedbackAttachment(
         filename = filename,
         mimeType = mimeType,
         size = size,
-        uploadId = null
+        uploadId = null,
+        userToken = null
+    )
+
+    /**
+     * Preserves binary backward compatibility for callers compiled against SDK versions
+     * prior to the addition of [userToken].
+     */
+    @Deprecated("Preserved for binary backward compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(
+        kind: Kind,
+        key: String? = null,
+        url: String? = null,
+        filename: String? = null,
+        mimeType: String? = null,
+        size: Long? = null,
+        uploadId: String? = null
+    ) : this(
+        kind = kind,
+        key = key,
+        url = url,
+        filename = filename,
+        mimeType = mimeType,
+        size = size,
+        uploadId = uploadId,
+        userToken = null
+    )
+
+    /**
+     * Preserves binary backward compatibility for callers compiled against SDK versions
+     * prior to the addition of [userToken] who invoke `copy(...)`.
+     */
+    @Deprecated("Preserved for binary backward compatibility", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        kind: Kind = this.kind,
+        key: String? = this.key,
+        url: String? = this.url,
+        filename: String? = this.filename,
+        mimeType: String? = this.mimeType,
+        size: Long? = this.size,
+        uploadId: String? = this.uploadId
+    ): FeedbackAttachment = copy(
+        kind = kind,
+        key = key,
+        url = url,
+        filename = filename,
+        mimeType = mimeType,
+        size = size,
+        uploadId = uploadId,
+        userToken = this.userToken
     )
 
     /**
