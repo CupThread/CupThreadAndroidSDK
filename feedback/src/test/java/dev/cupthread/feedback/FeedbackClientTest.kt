@@ -3198,6 +3198,67 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchUserProfileMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many requests. Please try again shortly."}""",
+                    headers = mapOf("X-Request-Id" to "req-profile-429")
+                )
+            }.fetchUserProfile("u_abcdef1234567890abcdef1234567890")
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests. Please try again shortly.", ex.serverMessage)
+            assertEquals("Too many requests. Please try again shortly.", ex.message)
+            assertEquals("req-profile-429", ex.requestId)
+        }
+    }
+
+    @Test
+    fun fetchUserProfileMapsHttp429WithBlankBodyToDefaultRateLimitedMessage() = runTest {
+        try {
+            client {
+                HttpResponse(429, "   ")
+            }.fetchUserProfile("u_abcdef1234567890abcdef1234567890")
+            fail("Expected FeedbackException.RateLimited on 429")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertNull(ex.serverMessage)
+            assertEquals("You're doing that too fast. Please try again shortly.", ex.message)
+        }
+    }
+
+    @Test
+    fun fetchUserProfileRejectsBlankUserId() = runTest {
+        try {
+            client { HttpResponse(200, "{}") }.fetchUserProfile("   ")
+            fail("Expected IllegalArgumentException for blank userId")
+        } catch (ex: IllegalArgumentException) {
+            assertEquals("userId cannot be blank", ex.message)
+        }
+    }
+
+    @Test
+    fun fetchUserProfileTrimsUserIdInPath() = runTest {
+        var url: String? = null
+        val profileJson = """
+            {
+              "profile": {
+                "clerkUserId": "u_test",
+                "createdAt": "2026-01-01T00:00:00Z"
+              }
+            }
+        """.trimIndent()
+
+        client { request ->
+            url = request.url
+            HttpResponse(200, profileJson)
+        }.fetchUserProfile("  u_test  ")
+
+        assertEquals("https://api.example.com/api/v1/users/u_test/profile?appKey=$appKey", url)
+    }
+
+    @Test
     fun fetchUserProfileHandlesExplicitNullsInPayload() = runTest {
         val payloadWithNulls = """
             {

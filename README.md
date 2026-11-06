@@ -138,7 +138,7 @@ lifecycleScope.launch {
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
 | `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |
-| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` |
+| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |

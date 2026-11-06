@@ -1489,6 +1489,8 @@ class FeedbackClient internal constructor(
      *
      * @param userId App-scoped pseudonymous user identifier (`u_*`) from board or comment payloads.
      * @return [PublicUserProfileResult] containing the user profile, associated apps, and comments.
+     * @throws IllegalArgumentException if [userId] is blank.
+     * @throws FeedbackException.RateLimited if the per-client IP rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP 404 if the user profile does not exist.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
@@ -1501,8 +1503,14 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchUserProfile(userId: String): PublicUserProfileResult {
+        require(userId.isNotBlank()) { "userId cannot be blank" }
         val query = encodeQuery(listOf("appKey" to config.appKey))
-        return parsePublicUserProfileResult(get("/api/v1/users/$userId/profile?$query"))
+        return parsePublicUserProfileResult(
+            get(
+                path = "/api/v1/users/${userId.trim()}/profile?$query",
+                mapRateLimitErrors = true
+            )
+        )
     }
 
     /**
