@@ -144,7 +144,7 @@ lifecycleScope.launch {
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
 | `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` (double opt-in: the address is pending until the emailed confirmation link is clicked; HTTP 403 `email_not_verified` surfaces as `FeedbackException.EmailNotVerified`) |
 | `confirmChangelogSubscription(token)` | `POST /api/v1/public/apps/{appKey}/changelog/confirm` (confirms subscription with the token from the emailed link) |
-| `unsubscribeFromChangelog(token)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` (requires the per-subscriber token from the unsubscribe link in the email) |
+| `unsubscribeFromChangelog(token)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` (requires the per-subscriber token from the unsubscribe link in the email; an authentic token also works after its `exp` and when the app's public surfaces are disabled, while HTTP 403 on a private app means the token is missing or not valid for that app) |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |
 | `ChangelogStore.create(context)` | Persistent store for tracking seen changelog versions |
 
