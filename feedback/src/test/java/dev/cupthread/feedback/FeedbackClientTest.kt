@@ -2476,6 +2476,18 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun confirmChangelogSubscriptionWrapsMalformedResponseInInvalidResponse() = runTest {
+        try {
+            client {
+                HttpResponse(200, """{"confirmed":[]}""")
+            }.confirmChangelogSubscription("token")
+            fail("Expected FeedbackException.InvalidResponse on malformed response body")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
     fun voteHitsVoteEndpointWithPostAndPayload() = runTest {
         var method: String? = null
         var url: String? = null

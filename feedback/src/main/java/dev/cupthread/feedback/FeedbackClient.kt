@@ -1454,14 +1454,17 @@ class FeedbackClient internal constructor(
             "confirmChangelogSubscription destination must use HTTPS when transmitting the confirmation token: $targetUrl"
         }
         val payload = JSONObject().put("token", cleanToken)
-        return parseChangelogConfirmationResult(
-            sendJson(
-                "POST",
-                "/api/v1/public/apps/${config.appKey}/changelog/confirm",
-                payload,
-                accepted = setOf(200)
-            )
+        val response = sendJson(
+            "POST",
+            "/api/v1/public/apps/${config.appKey}/changelog/confirm",
+            payload,
+            accepted = setOf(200)
         )
+        return try {
+            parseChangelogConfirmationResult(response)
+        } catch (e: JSONException) {
+            throw FeedbackException.InvalidResponse(e)
+        }
     }
 
     /**
