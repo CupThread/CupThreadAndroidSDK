@@ -23,6 +23,12 @@ import android.content.SharedPreferences
  */
 class ChangelogStore internal constructor(private val prefs: SharedPreferences) {
 
+    // Guards the read-modify-write cycles on the seen set. Callers may arrive from the UI
+    // (auto-mark on overlay presentation) and any host thread (public FeedbackClient API)
+    // concurrently; without the lock, two stale snapshots write back disjoint full
+    // replacements and one mark is silently lost.
+    private val lock = Any()
+
     /**
      * Checks whether the user has already seen a changelog identified by [versionOrId].
      *
@@ -38,39 +44,53 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
     /**
      * Marks the changelog entry identified by [versionOrId] as seen.
      *
+     * Safe to call concurrently: the read-modify-write cycle is serialized.
+     *
      * @param versionOrId Version label (e.g. `"2.1.0"`, `"v1.0"`) or unique changelog entry ID.
      */
     fun markChangelogSeen(versionOrId: String) {
         if (versionOrId.isBlank()) return
-        val current = prefs.getStringSet(KEY_SEEN, emptySet())?.toMutableSet() ?: mutableSetOf()
-        current.add(versionOrId.trim())
-        prefs.edit().putStringSet(KEY_SEEN, current).apply()
-    }
-
-    /**
-     * Marks the changelog entry identified by [versionOrId] as unseen.
-     *
-     * @param versionOrId Version label or entry ID to remove from the seen set.
-     */
-    fun markChangelogUnseen(versionOrId: String) {
-        if (versionOrId.isBlank()) return
-        val current = prefs.getStringSet(KEY_SEEN, emptySet())?.toMutableSet() ?: return
-        if (current.remove(versionOrId.trim())) {
+        synchronized(lock) {
+            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
+            current.add(versionOrId.trim())
             prefs.edit().putStringSet(KEY_SEEN, current).apply()
         }
     }
 
     /**
-     * Retrieves the complete set of version labels and entry IDs marked as seen.
+     * Marks the changelog entry identified by [versionOrId] as unseen.
+     *
+     * Safe to call concurrently: the read-modify-write cycle is serialized.
+     *
+     * @param versionOrId Version label or entry ID to remove from the seen set.
+     */
+    fun markChangelogUnseen(versionOrId: String) {
+        if (versionOrId.isBlank()) return
+        synchronized(lock) {
+            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
+            if (current.remove(versionOrId.trim())) {
+                prefs.edit().putStringSet(KEY_SEEN, current).apply()
+            }
+        }
+    }
+
+    /**
+     * Retrieves a snapshot of the version labels and entry IDs marked as seen.
+     *
+     * The returned set is a defensive copy: mutating it does not affect the store.
      */
     fun getSeenChangelogs(): Set<String> =
-        prefs.getStringSet(KEY_SEEN, emptySet()) ?: emptySet()
+        HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
 
     /**
      * Clears all seen changelog records, causing all versions to be considered unseen again.
+     *
+     * Safe to call concurrently: the mutation is serialized with the other mutators.
      */
     fun clearSeenChangelogs() {
-        prefs.edit().remove(KEY_SEEN).apply()
+        synchronized(lock) {
+            prefs.edit().remove(KEY_SEEN).apply()
+        }
     }
 
     companion object {
