@@ -249,6 +249,19 @@ class FeedbackClientTest {
             allowAnonymousChangelog = true
         )
         assertNull(config.allowedEmbedOrigins)
+
+        // Verify copy preserves allowedEmbedOrigins and backward-compatible copy method exists
+        val copyConfig = config.copy(name = "Updated App")
+        assertEquals("Updated App", copyConfig.name)
+        assertNull(copyConfig.allowedEmbedOrigins)
+
+        val copyMethods = PublicAppConfig::class.java.declaredMethods.filter { it.name == "copy" }
+        assertTrue("Expected 20-param copy method for primary constructor with allowedEmbedOrigins", copyMethods.any { it.parameterCount == 20 })
+        assertTrue("Expected 19-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 19 })
+
+        val constructors = PublicAppConfig::class.java.declaredConstructors
+        assertTrue("Expected 20-param constructor with allowedEmbedOrigins", constructors.any { it.parameterTypes.size == 20 })
+        assertTrue("Expected 19-param constructor for binary backward compatibility", constructors.any { it.parameterTypes.size == 19 })
     }
 
     @Test
