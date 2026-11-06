@@ -17,8 +17,8 @@ internal object AttachmentLimits {
     /** Default per-attachment size budget when not configured by console (20 MB). */
     const val DEFAULT_MAX_ATTACHMENT_BYTES: Long = 20_000_000L
 
-    /** Maximum allowed attachments per feedback submission. */
-    const val MAX_ATTACHMENT_COUNT: Int = 5
+    /** Maximum allowed attachments per feedback submission (up to 8 items per OpenAPI spec). */
+    const val MAX_ATTACHMENT_COUNT: Int = 8
 
     /** Set of lowercase MIME types accepted for image uploads on `/api/v1/uploads/images`. */
     val SUPPORTED_IMAGE_MIME_TYPES: Set<String> = setOf(
