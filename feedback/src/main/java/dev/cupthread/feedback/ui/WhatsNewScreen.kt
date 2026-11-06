@@ -114,6 +114,9 @@ private fun WhatsNewScreenContent(
     }
     var entries by remember { mutableStateOf<List<ChangelogEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    // Identifies which load() owns `loading`; a superseded refresh must not hide the
+    // indicator while a newer reload is still running.
+    var loadGeneration by remember { mutableStateOf(0) }
     var hasLoaded by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
@@ -123,6 +126,7 @@ private fun WhatsNewScreenContent(
     val defaultLoadError = stringResource(R.string.cupthread_whatsnew_empty_body)
 
     suspend fun load() {
+        val generation = ++loadGeneration
         loading = true
         error = null
         loadMoreFailed = false
@@ -137,7 +141,7 @@ private fun WhatsNewScreenContent(
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
-            loading = false
+            if (generation == loadGeneration) loading = false
             hasLoaded = true
         }
     }

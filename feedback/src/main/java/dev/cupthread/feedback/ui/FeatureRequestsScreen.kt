@@ -137,6 +137,9 @@ private fun FeatureRequestsScreenContent(
     var items by remember { mutableStateOf<List<FeatureRequestItem>>(emptyList()) }
     var versions by remember { mutableStateOf<List<AppVersion>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    // Identifies which load() owns `loading`; a superseded refresh must not hide the
+    // indicator while a newer token or search reload is still running.
+    var loadGeneration by remember { mutableStateOf(0) }
     var hasLoaded by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
@@ -175,6 +178,7 @@ private fun FeatureRequestsScreenContent(
     }
 
     suspend fun load() {
+        val generation = ++loadGeneration
         loading = true
         error = null
         loadMoreFailed = false
@@ -202,7 +206,7 @@ private fun FeatureRequestsScreenContent(
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
-            loading = false
+            if (generation == loadGeneration) loading = false
         }
     }
 
