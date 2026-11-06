@@ -241,11 +241,30 @@ The built-in `FeedbackComposer` and feature-request compose sheet surface a loca
 verification message when a submission is rejected by the gate.
 
 Tip: `PublicAppConfig.turnstile?.siteKey` (from `fetchAppConfig`) publishes the public widget site
-key when the deployment supports WebView challenges. Native clients can mint tokens by loading
-`https://app.cupthread.com/turnstile/verify?siteKey=…&action=…&cdata=…&theme=light|dark|auto&locale=…`
-in an embedded WebView and reading the `{status:"success", token}` message posted to
-`window.AndroidTurnstileBridge.postMessage(JSON)` (`@JavascriptInterface`). Tokens are single-use
-with a ~300 s validity window — mint a fresh one per call.
+key when the deployment supports WebView challenges. Native clients can mint tokens by presenting
+the hosted challenge page (`https://app.cupthread.com/turnstile/verify`) via `TurnstileChallengeDialog`:
+
+```kotlin
+val scope = rememberCoroutineScope()
+if (showTurnstileChallenge) {
+    TurnstileChallengeDialog(
+        siteKey = appConfig.turnstile?.siteKey ?: return,
+        challenge = TurnstileChallenge.feedback(appConfig.appKey),
+        onToken = { token ->
+            showTurnstileChallenge = false
+            scope.launch {
+                client.submit(draft, userToken = userToken, turnstileToken = token)
+            }
+        },
+        onDismiss = { showTurnstileChallenge = false }
+    )
+}
+```
+
+Or by registering `AndroidTurnstileBridge` on an embedded WebView via
+`webView.addJavascriptInterface(AndroidTurnstileBridge { msg -> ... }, AndroidTurnstileBridge.BRIDGE_NAME)`
+and loading `challenge.hostedUrl(siteKey)`. Tokens are single-use with a ~300 s validity window — mint
+a fresh one per call.
 
 ### Image Metadata Privacy
 
