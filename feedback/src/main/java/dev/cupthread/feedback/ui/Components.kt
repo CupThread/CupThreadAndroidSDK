@@ -385,7 +385,9 @@ internal fun friendlyDate(iso: String): String {
 
 internal fun relativeOrDate(iso: String): String = friendlyDate(iso)
 
-private val avatarCache = java.util.concurrent.ConcurrentHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+// Byte-bounded LRU cache (issue #141): one entry per hinted URL (the width hint is part of the
+// key), sized by decoded bytes, evicting least-recently-used entries past a fraction of the heap.
+private val avatarCache = dev.cupthread.feedback.internal.AvatarImageCache.shared
 
 /**
  * Renders a circular user avatar with in-memory caching and fallback to author initials.
@@ -423,7 +425,7 @@ fun UserAvatar(
     val imageUrl = remember(url, requestedPixels) {
         PublicImageUrls.withWidth(url, PublicImageUrls.widthForPixels(requestedPixels))
     }
-    var bitmap by remember(imageUrl) { mutableStateOf(imageUrl?.let { avatarCache[it] }) }
+    var bitmap by remember(imageUrl) { mutableStateOf(imageUrl?.let { avatarCache.get(it) }) }
 
     LaunchedEffect(imageUrl) {
         val secureUrl = imageUrl
@@ -431,7 +433,7 @@ fun UserAvatar(
             bitmap = null
             return@LaunchedEffect
         }
-        val cached = avatarCache[secureUrl]
+        val cached = avatarCache.get(secureUrl)
         if (cached != null) {
             bitmap = cached
             return@LaunchedEffect
@@ -444,10 +446,10 @@ fun UserAvatar(
                     doInput = true
                 }
                 connection.inputStream.use { stream ->
-                    val decoded = android.graphics.BitmapFactory.decodeStream(stream)
+                    val decoded = decodeDownsampledAvatar(stream, requestedPixels)
                     if (decoded != null) {
                         val imageBitmap = decoded.asImageBitmap()
-                        avatarCache[secureUrl] = imageBitmap
+                        avatarCache.put(secureUrl, imageBitmap)
                         bitmap = imageBitmap
                     }
                 }
@@ -510,6 +512,41 @@ fun UserAvatar(
             }
         }
     }
+}
+
+/**
+ * Decodes [stream] at the smallest power-of-two sample size that still covers [requestedPixels],
+ * so a huge source image never allocates a full-resolution bitmap for a small avatar (issue #141).
+ *
+ * The bounds pass consumes the stream, so the bytes are buffered once and redecoded from memory.
+ */
+private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels: Int): android.graphics.Bitmap? {
+    val bytes = try {
+        stream.readBytes()
+    } catch (_: java.io.IOException) {
+        return null
+    }
+
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    var sampleSize = 1
+    while (bounds.outWidth / (sampleSize * 2) >= requestedPixels &&
+        bounds.outHeight / (sampleSize * 2) >= requestedPixels
+    ) {
+        sampleSize *= 2
+    }
+
+    return android.graphics.BitmapFactory.decodeByteArray(
+        bytes,
+        0,
+        bytes.size,
+        android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+    )
 }
 
 /**
