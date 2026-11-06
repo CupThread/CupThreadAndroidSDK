@@ -495,6 +495,7 @@ class FeedbackClient internal constructor(
      * Columns are returned sorted in ascending order by their [BoardColumn.position].
      *
      * @return List of [BoardColumn] instances configured for the app.
+     * @throws FeedbackException.RateLimited if the per-client IP rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
      *
@@ -507,7 +508,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchColumns(): List<BoardColumn> {
-        val json = get("/api/v1/public/columns/${config.appKey}")
+        val json = get("/api/v1/public/columns/${config.appKey}", mapRateLimitErrors = true)
         val array = json.optJSONArray("columns") ?: JSONArray()
         return buildList {
             for (i in 0 until array.length()) add(parseBoardColumn(array.getJSONObject(i)))
@@ -521,6 +522,7 @@ class FeedbackClient internal constructor(
      * Version IDs can be passed to [fetchFeatureRequests] to filter requests by release target.
      *
      * @return List of [AppVersion] instances configured for the app.
+     * @throws FeedbackException.RateLimited if the per-client IP rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network failure or parsing errors.
      *
@@ -532,7 +534,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchVersions(): List<AppVersion> {
-        val json = get("/api/v1/public/versions/${config.appKey}")
+        val json = get("/api/v1/public/versions/${config.appKey}", mapRateLimitErrors = true)
         val array = json.optJSONArray("versions") ?: JSONArray()
         return buildList {
             for (i in 0 until array.length()) add(parseAppVersion(array.getJSONObject(i)))
@@ -1085,6 +1087,7 @@ class FeedbackClient internal constructor(
      * @param cursor Optional opaque keyset cursor from a previous page's [ListChangelogResult.nextCursor].
      *   Malformed cursors are rejected by the server with HTTP 400.
      * @return [ListChangelogResult] containing the entries on this page along with pagination metadata.
+     * @throws FeedbackException.RateLimited if the per-client IP rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
@@ -1108,7 +1111,10 @@ class FeedbackClient internal constructor(
         if (!cursor.isNullOrBlank()) {
             params += "cursor" to cursor
         }
-        val json = get("/api/v1/public/apps/${config.appKey}/changelog?${encodeQuery(params)}")
+        val json = get(
+            "/api/v1/public/apps/${config.appKey}/changelog?${encodeQuery(params)}",
+            mapRateLimitErrors = true
+        )
         return parseListChangelog(json)
     }
 
@@ -1121,6 +1127,7 @@ class FeedbackClient internal constructor(
      * @param limit Maximum number of changelog entries to return per page (clamped between 1 and 100; default is 100).
      * @param cursor Optional keyset cursor from a previous page's [ListChangelogResult.nextCursor].
      * @return List of published [ChangelogEntry] objects.
+     * @throws FeedbackException.RateLimited if the per-client IP rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
