@@ -303,7 +303,28 @@ Known limitations to be aware of:
 - Maker-notes are left as-is; they do not carry GPS coordinates on mainstream phone cameras, but
   exotic sources (e.g. some dashcams) may embed non-standard data there.
 
+### Public Image Thumbnails
+
+Public image delivery (`GET /api/v1/files/{key}`) accepts an optional `width` hint with a fixed set
+of documented values — `16`, `32`, `36`, `56`, `64`, `72`, `80`, `112`, `128`, `160`. A hinted
+response is a WebP thumbnail (or the original image when no smaller rendition exists) with a
+five-minute cache lifetime; an unhinted request returns the original image under the normal cache
+policy. Always use the response `Content-Type` instead of inferring the format from the URL
+extension.
+
+Delivered URLs are opaque: keep their path, query string, and fragment as-is. `PublicImageUrls`
+applies a hint without disturbing anything else, and falls back to the original URL for values
+outside the documented set:
+
+```kotlin
+val thumbnail = PublicImageUrls.withWidth(featureRequest.requesterAvatarUrl, width = 64)
+imageLoader.load(thumbnail) // null when the URL is missing or not a secure https URL
+```
+
+`UserAvatar` already requests the smallest documented hint that covers its rendered size.
+
 ---
+
 
 ## Development & Testing
 
