@@ -73,7 +73,8 @@ android {
     }
 
     testOptions {
-        unitTests.isIncludeAndroidResources = false
+        // Robolectric needs merged resources/manifest to host the Compose test activity.
+        unitTests.isIncludeAndroidResources = true
     }
 
     publishing {
@@ -97,6 +98,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+
+    // Compose UI regression tests run on the JVM through Robolectric so CI covers the bundled
+    // screens without an emulator (issue #142).
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.15.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 afterEvaluate {

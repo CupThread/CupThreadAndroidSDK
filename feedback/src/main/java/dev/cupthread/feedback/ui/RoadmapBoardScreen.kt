@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -121,6 +122,8 @@ private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequest
  *
  * @param client Shared [FeedbackClient] used for network communication.
  * @param userToken Stable anonymous user token from [UserTokenStore] used to track vote state.
+ *   When the host supplies a new token (for example after [UserTokenStore.rotateToken] or
+ *   [UserTokenStore.clearToken] following erasure), the board reloads with the new identity.
  * @param modifier Optional [Modifier] applied to the root [Scaffold] layout.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -163,11 +166,13 @@ private fun RoadmapBoardScreenContent(
     // keeps ordinary typing inside it (issue #23).
     val searchThrottler = remember { SearchThrottler() }
 
-    // Reads the current search filter on every request, so one pager serves all queries.
+    // Reads the current token and search filter on every request, so one pager serves all queries
+    // and survives token rotation or erasure (the token must not be captured by value).
+    val currentUserToken by rememberUpdatedState(userToken)
     val pager = remember(client) {
         FeatureRequestPager { request ->
             client.fetchFeatureRequests(
-                userToken = userToken,
+                userToken = currentUserToken,
                 limit = request.limit,
                 offset = request.offset,
                 query = search.trim().ifEmpty { null },
