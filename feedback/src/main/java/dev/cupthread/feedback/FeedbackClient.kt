@@ -171,6 +171,7 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.AttachmentAlreadyFinalized if an attachment was already consumed by a concurrent submission (HTTP 409 `already_finalized`).
      * @throws FeedbackException.UploaderIdentityRequired if submitting upload-session attachments without an uploader identity (HTTP 400 `uploader_identity_required`).
      * @throws FeedbackException.UploaderMismatch if an attachment was uploaded with a different identity than the submission (HTTP 400 `uploader_mismatch`).
+     * @throws FeedbackException.RateLimited if the per-client submission rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus if the server rejects the submission with an unexpected status code.
      * @throws FeedbackException.InvalidResponse if a network transport failure occurs or response parsing fails.
      *
@@ -225,7 +226,8 @@ class FeedbackClient internal constructor(
                     mapAttachmentScanErrors = true,
                     mapAttachmentAlreadyFinalizedErrors = true,
                     mapVerificationErrors = true,
-                    mapUploaderErrors = true
+                    mapUploaderErrors = true,
+                    mapRateLimitErrors = true
                 )
             )
         }
@@ -1116,6 +1118,7 @@ class FeedbackClient internal constructor(
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
      * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
+     * @throws FeedbackException.RateLimited if the per-client comment rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
@@ -1152,7 +1155,8 @@ class FeedbackClient internal constructor(
                 body = payload,
                 userToken = userToken,
                 accepted = setOf(200, 201),
-                mapCommentErrors = true
+                mapCommentErrors = true,
+                mapRateLimitErrors = true
             )
         )
     }

@@ -3572,6 +3572,30 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun postCommentMapsHttp429ToRateLimited() = runTest {
+        val errorJson = """
+            {
+              "error": "You're commenting too fast. Please slow down.",
+              "code": "rate_limited"
+            }
+        """.trimIndent()
+
+        try {
+            client { _ ->
+                HttpResponse(429, errorJson, headers = mapOf("X-Request-Id" to "req_comment_429"))
+            }.postComment(
+                featureRequestId = "fr-42",
+                draft = CommentDraft(body = "Fast comment"),
+                userToken = "tok-123"
+            )
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("You're commenting too fast. Please slow down.", ex.serverMessage)
+            assertEquals("req_comment_429", ex.requestId)
+        }
+    }
+
+    @Test
     fun invalidParentCommentDefaultConstructorPreservesCodeAndDefaultMessage() {
         val ex = FeedbackException.InvalidParentComment()
         assertEquals(FeedbackException.InvalidParentComment.CODE_INVALID_PARENT, ex.serverCode)
@@ -4613,6 +4637,25 @@ class FeedbackClientTest {
         } catch (ex: FeedbackException.UnexpectedStatus) {
             assertEquals(409, ex.code)
             assertTrue(ex.serverMessage.contains("version_conflict"))
+        }
+    }
+
+    @Test
+    fun submitFeedbackMapsHttp429ToRateLimited() = runTest {
+        val client = client {
+            HttpResponse(
+                429,
+                """{"error":"Too many submissions. Please try again shortly.","code":"rate_limited"}""",
+                headers = mapOf("X-Request-Id" to "req_submit_429")
+            )
+        }
+        val draft = FeedbackDraft(title = "Bug", description = "Repro steps", platform = FeedbackPlatform.ANDROID)
+        try {
+            client.submit(draft, userToken = "tok")
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many submissions. Please try again shortly.", ex.serverMessage)
+            assertEquals("req_submit_429", ex.requestId)
         }
     }
 
