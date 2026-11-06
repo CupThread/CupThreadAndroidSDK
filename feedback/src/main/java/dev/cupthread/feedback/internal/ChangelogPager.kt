@@ -30,10 +30,15 @@ internal class ChangelogPager(
         started = false
     }
 
-    /** Loads the first page from a clean state, replacing any previous paging position. */
-    suspend fun loadFirstPage(): ListChangelogResult {
+    /**
+     * Loads the first page from a clean state, replacing any previous paging position.
+     *
+     * Returns `null` when a concurrent `reset()` (a newer load) superseded this request while its
+     * network call was in flight, so a stale first page can never overwrite newer rows.
+     */
+    suspend fun loadFirstPage(): ListChangelogResult? {
         reset()
-        return fetch(discardIfReset = false)!!
+        return fetch(discardIfReset = true)
     }
 
     /** Loads the page after the ones already loaded, or returns `null` when the list is exhausted. */

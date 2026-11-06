@@ -126,7 +126,7 @@ class FeatureRequestPagingTest {
             parseListFeatureRequests(JSONObject(pages[served++]), request.offset)
         }
 
-        var items = pager.loadFirstPage().requests
+        var items = pager.loadFirstPage()!!.requests
         while (pager.hasMore) {
             val page = pager.loadNextPage() ?: break
             items = FeatureRequestPager.append(items, page.requests)
@@ -199,7 +199,7 @@ class FeatureRequestPagingTest {
             )
         }
 
-        val first = pager.loadFirstPage()
+        val first = pager.loadFirstPage()!!
 
         assertTrue(first.requests.isEmpty())
         assertFalse(pager.hasMore)
@@ -217,7 +217,7 @@ class FeatureRequestPagingTest {
             )
         }
 
-        val items = pager.loadFirstPage().requests
+        val items = pager.loadFirstPage()!!.requests
 
         assertEquals(10, items.size)
         assertFalse(pager.hasMore)
@@ -260,5 +260,47 @@ class FeatureRequestPagingTest {
         assertNull(staleResult)
         assertEquals(0, pager.total)
         assertFalse(pager.hasMore)
+    }
+
+    @Test
+    fun loadFirstPageDiscardsStaleResponseWhenNewerLoadSupersedesIt() = runTest {
+        // Mirrors the pull-to-refresh race after a token rotation: a refresh started before the
+        // rotation finishes after the rotated-token reload and must not overwrite its rows.
+        var completeInFlight: (() -> Unit)? = null
+        var requestCount = 0
+        val pager = FeatureRequestPager(pageSize = 50) { req ->
+            requestCount++
+            if (requestCount == 1) {
+                // The stale (old-token) refresh: suspended while the newer load runs.
+                suspendCancellableCoroutine { cont ->
+                    completeInFlight = {
+                        cont.resume(
+                            parseListFeatureRequests(
+                                JSONObject(pageJson(ids("stale", 50), total = 100, hasMore = true, nextCursor = "stale-cursor")),
+                                req.offset
+                            )
+                        )
+                    }
+                }
+            } else {
+                // The newer (rotated-token) reload.
+                parseListFeatureRequests(
+                    JSONObject(pageJson(ids("fresh", 3), total = 3, hasMore = false, nextCursor = null)),
+                    req.offset
+                )
+            }
+        }
+
+        val staleDeferred = async { pager.loadFirstPage() }
+        yield()
+
+        // The rotated-token reload replaces the paging position while the stale request is in flight.
+        val freshPage = pager.loadFirstPage()!!
+        completeInFlight?.invoke()
+
+        assertNull("A superseded first page must be discarded, not applied", staleDeferred.await())
+        assertEquals(ids("fresh", 3), freshPage.requests.map { it.id })
+        assertFalse("Pager must keep the newer load's paging position", pager.hasMore)
+        assertNull(pager.loadNextPage())
     }
 }
