@@ -4551,6 +4551,23 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeatureRequestMaps401ToAuthenticationRequired() = runTest {
+        val client = client {
+            HttpResponse(
+                401,
+                """{"error":"Sign-in required","code":"authentication_required"}"""
+            )
+        }
+        val draft = FeatureRequestDraft(title = "Idea", description = "More details")
+        try {
+            client.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected AuthenticationRequired exception")
+        } catch (_: FeedbackException.AuthenticationRequired) {
+            // Expected: the app's roadmap requires sign-in and no end-user session is present.
+        }
+    }
+
+    @Test
     fun submitFeatureRequestMaps402SubscriptionInactive() = runTest {
         val client = client {
             HttpResponse(
