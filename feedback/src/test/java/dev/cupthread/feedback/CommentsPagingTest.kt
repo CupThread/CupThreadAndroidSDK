@@ -245,4 +245,51 @@ class CommentsPagingTest {
         }
         assertEquals(1, callCount)
     }
+
+    @Test
+    fun fetchCommentsPageDerivesHasMoreFromLegacyPayloadWithNextCursor() = runTest {
+        // Legacy deployment: {comments,total,nextCursor} without hasMore.
+        val legacy = """{"comments":[${commentJson("c-1")}],"total":450,"nextCursor":"cur_page2"}"""
+        val result = client {
+            HttpResponse(200, legacy)
+        }.fetchCommentsPage("fr-100")
+
+        assertEquals(1, result.comments.size)
+        assertEquals(450, result.total)
+        assertTrue(result.hasMore)
+        assertEquals("cur_page2", result.nextCursor)
+    }
+
+    @Test
+    fun fetchCommentsPageDerivesHasMoreFromLegacyPayloadWithPartialPage() = runTest {
+        // Legacy payload without hasMore and without nextCursor, but comments.size < total.
+        val legacy = """{"comments":[${commentJson("c-1")}],"total":450,"nextCursor":null}"""
+        val result = client {
+            HttpResponse(200, legacy)
+        }.fetchCommentsPage("fr-100")
+
+        assertTrue(result.hasMore)
+    }
+
+    @Test
+    fun fetchCommentsPageDerivesHasMoreFalseForFinalLegacyPage() = runTest {
+        // Final legacy page: comments.size == total and no cursor.
+        val legacy = """{"comments":[${commentJson("c-1")}],"total":1,"nextCursor":null}"""
+        val result = client {
+            HttpResponse(200, legacy)
+        }.fetchCommentsPage("fr-100")
+
+        assertFalse(result.hasMore)
+    }
+
+    @Test
+    fun fetchCommentsPageKeepsExplicitHasMoreFalseAuthoritativeOverStaleCursor() = runTest {
+        // Explicit hasMore=false must win over a (stale) nextCursor.
+        val result = client {
+            HttpResponse(200, pageJson(listOf("c-1"), total = 450, hasMore = false, nextCursor = "stale_cursor"))
+        }.fetchCommentsPage("fr-100")
+
+        assertFalse(result.hasMore)
+        assertEquals("stale_cursor", result.nextCursor)
+    }
 }
