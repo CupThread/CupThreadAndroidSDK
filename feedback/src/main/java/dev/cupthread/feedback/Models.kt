@@ -1502,6 +1502,20 @@ data class ChangelogUnsubscribeResult(
 )
 
 /**
+ * Result of confirming a changelog email subscription via [FeedbackClient.confirmChangelogSubscription].
+ *
+ * Confirming a subscription requires the single-use token delivered in the confirmation email
+ * following a [FeedbackClient.subscribeToChangelog] request.
+ *
+ * In accordance with API contract updates (issue #30), confirmation requires a mutating `POST` request.
+ *
+ * @property confirmed Whether the email subscription was successfully confirmed (uniform `true`).
+ */
+data class ChangelogConfirmationResult(
+    val confirmed: Boolean
+)
+
+/**
  * Result of updating user telemetry attributes via [FeedbackClient.updateUserAttributes].
  *
  * @property ok Whether the attribute update was accepted by the server.

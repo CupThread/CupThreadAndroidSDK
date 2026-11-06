@@ -2393,6 +2393,89 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun confirmChangelogSubscriptionHitsEndpointWithPostAndParsesResult() = runTest {
+        var requestedMethod: String? = null
+        var requestedUrl: String? = null
+        var capturedBody: String? = null
+
+        val result = client { req ->
+            requestedMethod = req.method
+            requestedUrl = req.url
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"confirmed":true}""")
+        }.confirmChangelogSubscription("conf_token_abc_123")
+
+        // #30: POST is required for confirmation; GET is non-destructive
+        assertEquals("POST", requestedMethod)
+        assertEquals("https://api.example.com/api/v1/public/apps/$appKey/changelog/confirm", requestedUrl)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("conf_token_abc_123", payload.getString("token"))
+        assertTrue(result.confirmed)
+    }
+
+    @Test
+    fun confirmChangelogSubscriptionTrimsTokenWhitespace() = runTest {
+        var capturedBody: String? = null
+
+        val result = client { req ->
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"confirmed":true}""")
+        }.confirmChangelogSubscription("  padded_token_xyz  ")
+
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("padded_token_xyz", payload.getString("token"))
+        assertTrue(result.confirmed)
+    }
+
+    @Test
+    fun confirmChangelogSubscriptionRejectsBlankToken() = runTest {
+        try {
+            client { HttpResponse(200, """{"confirmed":true}""") }.confirmChangelogSubscription("   ")
+            fail("Expected IllegalArgumentException on blank confirmation token")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("Confirmation token cannot be blank"))
+        }
+    }
+
+    @Test
+    fun confirmChangelogSubscriptionRejectsHttpDestinationWhenTransmittingToken() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"confirmed":true}""") }
+        )
+
+        try {
+            insecureClient.confirmChangelogSubscription("conf_token")
+            fail("Expected IllegalArgumentException when transmitting the confirmation token over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting the confirmation token"))
+        }
+    }
+
+    @Test
+    fun confirmChangelogSubscriptionSurfacesInvalidOrExpiredTokenAsUnexpectedStatus() = runTest {
+        try {
+            client {
+                HttpResponse(400, """{"error":"Invalid or expired confirmation token","code":"invalid_token"}""")
+            }.confirmChangelogSubscription("expired-token")
+            fail("Expected FeedbackException.UnexpectedStatus on 400 invalid confirmation token")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(400, ex.code)
+            assertTrue(ex.serverMessage.contains("Invalid or expired confirmation token"))
+        }
+    }
+
+    @Test
+    fun confirmChangelogSubscriptionHandlesDefaultConfirmedWhenOmitted() = runTest {
+        val result = client {
+            HttpResponse(200, "{}")
+        }.confirmChangelogSubscription("token")
+
+        assertTrue(result.confirmed)
+    }
+
+    @Test
     fun voteHitsVoteEndpointWithPostAndPayload() = runTest {
         var method: String? = null
         var url: String? = null

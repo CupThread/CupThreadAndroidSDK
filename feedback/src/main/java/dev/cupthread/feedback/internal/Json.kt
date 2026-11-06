@@ -13,6 +13,7 @@ import dev.cupthread.feedback.BoardColumnKind
 import dev.cupthread.feedback.ChangelogEntry
 import dev.cupthread.feedback.ChangelogLinkedRequest
 import dev.cupthread.feedback.ChangelogSubscriptionResult
+import dev.cupthread.feedback.ChangelogConfirmationResult
 import dev.cupthread.feedback.ChangelogUnsubscribeResult
 import dev.cupthread.feedback.EndUserEraseResult
 import dev.cupthread.feedback.FeatureRequestItem
@@ -306,6 +307,9 @@ internal fun parseChangelogSubscription(json: JSONObject): ChangelogSubscription
 
 internal fun parseChangelogUnsubscribe(json: JSONObject): ChangelogUnsubscribeResult =
     ChangelogUnsubscribeResult(unsubscribed = json.booleanOr("unsubscribed", true))
+
+internal fun parseChangelogConfirmationResult(json: JSONObject): ChangelogConfirmationResult =
+    ChangelogConfirmationResult(confirmed = json.booleanOr("confirmed", true))
 
 internal fun parseUserAttributesUpdate(json: JSONObject): UserAttributesUpdateResult =
     UserAttributesUpdateResult(
