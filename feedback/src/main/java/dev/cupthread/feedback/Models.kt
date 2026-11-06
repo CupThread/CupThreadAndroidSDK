@@ -165,6 +165,7 @@ data class FeedbackClientConfig(
  * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
  * @property size File size in bytes as reported by the storage backend, or `null`.
  * @property uploadId Unique upload identifier assigned by the storage backend, or `null`.
+ * @property userToken User token associated with the attachment upload session, or `null`.
  */
 data class FeedbackAttachment(
     val kind: Kind,
@@ -173,7 +174,8 @@ data class FeedbackAttachment(
     val filename: String? = null,
     val mimeType: String? = null,
     val size: Long? = null,
-    val uploadId: String? = null
+    val uploadId: String? = null,
+    val userToken: String? = null
 ) {
     /**
      * Backward-compatible constructor for callers providing [key] and [url].
@@ -192,7 +194,8 @@ data class FeedbackAttachment(
         filename = filename,
         mimeType = mimeType,
         size = size,
-        uploadId = null
+        uploadId = null,
+        userToken = null
     )
 
     /**

@@ -213,7 +213,8 @@ internal fun parseAttachment(json: JSONObject): FeedbackAttachment {
         filename = json.stringOrNull("filename"),
         mimeType = json.stringOrNull("mimeType"),
         size = if (!json.has("size") || json.isNull("size")) null else json.getLong("size"),
-        uploadId = uploadId
+        uploadId = uploadId,
+        userToken = json.stringOrNull("userToken")?.trim()?.ifEmpty { null }
     )
 }
 
