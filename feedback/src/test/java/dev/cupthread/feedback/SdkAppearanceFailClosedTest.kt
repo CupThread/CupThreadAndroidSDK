@@ -193,6 +193,29 @@ class SdkAppearanceFailClosedTest {
     }
 
     @Test
+    fun fetchAppConfigPrivateApp404FailsClosedAndKeepsPriorCache() = runTest {
+        val priorAppearance = SdkAppearance(
+            theme = SdkTheme.FOREST,
+            features = SdkFeatures(feedback = true, featureRequests = false, roadmap = false, changelog = false)
+        )
+        SdkAppearanceCache.put(appKey, priorAppearance)
+
+        val privateClient = FeedbackClient(
+            clientConfig,
+            transport = { HttpResponse(404, """{"error":"App not found"}""") }
+        )
+
+        try {
+            privateClient.fetchAppConfig()
+            fail("Expected fetchAppConfig to reject a private or unknown app")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(404, ex.code)
+            // A permanent rejection must not overwrite the last known-good appearance configuration.
+            assertEquals(priorAppearance, SdkAppearanceCache.get(appKey))
+        }
+    }
+
+    @Test
     fun sdkAppearanceStateProvidedAppearanceOnlyExposesNonNullWhenSuccessfulOrCached() {
         val custom = SdkAppearance(
             theme = SdkTheme.SUNSET,
