@@ -570,7 +570,9 @@ data class SdkAppearance(
  * @property iconUrl Hosted icon image URL, or `null`.
  * @property websiteUrl The app's public website URL, when configured (Web / Universal apps).
  * @property hideSiteBranding Whether the public web portal hides CupThread branding (logo/title).
- * @property allowPublic Whether the application's public portal is globally enabled.
+ * @property allowPublic Whether the application's public portal is enabled. Public configuration
+ *   is only served for public apps, so this is always `true` in a payload returned by
+ *   [FeedbackClient.fetchAppConfig]; private apps answer HTTP 404 instead.
  * @property allowedPlatforms List of operating system platforms accepted for feedback.
  * @property maxAttachmentBytes Maximum allowed upload size per attachment in bytes (e.g., `10485760` for 10MB).
  * @property allowAnonymousRoadmap Whether the roadmap board can be viewed without a valid user token.

@@ -503,8 +503,20 @@ class FeedbackClient internal constructor(
      * [PublicAppConfig.allowAnonymousVote], etc.), attachment size limits, and the console-configured
      * SDK appearance theme ([PublicAppConfig.sdk]).
      *
+     * Public configuration is served only for public apps. An app with `allowPublic = false`
+     * (private portal) and an unknown [FeedbackClientConfig.appKey] both answer HTTP 404 with
+     * `{"error": "App not found"}`; the two cases are intentionally indistinguishable. A 200
+     * payload therefore always describes a public app, so [PublicAppConfig.allowPublic] is `true`
+     * in every successful response.
+     *
+     * A failed fetch is fail-closed: [FeedbackException.UnexpectedStatus] with `code == 404` is
+     * thrown and the previously cached [SdkAppearance] (if any) is left untouched, so callers can
+     * fall back to bundled defaults without retrying a permanent rejection.
+     *
      * @return The [PublicAppConfig] for the configured application.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as invalid app key).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors, including HTTP 404 when the app
+     *   key is unknown or the app is not public. Check `code` to treat that case as "app not found
+     *   / not public".
      * @throws FeedbackException.InvalidResponse on network failure or response parsing errors.
      *
      * Example:
