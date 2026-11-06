@@ -534,7 +534,7 @@ class FeedbackClient internal constructor(
      */
     suspend fun fetchAppConfig(): PublicAppConfig {
         val appConfig = parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
-        SdkAppearanceCache.put(config.appKey, appConfig.sdk)
+        SdkAppearanceCache.put(config.baseUrl, config.appKey, appConfig.sdk)
         return appConfig
     }
 

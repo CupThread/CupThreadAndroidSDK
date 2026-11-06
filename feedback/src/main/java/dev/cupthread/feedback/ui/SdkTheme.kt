@@ -200,7 +200,7 @@ fun rememberSdkAppearanceState(
             when {
                 injected != null -> SdkAppearanceState.Success(injected)
                 else -> {
-                    val cached = SdkAppearanceCache.get(client.config.appKey)
+                    val cached = SdkAppearanceCache.get(client.config.baseUrl, client.config.appKey)
                     SdkAppearanceState.Loading(cached)
                 }
             }
@@ -212,7 +212,7 @@ fun rememberSdkAppearanceState(
             state = SdkAppearanceState.Success(injected)
             return@LaunchedEffect
         }
-        val currentCached = SdkAppearanceCache.get(client.config.appKey)
+        val currentCached = SdkAppearanceCache.get(client.config.baseUrl, client.config.appKey)
         state = SdkAppearanceState.Loading(currentCached)
         try {
             val remoteSdk = client.fetchAppConfig().sdk
