@@ -1353,6 +1353,9 @@ class FeedbackClient internal constructor(
      *   Prompt the user to subscribe with their signed-in account address.
      * @throws FeedbackException.AuthenticationRequired if anonymous changelog subscriptions are
      *   disabled for the app (HTTP 401 `authentication_required`).
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
+     *   The changelog POST spends its rate-limit budget before the request body is parsed, so a
+     *   429 can arrive ahead of any validation error.
      * @throws FeedbackException.UnexpectedStatus on other HTTP errors (such as HTTP 403 when human
      *   verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
@@ -1387,6 +1390,7 @@ class FeedbackClient internal constructor(
                 payload,
                 userToken = userToken,
                 accepted = setOf(200, 201),
+                mapRateLimitErrors = true,
                 mapEmailNotVerifiedErrors = true
             )
         )

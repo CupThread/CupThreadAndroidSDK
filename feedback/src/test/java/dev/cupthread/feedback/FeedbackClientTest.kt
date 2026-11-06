@@ -5119,6 +5119,23 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun subscribeToChangelogMapsHttp429ToRateLimited() = runTest {
+        try {
+            client {
+                HttpResponse(
+                    429,
+                    """{"error":"Too many subscription attempts. Please try again shortly.","code":"rate_limited"}""",
+                    headers = mapOf("X-Request-Id" to "req_subscribe_429")
+                )
+            }.subscribeToChangelog("user@example.com", userToken = "tok_anon")
+            fail("Expected FeedbackException.RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many subscription attempts. Please try again shortly.", ex.serverMessage)
+            assertEquals("req_subscribe_429", ex.requestId)
+        }
+    }
+
+    @Test
     fun fetchCommentsPageMapsHttp404ToCommentsUnavailable() = runTest {
         // #39: a comments thread returns 404 while the request awaits approval; callers must not
         // conclude that the feature request never existed.
