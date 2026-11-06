@@ -680,7 +680,7 @@ data class AppVersion(
  * }
  * ```
  *
- * @property id Unique identifier for the feature request; used in [FeedbackClient.toggleVote] and comments.
+ * @property id Unique identifier for the feature request; used in [FeedbackClient.vote], [FeedbackClient.deleteVote], and comments.
  * @property appId Identifier of the owning application.
  * @property title Brief summary of the proposed feature.
  * @property description Detailed description; may contain inline Markdown formatting rendered by [dev.cupthread.feedback.ui.MarkdownText].
@@ -915,7 +915,7 @@ data class FeatureRequestItem(
      * Creates a copy of this item with updated vote state.
      *
      * Useful for performing optimistic UI updates before network confirmation
-     * and reconciling server state after [FeedbackClient.toggleVote].
+     * and reconciling server state after [FeedbackClient.vote] or [FeedbackClient.deleteVote].
      *
      * @param voted Whether the user has voted.
      * @param count The new total vote count.
@@ -1165,7 +1165,7 @@ data class VoteWarning(
 }
 
 /**
- * Result of casting an upvote on a feature request via [FeedbackClient.toggleVote] or removing
+ * Result of casting an upvote on a feature request via [FeedbackClient.vote] or removing
  * it via [FeedbackClient.deleteVote].
  *
  * @property voted Whether the user is currently upvoting the request.

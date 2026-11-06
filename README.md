@@ -133,7 +133,8 @@ lifecycleScope.launch {
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
 | `fetchFeatureRequests(userToken, limit, offset, versionId, query, cursor)` | `GET /api/v1/feature-requests` (returns `hasMore` / `nextCursor`) |
 | `submitFeatureRequest(draft, userToken, turnstileToken?)` | `POST /api/v1/feature-requests` |
-| `toggleVote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` |
+| `vote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` (cast upvote, insert-only) |
+| `deleteVote(featureRequestId, userToken)` | `DELETE /api/v1/feature-requests/{id}/vote` (remove upvote, idempotent) |
 | `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
 | `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` |

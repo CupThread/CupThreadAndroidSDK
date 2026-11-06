@@ -9,7 +9,7 @@ import java.util.UUID
  *
  * Provides a stable, pseudonymous UUID token for the lifetime of an app installation.
  * This token is used across CupThread SDK endpoints to:
- * - Persist upvote state across app launches ([FeedbackClient.toggleVote])
+ * - Persist upvote state across app launches ([FeedbackClient.vote], [FeedbackClient.deleteVote])
  * - Identify and highlight feature requests created by the user ([FeedbackClient.submitFeatureRequest], [FeatureRequestItem.isOwnRequest])
  * - Authorize anonymous comments and subscription actions without requiring third-party authentication
  *
