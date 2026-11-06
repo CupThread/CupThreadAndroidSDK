@@ -364,11 +364,20 @@ internal fun parseCommentList(json: JSONObject): List<FeatureRequestComment> {
 
 internal fun parseListComments(json: JSONObject): ListCommentsResult {
     val comments = parseCommentList(json)
+    val total = json.optInt("total", comments.size)
+    val nextCursor = json.stringOrNull("nextCursor")
+    // Legacy deployments answer {comments,total[,nextCursor]} without hasMore; derive it
+    // from the payload instead of silently truncating paginated fetches.
+    val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
+        json.getBoolean("hasMore")
+    } else {
+        comments.isNotEmpty() && (comments.size < total || !nextCursor.isNullOrBlank())
+    }
     return ListCommentsResult(
         comments = comments,
-        total = json.optInt("total", comments.size),
-        hasMore = json.optBoolean("hasMore", false),
-        nextCursor = json.stringOrNull("nextCursor")
+        total = total,
+        hasMore = hasMore,
+        nextCursor = nextCursor
     )
 }
 
