@@ -1500,6 +1500,13 @@ data class ChangelogSubscriptionResult(
  * Unsubscribing requires the per-subscriber signed token carried by the unsubscribe link in
  * every changelog/confirmation email; the bare-email unsubscribe was removed from the API.
  *
+ * An authentic token is honored even after its `exp` claim and even when the app's public
+ * surfaces are disabled, so a signed link is never stale from the SDK's point of view. On an app
+ * whose public surfaces are disabled, a missing or unverifiable token is refused with HTTP 403
+ * (`Public surfaces are disabled for this app`); on a public app it is refused with HTTP 400 —
+ * surfaced by [FeedbackClient.unsubscribeFromChangelog] as [FeedbackException.UnexpectedStatus]
+ * or [FeedbackException.ValidationFailed] rather than a `false` result.
+ *
  * @property unsubscribed Whether the unsubscribe request was processed (uniform `true`, whether
  *   or not a subscription existed).
  */

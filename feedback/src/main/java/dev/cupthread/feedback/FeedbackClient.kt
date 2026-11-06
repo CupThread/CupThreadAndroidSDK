@@ -1445,14 +1445,30 @@ class FeedbackClient internal constructor(
      * only the signed `token` issued to a subscriber is accepted, so unsubscribe is a
      * user-driven action performed from the emailed link (or that token pasted into an app),
      * never from an in-app email entry alone. Responses are uniform whether or not the
-     * subscription existed; a missing or invalid token is rejected with HTTP 400.
+     * subscription existed.
+     *
+     * Token acceptance (API contract sync, issue #58):
+     * - A token whose signature matches this app is honored even after its `exp` claim and even
+     *   when the app's public surfaces are disabled; the call then returns HTTP 200 and completes
+     *   the unsubscribe. Do not discard a signed link because it is old or the board stopped being
+     *   public.
+     * - On an app with public surfaces disabled, a missing or unverifiable token fails with HTTP
+     *   403 (`{"error": "Public surfaces are disabled for this app"}`). That response does not
+     *   reveal whether the app exists, so it means "token missing or not valid for this app".
+     * - On an app with public surfaces enabled, a missing token fails with HTTP 400
+     *   (`"An unsubscribe token is required"`) and a signature that does not verify fails with
+     *   HTTP 400 (`"Invalid or expired unsubscribe token"`). Despite that wording, the 400 is only
+     *   returned for unauthentic signatures: an authentic token is never rejected for being past
+     *   its `exp`.
      *
      * @param token Per-subscriber signed unsubscribe token from the changelog/confirmation email link.
      * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
      * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
      *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope
-     *   (including other HTTP 400 responses for a missing or invalid token).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope,
+     *   including HTTP 403 when public surfaces are disabled for the app (token missing or not
+     *   valid for this app) and HTTP 400 for an unauthentic token or a missing token without a
+     *   validation envelope.
      * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope
      *   (e.g. a missing token); check [FeedbackException.ValidationFailed.fieldErrors] for details.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
