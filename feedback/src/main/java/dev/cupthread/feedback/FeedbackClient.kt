@@ -879,6 +879,11 @@ class FeedbackClient internal constructor(
      * vote recorded and a [VoteResult.warning] describing the refusal; inspect it before telling
      * the user they will be notified.
      *
+     * When [FeedbackClientConfig.turnstileTokenProvider] is configured, a rejected verification
+     * (`turnstile_required` / `turnstile_verification_failed`) is retried once with a freshly
+     * minted token under the same `(action, cdata)` binding. Without a provider the rejection
+     * surfaces directly as [FeedbackException.VerificationRequired].
+     *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
@@ -887,7 +892,8 @@ class FeedbackClient internal constructor(
      *   and an optional [VoteResult.warning] when a secondary action was refused.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
-     * @throws FeedbackException.UnexpectedStatus on HTTP rejection (such as HTTP 403 when human verification is required or fails).
+     * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the vote (HTTP 403 `turnstile_*`).
+     * @throws FeedbackException.UnexpectedStatus on other HTTP rejections.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
@@ -919,26 +925,36 @@ class FeedbackClient internal constructor(
                 "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
             }
         }
-        val payload = JSONObject().apply {
-            put("appKey", config.appKey)
-            put("userToken", userToken)
-            turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                put("turnstileToken", it)
+        return sendWithTurnstileRetry(
+            challenge = if (trimmedEmail != null) {
+                TurnstileChallenge.shipNotify(config.appKey)
+            } else {
+                TurnstileChallenge.vote(config.appKey)
+            },
+            explicitToken = turnstileToken
+        ) { verificationToken ->
+            val payload = JSONObject().apply {
+                put("appKey", config.appKey)
+                put("userToken", userToken)
+                verificationToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    put("turnstileToken", it)
+                }
+                trimmedEmail?.let {
+                    put("shipNotifyEmail", it)
+                }
             }
-            trimmedEmail?.let {
-                put("shipNotifyEmail", it)
-            }
-        }
-        return parseVoteResult(
-            sendJson(
-                method = "POST",
-                path = "/api/v1/feature-requests/$featureRequestId/vote",
-                body = payload,
-                userToken = userToken,
-                accepted = setOf(200),
-                mapRateLimitErrors = true
+            parseVoteResult(
+                sendJson(
+                    method = "POST",
+                    path = "/api/v1/feature-requests/$featureRequestId/vote",
+                    body = payload,
+                    userToken = userToken,
+                    accepted = setOf(200),
+                    mapRateLimitErrors = true,
+                    mapVerificationErrors = true
+                )
             )
-        )
+        }
     }
 
     /**

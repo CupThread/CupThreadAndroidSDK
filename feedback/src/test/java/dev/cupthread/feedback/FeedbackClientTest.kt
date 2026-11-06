@@ -2884,7 +2884,7 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun toggleVoteSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
+    fun toggleVoteSurfacesHttp403TurnstileVerificationFailedAsVerificationRequired() = runTest {
         val userToken = UUID.randomUUID().toString()
         val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
 
@@ -2892,10 +2892,10 @@ class FeedbackClientTest {
             client {
                 HttpResponse(403, errorJson)
             }.toggleVote("fr-102", userToken, turnstileToken = "invalid_token")
-            fail("Expected FeedbackException.UnexpectedStatus on 403")
-        } catch (ex: FeedbackException.UnexpectedStatus) {
-            assertEquals(403, ex.code)
-            assertTrue(ex.serverMessage.contains("turnstile_verification_failed"))
+            fail("Expected FeedbackException.VerificationRequired on a turnstile_* 403")
+        } catch (ex: FeedbackException.VerificationRequired) {
+            assertEquals(FeedbackException.VerificationRequired.CODE_VERIFICATION_FAILED, ex.serverCode)
+            assertTrue(ex.serverMessage?.contains("Human verification failed") == true)
         }
     }
 

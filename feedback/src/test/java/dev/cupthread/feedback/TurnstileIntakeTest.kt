@@ -414,6 +414,92 @@ class TurnstileIntakeTest {
 
     // endregion
 
+    // region vote (POST /api/v1/feature-requests/{id}/vote)
+
+    private fun voteOk() = HttpResponse(200, """{"voted":true,"voteCount":7}""")
+
+    private fun votePath(id: String) = "https://api.example.com/api/v1/feature-requests/$id/vote"
+
+    @Test
+    fun voteConsultsProviderAndSendsTokenUnderVoteBinding() = runTest {
+        val provider = RecordingProvider("0.test_vote_token")
+        var captured: HttpRequest? = null
+        val result = turnstileClient(provider) { request ->
+            captured = request
+            voteOk()
+        }.vote("fr-v1", "usr_tok_vote")
+
+        assertEquals(7, result.voteCount)
+        assertEquals(listOf(TurnstileChallenge(TurnstileAction.VOTE, appKey)), provider.challenges)
+        assertEquals("0.test_vote_token", body(requireNotNull(captured)).getString("turnstileToken"))
+    }
+
+    @Test
+    fun voteWithShipNotifyEmailUsesShipNotifyBinding() = runTest {
+        val provider = RecordingProvider("0.test_ship_token")
+        var captured: HttpRequest? = null
+        turnstileClient(provider) { request ->
+            captured = request
+            voteOk()
+        }.vote("fr-v2", "usr_tok_vote", shipNotifyEmail = "voter@example.com")
+
+        assertEquals(listOf(TurnstileChallenge(TurnstileAction.SHIP_NOTIFY, appKey)), provider.challenges)
+        val payload = body(requireNotNull(captured))
+        assertEquals("0.test_ship_token", payload.getString("turnstileToken"))
+        assertEquals("voter@example.com", payload.getString("shipNotifyEmail"))
+    }
+
+    @Test
+    fun voteExplicitTokenWinsAndSkipsProviderOnSuccess() = runTest {
+        val provider = RecordingProvider("0.test_should_not_be_minted")
+        var captured: HttpRequest? = null
+        turnstileClient(provider) { request ->
+            captured = request
+            voteOk()
+        }.vote("fr-v3", "usr_tok_vote", turnstileToken = "explicit-vote-token")
+
+        assertEquals(0, provider.challenges.size)
+        assertEquals("explicit-vote-token", body(requireNotNull(captured)).getString("turnstileToken"))
+    }
+
+    @Test
+    fun voteRetriesExactlyOnceWithFreshTokenAfterTurnstileRequired() = runTest {
+        val provider = RecordingProvider("0.test_vote_stale", "0.test_vote_fresh")
+        val bodies = mutableListOf<JSONObject>()
+        val result = turnstileClient(provider) { request ->
+            bodies += body(request)
+            if (bodies.size == 1) {
+                HttpResponse(403, """{"error":"Human verification (Turnstile) is required","code":"turnstile_required"}""")
+            } else {
+                voteOk()
+            }
+        }.vote("fr-v4", "usr_tok_vote")
+
+        assertEquals(7, result.voteCount)
+        assertEquals(2, bodies.size)
+        assertEquals("0.test_vote_stale", bodies[0].getString("turnstileToken"))
+        assertEquals("0.test_vote_fresh", bodies[1].getString("turnstileToken"))
+        assertEquals(2, provider.challenges.size)
+        assertTrue(provider.challenges.all { it == TurnstileChallenge(TurnstileAction.VOTE, appKey) })
+    }
+
+    @Test
+    fun voteSurfacesTypedVerificationRequiredWithoutProvider() = runTest {
+        var attempts = 0
+        try {
+            turnstileClient(null) {
+                attempts++
+                HttpResponse(403, """{"error":"Verification failed","code":"turnstile_verification_failed"}""")
+            }.vote("fr-v5", "usr_tok_vote")
+            fail("Expected FeedbackException.VerificationRequired on a turnstile_* 403")
+        } catch (ex: FeedbackException.VerificationRequired) {
+            assertEquals(FeedbackException.VerificationRequired.CODE_VERIFICATION_FAILED, ex.serverCode)
+            assertEquals(1, attempts)
+        }
+    }
+
+    // endregion
+
     // region PublicAppConfig.turnstile
 
     private fun configJson(turnstile: String?) = """
