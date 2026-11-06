@@ -55,6 +55,16 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
             FeedbackPlatform.fromWire(platforms.getString(i))?.let(::add)
         }
     }
+    val embedOrigins = json.optJSONArray("allowedEmbedOrigins")?.let { array ->
+        buildList {
+            for (i in 0 until array.length()) {
+                val origin = array.optString(i)?.trim()?.takeIf { it.isNotEmpty() }
+                if (origin != null) {
+                    add(origin)
+                }
+            }
+        }.takeIf { it.isNotEmpty() }
+    }
     return PublicAppConfig(
         appId = json.getString("appId"),
         appKey = json.getString("appKey"),
@@ -74,7 +84,8 @@ internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
         allowAnonymousChangelog = json.booleanOr("allowAnonymousChangelog", true),
         requireAnonymousVoteTurnstile = json.booleanOr("requireAnonymousVoteTurnstile", false),
         turnstile = parseTurnstileConfig(json.optJSONObject("turnstile")),
-        sdk = parseSdkAppearance(json.optJSONObject("sdk"))
+        sdk = parseSdkAppearance(json.optJSONObject("sdk")),
+        allowedEmbedOrigins = embedOrigins
     )
 }
 
