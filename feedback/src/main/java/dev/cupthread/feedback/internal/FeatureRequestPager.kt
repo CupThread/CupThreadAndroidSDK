@@ -54,10 +54,16 @@ internal class FeatureRequestPager(
         started = false
     }
 
-    /** Loads the first page from a clean state, replacing any previous paging position. */
-    suspend fun loadFirstPage(): ListFeatureRequestsResult {
+    /**
+     * Loads the first page from a clean state, replacing any previous paging position.
+     *
+     * Returns `null` when a concurrent `reset()` (a newer load, e.g. after a user-token rotation)
+     * superseded this request while its network call was in flight, so a stale first page can
+     * never overwrite the rows or paging position of the newer identity.
+     */
+    suspend fun loadFirstPage(): ListFeatureRequestsResult? {
         reset()
-        return fetch(discardIfReset = false)!!
+        return fetch(discardIfReset = true)
     }
 
     /** Loads the page after the ones already loaded, or returns `null` when the list is exhausted. */

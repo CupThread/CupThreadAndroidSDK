@@ -179,7 +179,10 @@ private fun FeatureRequestsScreenContent(
         error = null
         loadMoreFailed = false
         try {
-            val page = pager.loadFirstPage()
+            // A pull-to-refresh launch outlives a token rotation (the search collector restarts
+            // instead). When the pager discards this page because a newer load superseded it,
+            // keep the newer identity's rows on screen instead of overwriting them.
+            val page = pager.loadFirstPage() ?: return
             items = page.requests
             hasMore = pager.hasMore
             hasLoaded = true

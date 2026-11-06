@@ -84,7 +84,7 @@ class ChangelogPagingTest {
             client.fetchChangelogPage(limit, cursor)
         }
 
-        val first = pager.loadFirstPage()
+        val first = pager.loadFirstPage()!!
         assertEquals(listOf("cl-1", "cl-2"), first.entries.map { it.id })
         assertTrue(first.hasMore)
         assertEquals("page1_cursor", first.nextCursor)
@@ -124,7 +124,7 @@ class ChangelogPagingTest {
             client.fetchChangelogPage(limit, cursor)
         }
 
-        val page = pager.loadFirstPage()
+        val page = pager.loadFirstPage()!!
         assertTrue(page.entries.isEmpty())
         assertFalse(pager.hasMore)
         assertNull(pager.loadNextPage())
@@ -188,7 +188,7 @@ class ChangelogPagingTest {
             client.fetchChangelogPage(limit, cursor)
         }
 
-        val page = pager.loadFirstPage()
+        val page = pager.loadFirstPage()!!
         assertEquals(1, page.entries.size)
         assertFalse(pager.hasMore)
         assertNull(pager.loadNextPage())
@@ -213,7 +213,7 @@ class ChangelogPagingTest {
             client.fetchChangelogPage(limit, cursor)
         }
 
-        val first = pager.loadFirstPage()
+        val first = pager.loadFirstPage()!!
         assertEquals("same_cursor", first.nextCursor)
         assertTrue(pager.hasMore)
 

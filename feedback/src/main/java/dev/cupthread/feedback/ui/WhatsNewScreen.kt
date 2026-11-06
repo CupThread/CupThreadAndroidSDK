@@ -127,7 +127,9 @@ private fun WhatsNewScreenContent(
         error = null
         loadMoreFailed = false
         try {
-            val page = pager.loadFirstPage()
+            // When the pager discards this page because a newer load superseded it, keep the
+            // newer load's entries on screen instead of overwriting them.
+            val page = pager.loadFirstPage() ?: return
             entries = page.entries
             hasMore = pager.hasMore
         } catch (ex: FeedbackException.AuthenticationRequired) {

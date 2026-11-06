@@ -187,7 +187,10 @@ private fun RoadmapBoardScreenContent(
         loadMoreFailed = false
         try {
             val fetchedColumns = client.fetchColumns()
-            val page = pager.loadFirstPage()
+            // A pull-to-refresh launch outlives a token rotation (the collector restarts
+            // instead). When the pager discards this page because a newer load superseded it,
+            // keep the newer identity's rows on screen instead of overwriting them.
+            val page = pager.loadFirstPage() ?: return
             columns = fetchedColumns
             requests = page.requests
             hasMore = pager.hasMore
