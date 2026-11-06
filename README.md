@@ -135,14 +135,14 @@ lifecycleScope.launch {
 | `submitFeatureRequest(draft, userToken, turnstileToken?)` | `POST /api/v1/feature-requests` |
 | `vote(featureRequestId, userToken, turnstileToken?, shipNotifyEmail?)` | `POST /api/v1/feature-requests/{id}/vote` (cast upvote, insert-only) |
 | `deleteVote(featureRequestId, userToken)` | `DELETE /api/v1/feature-requests/{id}/vote` (remove upvote, idempotent) |
-| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating) |
-| `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`) |
+| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` (auto-paginating; HTTP 404 surfaces as `FeedbackException.CommentsUnavailable` for threads that are not visible yet) |
+| `fetchCommentsPage(featureRequestId, limit, cursor)` | `GET /api/v1/feature-requests/{id}/comments` (returns `hasMore` / `nextCursor`; HTTP 404 surfaces as `FeedbackException.CommentsUnavailable`) |
 | `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` (surfaces `FeedbackException.InvalidParentComment` on invalid parent) |
 | `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile?appKey={appKey}` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |
 | `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` |
 | `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` |
 | `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` |
-| `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` (double opt-in: the address is pending until the emailed confirmation link is clicked) |
+| `subscribeToChangelog(email, userToken, turnstileToken?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` (double opt-in: the address is pending until the emailed confirmation link is clicked; HTTP 403 `email_not_verified` surfaces as `FeedbackException.EmailNotVerified`) |
 | `confirmChangelogSubscription(token)` | `POST /api/v1/public/apps/{appKey}/changelog/confirm` (confirms subscription with the token from the emailed link) |
 | `unsubscribeFromChangelog(token)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` (requires the per-subscriber token from the unsubscribe link in the email) |
 | `updateUserAttributes(userToken, isPaying, plan, mrr, currency)` | `PUT /api/v1/public/apps/{appKey}/user` (rate limited: HTTP 429 surfaces as `FeedbackException.RateLimited`) |

@@ -1015,7 +1015,11 @@ class FeedbackClient internal constructor(
      * @return [ListCommentsResult] containing the comments on this page along with pagination metadata.
      * @throws IllegalArgumentException if [featureRequestId] is blank.
      * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as HTTP 404 if not found or HTTP 400 for invalid cursor).
+     * @throws FeedbackException.CommentsUnavailable if the thread is not visible (HTTP 404), for
+     *   example because the feature request is still awaiting approval. The request may still
+     *   exist — treat this as "comments not available" rather than "request never existed".
+     * @throws FeedbackException.UnexpectedStatus on other HTTP errors (such as HTTP 400 for an
+     *   invalid cursor).
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
      * Example:
@@ -1046,7 +1050,11 @@ class FeedbackClient internal constructor(
         } else {
             "/api/v1/feature-requests/${featureRequestId.trim()}/comments"
         }
-        val json = get(path, mapRateLimitErrors = true)
+        val json = get(
+            path,
+            mapRateLimitErrors = true,
+            mapCommentsUnavailableErrors = true
+        )
         return parseListComments(json)
     }
 
@@ -1061,7 +1069,9 @@ class FeedbackClient internal constructor(
      * @return List of all [FeatureRequestComment] records on the thread, ordered ascending by creation time.
      * @throws IllegalArgumentException if [featureRequestId] is blank.
      * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors.
+     * @throws FeedbackException.CommentsUnavailable if the thread is not visible (HTTP 404), for
+     *   example because the feature request is still awaiting approval.
+     * @throws FeedbackException.UnexpectedStatus on other HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
@@ -1338,7 +1348,16 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
      *   (pending confirmation).
-     * @throws FeedbackException.UnexpectedStatus on HTTP errors (such as HTTP 403 when human verification is required or fails).
+     * @throws FeedbackException.EmailNotVerified if the app requires a signed-in session and
+     *   [email] does not match that session's verified address (HTTP 403 `email_not_verified`).
+     *   Prompt the user to subscribe with their signed-in account address.
+     * @throws FeedbackException.AuthenticationRequired if anonymous changelog subscriptions are
+     *   disabled for the app (HTTP 401 `authentication_required`).
+     * @throws FeedbackException.RateLimited if the per-client rate limit is exceeded (HTTP 429).
+     *   The changelog POST spends its rate-limit budget before the request body is parsed, so a
+     *   429 can arrive ahead of any validation error.
+     * @throws FeedbackException.UnexpectedStatus on other HTTP errors (such as HTTP 403 when human
+     *   verification is required or fails).
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      *
      * Example:
@@ -1370,7 +1389,9 @@ class FeedbackClient internal constructor(
                 "/api/v1/public/apps/${config.appKey}/changelog/subscribe",
                 payload,
                 userToken = userToken,
-                accepted = setOf(200, 201)
+                accepted = setOf(200, 201),
+                mapRateLimitErrors = true,
+                mapEmailNotVerifiedErrors = true
             )
         )
     }
@@ -1738,14 +1759,16 @@ class FeedbackClient internal constructor(
         path: String,
         userToken: String? = null,
         bearerToken: String? = null,
-        mapRateLimitErrors: Boolean = false
+        mapRateLimitErrors: Boolean = false,
+        mapCommentsUnavailableErrors: Boolean = false
     ): JSONObject = sendJson(
         "GET",
         path,
         body = null,
         userToken = userToken,
         bearerToken = bearerToken,
-        mapRateLimitErrors = mapRateLimitErrors
+        mapRateLimitErrors = mapRateLimitErrors,
+        mapCommentsUnavailableErrors = mapCommentsUnavailableErrors
     )
 
     private fun buildHeaders(
@@ -1829,7 +1852,9 @@ class FeedbackClient internal constructor(
         mapVerificationErrors: Boolean = false,
         mapUserAttributeErrors: Boolean = false,
         mapUploaderErrors: Boolean = false,
-        mapCommentErrors: Boolean = false
+        mapCommentErrors: Boolean = false,
+        mapEmailNotVerifiedErrors: Boolean = false,
+        mapCommentsUnavailableErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -1848,7 +1873,9 @@ class FeedbackClient internal constructor(
             mapVerificationErrors = mapVerificationErrors,
             mapUserAttributeErrors = mapUserAttributeErrors,
             mapUploaderErrors = mapUploaderErrors,
-            mapCommentErrors = mapCommentErrors
+            mapCommentErrors = mapCommentErrors,
+            mapEmailNotVerifiedErrors = mapEmailNotVerifiedErrors,
+            mapCommentsUnavailableErrors = mapCommentsUnavailableErrors
         )
     }
 
@@ -1913,7 +1940,9 @@ class FeedbackClient internal constructor(
         mapUserAttributeErrors: Boolean = false,
         mapUploaderErrors: Boolean = false,
         mapCommentErrors: Boolean = false,
-        mapImageUploadErrors: Boolean = false
+        mapImageUploadErrors: Boolean = false,
+        mapEmailNotVerifiedErrors: Boolean = false,
+        mapCommentsUnavailableErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
             val response = try {
@@ -1972,6 +2001,23 @@ class FeedbackClient internal constructor(
                     }
                 }
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired(requestId)
+                if (response.code == 403 && mapEmailNotVerifiedErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    if (errorPayload?.first == FeedbackException.EmailNotVerified.CODE_EMAIL_NOT_VERIFIED) {
+                        throw FeedbackException.EmailNotVerified(
+                            serverMessage = errorPayload.second,
+                            serverCode = errorPayload.first,
+                            requestId = requestId
+                        )
+                    }
+                }
+                if (response.code == 404 && mapCommentsUnavailableErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    throw FeedbackException.CommentsUnavailable(
+                        serverMessage = errorPayload?.second ?: response.body.ifBlank { null },
+                        requestId = requestId
+                    )
+                }
                 if (response.code == 403 && mapVerificationErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
