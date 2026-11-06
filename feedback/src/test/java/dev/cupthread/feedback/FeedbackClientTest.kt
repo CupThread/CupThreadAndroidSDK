@@ -132,6 +132,126 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchAppConfigDecodesAllowedEmbedOriginsWhenPresent() = runTest {
+        // #50: optional allowedEmbedOrigins added to the public app config (SaaS SEC-518)
+        val json = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000,
+              "allowedEmbedOrigins":["https://docs.example.com", "https://app.partner.com:8443"]
+            }
+        """.trimIndent()
+        val result = client { HttpResponse(200, json) }.fetchAppConfig()
+        assertEquals(listOf("https://docs.example.com", "https://app.partner.com:8443"), result.allowedEmbedOrigins)
+    }
+
+    @Test
+    fun fetchAppConfigDefaultsAllowedEmbedOriginsToNullWhenAbsent() = runTest {
+        val json = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000
+            }
+        """.trimIndent()
+        val result = client { HttpResponse(200, json) }.fetchAppConfig()
+        assertNull(result.allowedEmbedOrigins)
+    }
+
+    @Test
+    fun fetchAppConfigHandlesNullOrEmptyAllowedEmbedOrigins() = runTest {
+        val jsonWithNull = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000,
+              "allowedEmbedOrigins":null
+            }
+        """.trimIndent()
+        val resultNull = client { HttpResponse(200, jsonWithNull) }.fetchAppConfig()
+        assertNull(resultNull.allowedEmbedOrigins)
+
+        val jsonWithEmptyArray = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000,
+              "allowedEmbedOrigins":[]
+            }
+        """.trimIndent()
+        val resultEmpty = client { HttpResponse(200, jsonWithEmptyArray) }.fetchAppConfig()
+        assertNull(resultEmpty.allowedEmbedOrigins)
+
+        val jsonWithBlankStrings = """
+            {
+              "appId":"app-1",
+              "appKey":"$appKey",
+              "slug":"demo-app",
+              "name":"Demo App",
+              "storeUrl":null,
+              "storeKind":null,
+              "iconUrl":null,
+              "allowPublic":true,
+              "allowedPlatforms":["android"],
+              "maxAttachmentBytes":20000000,
+              "allowedEmbedOrigins":["   ", ""]
+            }
+        """.trimIndent()
+        val resultBlank = client { HttpResponse(200, jsonWithBlankStrings) }.fetchAppConfig()
+        assertNull(resultBlank.allowedEmbedOrigins)
+    }
+
+    @Test
+    fun publicAppConfigBackwardCompatibleConstructorPreservesNullOrigins() {
+        val config = PublicAppConfig(
+            appId = "app-1",
+            appKey = "key-1",
+            slug = "slug-1",
+            name = "App 1",
+            storeUrl = null,
+            storeKind = null,
+            iconUrl = null,
+            allowPublic = true,
+            allowedPlatforms = listOf(FeedbackPlatform.ANDROID),
+            maxAttachmentBytes = 10_000_000L,
+            allowAnonymousRoadmap = true,
+            allowAnonymousVote = true,
+            allowAnonymousFeedback = true,
+            allowAnonymousChangelog = true
+        )
+        assertNull(config.allowedEmbedOrigins)
+    }
+
+    @Test
     fun fetchAppConfigDecodesSdkAppearance() = runTest {
         val json = """
             {

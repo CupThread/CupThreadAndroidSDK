@@ -582,6 +582,8 @@ data class SdkAppearance(
  * @property turnstile Public Turnstile widget configuration, or `null` while the deployment publishes
  *   no site key (absence means the hosted challenge page cannot mint tokens for this app and intake
  *   needs a host-supplied [TurnstileTokenProvider]).
+ * @property allowedEmbedOrigins List of external website `https://` origins permitted to embed the app's
+ *   public portal pages in an iframe (`frame-ancestors`), or `null` when portal embedding is disabled everywhere.
  */
 data class PublicAppConfig(
     val appId: String,
@@ -602,8 +604,55 @@ data class PublicAppConfig(
     val allowAnonymousChangelog: Boolean,
     val requireAnonymousVoteTurnstile: Boolean = false,
     val sdk: SdkAppearance = SdkAppearance.defaults,
-    val turnstile: TurnstileConfig? = null
-)
+    val turnstile: TurnstileConfig? = null,
+    val allowedEmbedOrigins: List<String>? = null
+) {
+    /**
+     * Backward-compatible constructor for callers compiled before [allowedEmbedOrigins] was added.
+     */
+    constructor(
+        appId: String,
+        appKey: String,
+        slug: String,
+        name: String,
+        storeUrl: String?,
+        storeKind: String?,
+        iconUrl: String?,
+        websiteUrl: String? = null,
+        hideSiteBranding: Boolean = false,
+        allowPublic: Boolean,
+        allowedPlatforms: List<FeedbackPlatform>,
+        maxAttachmentBytes: Long,
+        allowAnonymousRoadmap: Boolean,
+        allowAnonymousVote: Boolean,
+        allowAnonymousFeedback: Boolean,
+        allowAnonymousChangelog: Boolean,
+        requireAnonymousVoteTurnstile: Boolean = false,
+        sdk: SdkAppearance = SdkAppearance.defaults,
+        turnstile: TurnstileConfig? = null
+    ) : this(
+        appId = appId,
+        appKey = appKey,
+        slug = slug,
+        name = name,
+        storeUrl = storeUrl,
+        storeKind = storeKind,
+        iconUrl = iconUrl,
+        websiteUrl = websiteUrl,
+        hideSiteBranding = hideSiteBranding,
+        allowPublic = allowPublic,
+        allowedPlatforms = allowedPlatforms,
+        maxAttachmentBytes = maxAttachmentBytes,
+        allowAnonymousRoadmap = allowAnonymousRoadmap,
+        allowAnonymousVote = allowAnonymousVote,
+        allowAnonymousFeedback = allowAnonymousFeedback,
+        allowAnonymousChangelog = allowAnonymousChangelog,
+        requireAnonymousVoteTurnstile = requireAnonymousVoteTurnstile,
+        sdk = sdk,
+        turnstile = turnstile,
+        allowedEmbedOrigins = null
+    )
+}
 
 /**
  * Public Cloudflare Turnstile widget configuration (`turnstile`) from
