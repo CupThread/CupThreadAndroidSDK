@@ -288,6 +288,9 @@ class FeedbackClient internal constructor(
      * to be attached to a [FeedbackDraft].
      *
      * - Image MIME types (e.g., `image/png`, `image/jpeg`) are routed to `POST /api/v1/uploads/images`.
+     *   Image attachments are stored as **private** objects: the response carries no public CDN
+     *   `url`, and the file is only retrievable through the authorized, signed download route
+     *   after the feedback submission finalizes. Never treat an uploaded image as publicly fetchable.
      * - All other files (e.g. logs, crashes, text) are uploaded through the upload-session lifecycle:
      *   `POST /api/v1/uploads/sessions` reserves a slot, then the raw bytes are stored via
      *   `PUT /api/v1/uploads/{uploadId}`. The legacy `POST /api/v1/uploads/r2` endpoint is removed
@@ -318,7 +321,7 @@ class FeedbackClient internal constructor(
      *   [TurnstileAction.FEEDBACK] action with the app key as `cdata`; only consulted for the
      *   upload-session (non-image) path.
      * @return A populated [FeedbackAttachment] carrying the server-assigned `uploadId` (and legacy
-     *   `key`/`url` for older image responses).
+     *   `key`/`url` only for responses from deployments predating private image attachments).
  * @throws IllegalArgumentException if a non-image upload is attempted without a non-blank [userToken].
  * @throws FeedbackException.AuthenticationRequired on HTTP 401.
  * @throws FeedbackException.UnsupportedMediaType on HTTP 415, when an unsupported image format (e.g. SVG) is uploaded,
@@ -327,6 +330,7 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.UploaderIdentityRequired if creating an upload session without an uploader identity (HTTP 400 `uploader_identity_required`).
      * @throws FeedbackException.VerificationRequired if the upload-session human-verification gate rejects the request (HTTP 403 `turnstile_*`).
      * @throws FeedbackException.UnreadableUploadResponse if the upload succeeded on the server but the response could not be parsed.
+     * @throws FeedbackException.RateLimited if the upload rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus if the file upload is rejected (e.g. exceeded the session's per-file byte budget).
      * @throws FeedbackException.InvalidResponse if a network error occurs.
      *
@@ -376,6 +380,7 @@ class FeedbackClient internal constructor(
                 userToken = userToken,
                 accepted = setOf(200, 201),
                 mapUnsupportedMediaType = true,
+                mapRateLimitErrors = true,
                 mapImageUploadErrors = true
             )
             return try {
@@ -1929,6 +1934,7 @@ class FeedbackClient internal constructor(
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200, 201),
         mapUnsupportedMediaType: Boolean = false,
+        mapRateLimitErrors: Boolean = false,
         mapImageUploadErrors: Boolean = false
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
@@ -1942,6 +1948,7 @@ class FeedbackClient internal constructor(
             ),
             accepted,
             mapUnsupportedMediaType = mapUnsupportedMediaType,
+            mapRateLimitErrors = mapRateLimitErrors,
             mapImageUploadErrors = mapImageUploadErrors
         )
     }

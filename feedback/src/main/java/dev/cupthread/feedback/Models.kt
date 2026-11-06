@@ -160,7 +160,10 @@ data class FeedbackClientConfig(
  *
  * @property kind Storage backend where the file is hosted (see [FeedbackAttachment.Kind]).
  * @property key Unique storage key assigned by the server, or `null` for private uploads.
- * @property url Publicly accessible CDN URL for rendering or downloading the attachment, or `null` if private.
+ * @property url Legacy public CDN URL from older image-upload responses, or `null` for private
+ *   attachments. Image attachments are stored privately and are only retrievable through the
+ *   authorized download route after the feedback submission finalizes; current uploads always
+ *   carry [uploadId] and leave [url] `null`.
  * @property filename Original file name provided during upload (e.g., `"screenshot.png"`), or `null`.
  * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
  * @property size File size in bytes as reported by the storage backend, or `null`.
@@ -261,7 +264,8 @@ data class FeedbackAttachment(
         /** Generic Cloudflare R2 object storage for logs, diagnostics, and non-image files (`r2`). */
         R2("r2"),
 
-        /** Optimized image storage for screenshots and visual attachments (`image`). */
+        /** Image storage for screenshots and visual attachments; images are stored as private
+         * attachments referenced by [FeedbackAttachment.uploadId] (`image`). */
         IMAGE("image");
 
         companion object {
