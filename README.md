@@ -127,7 +127,7 @@ lifecycleScope.launch {
 | Method | Endpoint / Description |
 | ------ | ---------------------- |
 | `submit(draft, userToken, turnstileToken?)` | `POST /api/v1/feedback` (sends `X-User-Token`; surfaces `FeedbackException.UploaderMismatch` or `FeedbackException.UploaderIdentityRequired` when upload sessions were created by a different identity) |
-| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images` (metadata-scrubbed, see [Image Metadata Privacy](#image-metadata-privacy); returns a **private** attachment with an `uploadId` and no public URL; surfaces `FeedbackException.ImageUploadFailed` on HTTP 500 and `FeedbackException.RateLimited` on HTTP 429); other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`, surfaces `FeedbackException.UploaderIdentityRequired`) |
+| `uploadAttachment(data, filename, mimeType, preferredKind, userToken, turnstileToken?)` | Images: `POST /api/v1/uploads/images` (metadata-scrubbed, see [Image Metadata Privacy](#image-metadata-privacy); private-storage deployments return an `uploadId` and no public URL, older deployments may return a public CDN URL; surfaces `FeedbackException.ImageUploadFailed` on HTTP 500 and `FeedbackException.RateLimited` on HTTP 429); other files: upload sessions (`POST /api/v1/uploads/sessions` + `PUT /api/v1/uploads/{uploadId}`, requires `X-User-Token`, surfaces `FeedbackException.UploaderIdentityRequired`) |
 | `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` |
 | `prepareChangelogOverlay(context, onlyIfUnseen)` | Config + newest changelog entries with seen filtering |
 | `presentLatestChangelog(activity, onlyIfUnseen)` | Presents overlay sheet with automatic seen persistence |
@@ -269,9 +269,11 @@ a fresh one per call.
 
 ### Image Metadata Privacy
 
-`uploadAttachment` scrubs every image payload before it leaves the device, because CupThread
-attachments are stored as private objects — image uploads return an `uploadId` (no public CDN
-`url`) and are only retrievable through the authorized download route after submission:
+On private-storage deployments, image uploads return an `uploadId` and no public CDN `url`.
+Images are retrievable through the authorized download route after submission. Older deployments
+may return public CDN URLs.
+
+`uploadAttachment` scrubs every image payload before it leaves the device:
 
 - **JPEG**: the EXIF GPS Info IFD is zeroed in place, so location coordinates become
   unrecoverable while display-relevant tags (orientation, color space) survive. APP1 XMP,
