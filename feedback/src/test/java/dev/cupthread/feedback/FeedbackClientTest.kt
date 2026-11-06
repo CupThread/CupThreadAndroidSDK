@@ -3719,6 +3719,272 @@ class FeedbackClientTest {
         )
     }
 
+    @Test
+    fun parseUploadSessionDecodesModernNestedFormat() {
+        val json = JSONObject("""
+            {
+              "session": {
+                "sessionId": "ups_nested_1",
+                "sessionToken": "cpt_up_nested_token",
+                "expiresAt": "2026-11-01T10:00:00.000Z"
+              },
+              "files": [
+                {
+                  "clientFileId": "client-1",
+                  "uploadId": "upl_file_1",
+                  "uploadUrl": "/api/v1/uploads/upl_file_1",
+                  "maxSizeBytes": 5000000
+                }
+              ]
+            }
+        """.trimIndent())
+
+        val res = dev.cupthread.feedback.internal.parseUploadSession(json, "client-1")
+        assertEquals("cpt_up_nested_token", res.sessionToken)
+        assertEquals("ups_nested_1", res.sessionId)
+        assertEquals("2026-11-01T10:00:00.000Z", res.expiresAt)
+        assertEquals("client-1", res.slot.clientFileId)
+        assertEquals("upl_file_1", res.slot.uploadId)
+        assertEquals(5000000L, res.slot.maxSizeBytes)
+        assertEquals("/api/v1/uploads/upl_file_1", res.slot.uploadUrl)
+    }
+
+    @Test
+    fun parseUploadSessionDecodesLegacyFlatMirrorFormat() {
+        val json = JSONObject("""
+            {
+              "sessionId": "ups_flat_1",
+              "sessionToken": "cpt_up_flat_token",
+              "expiresAt": "2026-11-01T11:00:00.000Z",
+              "uploads": [
+                {
+                  "clientFileId": "client-flat-1",
+                  "uploadId": "upl_legacy_1",
+                  "uploadUrl": "/api/v1/uploads/upl_legacy_1",
+                  "filename": "screenshot.png",
+                  "mimeType": "image/png",
+                  "maxBytes": 10000000
+                }
+              ]
+            }
+        """.trimIndent())
+
+        val res = dev.cupthread.feedback.internal.parseUploadSession(json, "client-flat-1")
+        assertEquals("cpt_up_flat_token", res.sessionToken)
+        assertEquals("ups_flat_1", res.sessionId)
+        assertEquals("2026-11-01T11:00:00.000Z", res.expiresAt)
+        assertEquals("client-flat-1", res.slot.clientFileId)
+        assertEquals("upl_legacy_1", res.slot.uploadId)
+        assertEquals(10000000L, res.slot.maxSizeBytes)
+        assertEquals("screenshot.png", res.slot.filename)
+        assertEquals("image/png", res.slot.mimeType)
+        assertEquals("/api/v1/uploads/upl_legacy_1", res.slot.uploadUrl)
+    }
+
+    @Test
+    fun parseUploadSessionDecodesCombinedNestedAndFlatMirrors() {
+        val json = JSONObject("""
+            {
+              "sessionId": "ups_both",
+              "sessionToken": "cpt_up_both",
+              "expiresAt": "2026-11-01T12:00:00.000Z",
+              "session": {
+                "sessionId": "ups_both",
+                "sessionToken": "cpt_up_both",
+                "expiresAt": "2026-11-01T12:00:00.000Z"
+              },
+              "files": [
+                {
+                  "clientFileId": "client-both",
+                  "uploadId": "upl_both_1",
+                  "maxSizeBytes": 8000000
+                }
+              ],
+              "uploads": [
+                {
+                  "clientFileId": "client-both",
+                  "uploadId": "upl_both_1",
+                  "maxBytes": 8000000
+                }
+              ]
+            }
+        """.trimIndent())
+
+        val res = dev.cupthread.feedback.internal.parseUploadSession(json, "client-both")
+        assertEquals("cpt_up_both", res.sessionToken)
+        assertEquals("upl_both_1", res.slot.uploadId)
+        assertEquals(8000000L, res.slot.maxSizeBytes)
+    }
+
+    @Test
+    fun parseUploadSessionThrowsWhenNoMatchingClientFileId() {
+        val json = JSONObject("""
+            {
+              "sessionToken": "cpt_up_token",
+              "files": [
+                {
+                  "clientFileId": "other-id",
+                  "uploadId": "upl_1",
+                  "maxSizeBytes": 1000
+                }
+              ]
+            }
+        """.trimIndent())
+
+        try {
+            dev.cupthread.feedback.internal.parseUploadSession(json, "client-target")
+            fail("Expected NoSuchElementException when slot doesn't match clientFileId")
+        } catch (_: NoSuchElementException) {
+        }
+    }
+
+    @Test
+    fun parseUploadedSessionFileDecodesSizeFromSizeBytesOrMaxBytes() {
+        val jsonWithSize = JSONObject("""{"uploadId":"upl_1","filename":"f.txt","contentType":"text/plain","sizeBytes":123}""")
+        val file1 = dev.cupthread.feedback.internal.parseUploadedSessionFile(jsonWithSize)
+        assertEquals("upl_1", file1.uploadId)
+        assertEquals("f.txt", file1.filename)
+        assertEquals("text/plain", file1.contentType)
+        assertEquals(123L, file1.sizeBytes)
+
+        val jsonWithMaxBytes = JSONObject("""{"uploadId":"upl_2","filename":"f2.txt","mimeType":"text/plain","maxBytes":456}""")
+        val file2 = dev.cupthread.feedback.internal.parseUploadedSessionFile(jsonWithMaxBytes)
+        assertEquals("upl_2", file2.uploadId)
+        assertEquals("f2.txt", file2.filename)
+        assertEquals("text/plain", file2.contentType)
+        assertEquals(456L, file2.sizeBytes)
+    }
+
+    @Test
+    fun parseFeatureRequestItemDecodesCommentCount() {
+        val json = JSONObject("""
+            {
+              "id": "fr-comment-count",
+              "appId": "app-1",
+              "title": "Title with comments",
+              "description": "Desc",
+              "status": "in_progress",
+              "approved": true,
+              "voteCount": 42,
+              "hasVoted": false,
+              "isOwnRequest": false,
+              "importedVotes": 5,
+              "commentCount": 17,
+              "createdAt": "2026-01-01T00:00:00.000Z",
+              "updatedAt": "2026-01-02T00:00:00.000Z"
+            }
+        """.trimIndent())
+
+        val item = dev.cupthread.feedback.internal.parseFeatureRequestItem(json)
+        assertEquals(17, item.commentCount)
+        assertEquals(5, item.importedVotes)
+        assertEquals(42, item.voteCount)
+    }
+
+    @Test
+    fun parseFeatureRequestItemDefaultsCommentCountToZeroWhenAbsentOrNull() {
+        val jsonWithout = JSONObject("""
+            {
+              "id": "fr-no-comment-count",
+              "appId": "app-1",
+              "title": "Title without commentCount",
+              "createdAt": "2026-01-01T00:00:00.000Z"
+            }
+        """.trimIndent())
+        val item1 = dev.cupthread.feedback.internal.parseFeatureRequestItem(jsonWithout)
+        assertEquals(0, item1.commentCount)
+
+        val jsonNull = JSONObject("""
+            {
+              "id": "fr-null-comment-count",
+              "appId": "app-1",
+              "title": "Title with null commentCount",
+              "commentCount": null,
+              "createdAt": "2026-01-01T00:00:00.000Z"
+            }
+        """.trimIndent())
+        val item2 = dev.cupthread.feedback.internal.parseFeatureRequestItem(jsonNull)
+        assertEquals(0, item2.commentCount)
+    }
+
+    @Test
+    fun featureRequestItemConstructorsPreserveCompatibilityAndCopyState() {
+        // Constructor prior to commentCount (23 params)
+        val item23 = FeatureRequestItem(
+            "fr-c1",
+            "app-1",
+            "Title",
+            "Desc",
+            "planned",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            10,
+            false,
+            false,
+            emptyList(),
+            false,
+            "2026-01-01T00:00:00.000Z",
+            "2026-01-01T00:00:00.000Z",
+            importedVotes = 3
+        )
+        assertEquals(0, item23.commentCount)
+        assertEquals(3, item23.importedVotes)
+
+        // withVoteState preserves commentCount
+        val withComments = item23.copy(commentCount = 25)
+        val updated = withComments.withVoteState(voted = true, count = 11)
+        assertEquals(25, updated.commentCount)
+
+        // Verify binary compatibility copy method exists for callers prior to commentCount
+        val copyMethods = FeatureRequestItem::class.java.declaredMethods.filter { it.name == "copy" }
+        assertTrue("Expected 25-param copy method for primary constructor with commentCount", copyMethods.any { it.parameterCount == 25 })
+        assertTrue("Expected 24-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 24 })
+        assertEquals(11, updated.voteCount)
+        assertTrue(updated.hasVoted)
+    }
+
+    @Test
+    fun submitFeedbackAcceptsHttp200And201And202Statuses() = runTest {
+        val draft = FeedbackDraft(title = "Bug report", description = "Crash repro", platform = FeedbackPlatform.ANDROID)
+
+        // 200 - forwarded to GitHub
+        val client200 = client {
+            HttpResponse(200, """{"submissionId":"sub-200","forwardedToGithub":true,"githubDiscussionUrl":"https://github.com/test/discussions/1"}""")
+        }
+        val res200 = client200.submit(draft, userToken = "tok")
+        assertEquals("sub-200", res200.submissionId)
+        assertTrue(res200.forwardedToGithub)
+        assertEquals("https://github.com/test/discussions/1", res200.githubDiscussionUrl)
+        assertNull(res200.warning)
+
+        // 201 - stored in CupThread inbox without GitHub forwarding, advisory warning present
+        val client201 = client {
+            HttpResponse(201, """{"submissionId":"sub-201","forwardedToGithub":false,"warning":"No GitHub discussion integration configured for this app"}""")
+        }
+        val res201 = client201.submit(draft, userToken = "tok")
+        assertEquals("sub-201", res201.submissionId)
+        assertFalse(res201.forwardedToGithub)
+        assertEquals("No GitHub discussion integration configured for this app", res201.warning)
+
+        // 202 - stored, GitHub delivery queued/retrying, advisory warning present
+        val client202 = client {
+            HttpResponse(202, """{"submissionId":"sub-202","forwardedToGithub":false,"warning":"GitHub discussion delivery is queued and retrying"}""")
+        }
+        val res202 = client202.submit(draft, userToken = "tok")
+        assertEquals("sub-202", res202.submissionId)
+        assertFalse(res202.forwardedToGithub)
+        assertEquals("GitHub discussion delivery is queued and retrying", res202.warning)
+    }
+
     companion object {
         private val CONFIG_JSON = """
             {

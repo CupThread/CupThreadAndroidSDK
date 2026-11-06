@@ -150,6 +150,11 @@ class FeedbackClient internal constructor(
      * the provider is consulted once more for a fresh (single-use) token and the submission is
      * retried once before [FeedbackException.VerificationRequired] is thrown.
      *
+     * The server answers with one of three success status codes (all returning [FeedbackSubmissionResult]):
+     * - HTTP 200: Forwarded to GitHub Discussions synchronously (`forwardedToGithub = true`).
+     * - HTTP 201: Stored in the CupThread inbox without GitHub delivery configured (`forwardedToGithub = false`, advisory [FeedbackSubmissionResult.warning] present).
+     * - HTTP 202: Stored in the CupThread inbox with GitHub delivery queued and retrying (`forwardedToGithub = false`, advisory [FeedbackSubmissionResult.warning] present).
+     *
      * @param draft The feedback content, reporter details, and uploaded attachments ([FeedbackDraft]).
      * @param userToken Optional stable anonymous user token from [UserTokenStore]. Sent as the `X-User-Token`
      *   header to attribute submissions.
