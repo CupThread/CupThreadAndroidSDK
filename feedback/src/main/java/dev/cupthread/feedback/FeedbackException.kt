@@ -1,5 +1,7 @@
 package dev.cupthread.feedback
 
+import org.json.JSONObject
+
 /**
  * Base sealed exception class for all errors produced by [FeedbackClient].
  *
@@ -309,6 +311,54 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
                         message?.contains("turnstile", ignoreCase = true) == true ||
                             message?.contains("human verification", ignoreCase = true) == true
                     ))
+        }
+    }
+
+    /**
+     * Raised when user attribute synchronization via [FeedbackClient.updateUserAttributes] is rejected
+     * because [plan] uses the reserved sentinel strings `"unset"` or `"null"` (HTTP 400 `plan_reserved_sentinel`).
+     *
+     * In the `cpt-user-attrs-v1` canonical signature protocol, `"unset"` denotes an omitted field and
+     * `"null"` denotes clearing a field. These literals are reserved whole-string byte-exact identifiers.
+     * Callers should omit the argument to leave it unchanged, or use a valid
+     * plan name (e.g., `"free"`, `"pro"`, `"enterprise"`).
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server (defaults to [CODE_PLAN_RESERVED_SENTINEL]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header (see [FeedbackException.requestId]).
+     */
+    class ReservedPlanSentinel @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = CODE_PLAN_RESERVED_SENTINEL,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "The plan value is reserved ('unset' and 'null' are protocol sentinels)."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned in `details.fieldErrors.plan` on `PUT /api/v1/public/apps/{appKey}/user`. */
+            const val CODE_PLAN_RESERVED_SENTINEL = "plan_reserved_sentinel"
+
+            /**
+             * Determines whether the given error response represents a plan-reserved-sentinel rejection.
+             */
+            internal fun isPlanReservedSentinel(code: String?, message: String?, body: String): Boolean {
+                if (code == CODE_PLAN_RESERVED_SENTINEL) return true
+                if (!body.contains(CODE_PLAN_RESERVED_SENTINEL)) return false
+                return try {
+                    val json = JSONObject(body)
+                    val details = json.optJSONObject("details")
+                    val fieldErrors = details?.optJSONObject("fieldErrors")
+                    val planErrors = fieldErrors?.optJSONArray("plan")
+                    if (planErrors != null) {
+                        (0 until planErrors.length()).any { planErrors.optString(it) == CODE_PLAN_RESERVED_SENTINEL }
+                    } else {
+                        false
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+            }
         }
     }
 

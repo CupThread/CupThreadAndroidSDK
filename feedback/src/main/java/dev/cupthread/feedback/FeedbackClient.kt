@@ -1431,19 +1431,24 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous token identifying the user ([UserTokenStore]).
      * @param isPaying Whether the user is on a paid subscription tier.
      * @param plan Identifier or name of the subscription plan (e.g. `"pro"`, `"enterprise"`).
+     *   The literal strings `"unset"` and `"null"` are reserved sentinels in the `cpt-user-attrs-v1`
+     *   signature protocol; supplying either throws [IllegalArgumentException] client-side and is rejected
+     *   by the server with HTTP 400 `plan_reserved_sentinel`. Pass `null` (or omit) to keep unchanged.
      * @param mrr Monthly recurring revenue associated with the user account.
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
- * @throws IllegalArgumentException if a payment attribute or currency is supplied but no
- *   [FeedbackClientConfig.sdkSigningSecret] is configured.
- * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
- *   `stale_signature` when the configured secret does not match the app's).
- * @throws FeedbackException.RateLimited when the per-client-IP upsert rate limit is exceeded
- *   (HTTP 429); retry with backoff, especially when syncing many users behind one shared IP.
- * @throws FeedbackException.UnexpectedStatus on other HTTP rejection (HTTP 422
- *   `payment_attributes_require_signature` when the app has no SDK signing secret yet).
- * @throws FeedbackException.InvalidResponse on network failure.
+     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, or if a payment attribute
+     *   or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret] is configured.
+     * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
+     *   `stale_signature` when the configured secret does not match the app's).
+     * @throws FeedbackException.ReservedPlanSentinel on HTTP 400 when the server rejects a reserved
+     *   plan sentinel (`plan_reserved_sentinel`).
+     * @throws FeedbackException.RateLimited when the per-client-IP upsert rate limit is exceeded
+     *   (HTTP 429); retry with backoff, especially when syncing many users behind one shared IP.
+     * @throws FeedbackException.UnexpectedStatus on other HTTP rejection (HTTP 422
+     *   `payment_attributes_require_signature` when the app has no SDK signing secret yet).
+     * @throws FeedbackException.InvalidResponse on network failure.
      *
      * Example:
      * ```kotlin
@@ -1463,6 +1468,11 @@ class FeedbackClient internal constructor(
         mrr: Double? = null,
         currency: String? = null
     ): UserAttributesUpdateResult {
+        if (plan != null) {
+            require(plan != "unset" && plan != "null") {
+                "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
+            }
+        }
         val payload = JSONObject().apply {
             if (isPaying != null) put("isPaying", isPaying)
             putOptString("plan", plan)
@@ -1501,7 +1511,8 @@ class FeedbackClient internal constructor(
                 payload,
                 userToken = userToken,
                 accepted = setOf(200),
-                mapRateLimitErrors = true
+                mapRateLimitErrors = true,
+                mapUserAttributeErrors = true
             )
         )
     }
@@ -1757,6 +1768,7 @@ class FeedbackClient internal constructor(
         mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
+        mapUserAttributeErrors: Boolean = false,
         mapUploaderErrors: Boolean = false
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
@@ -1774,6 +1786,7 @@ class FeedbackClient internal constructor(
             mapAttachmentAlreadyFinalizedErrors = mapAttachmentAlreadyFinalizedErrors,
             mapRateLimitErrors = mapRateLimitErrors,
             mapVerificationErrors = mapVerificationErrors,
+            mapUserAttributeErrors = mapUserAttributeErrors,
             mapUploaderErrors = mapUploaderErrors
         )
     }
@@ -1834,6 +1847,7 @@ class FeedbackClient internal constructor(
         mapAttachmentAlreadyFinalizedErrors: Boolean = false,
         mapRateLimitErrors: Boolean = false,
         mapVerificationErrors: Boolean = false,
+        mapUserAttributeErrors: Boolean = false,
         mapUploaderErrors: Boolean = false
     ): JSONObject =
         withContext(Dispatchers.IO) {
@@ -1848,6 +1862,18 @@ class FeedbackClient internal constructor(
                 val requestId = response.headers.entries
                     .firstOrNull { (name, _) -> name.equals(REQUEST_ID_HEADER, ignoreCase = true) }
                     ?.value?.trim()?.takeIf { it.isNotEmpty() }
+                if (response.code == 400 && mapUserAttributeErrors) {
+                    val errorPayload = parseErrorPayload(response.body)
+                    val code = errorPayload?.first
+                    val message = errorPayload?.second
+                    if (FeedbackException.ReservedPlanSentinel.isPlanReservedSentinel(code, message, response.body)) {
+                        throw FeedbackException.ReservedPlanSentinel(
+                            serverMessage = message,
+                            serverCode = code ?: FeedbackException.ReservedPlanSentinel.CODE_PLAN_RESERVED_SENTINEL,
+                            requestId = requestId
+                        )
+                    }
+                }
                 if (response.code == 400 && mapUploaderErrors) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
