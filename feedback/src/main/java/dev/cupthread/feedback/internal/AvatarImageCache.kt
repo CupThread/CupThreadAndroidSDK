@@ -18,8 +18,8 @@ import java.util.Collections
  * without real bitmaps or an Android runtime.
  */
 internal class AvatarImageCache(
-    budgetBytes: Int = defaultBudgetBytes(),
-    private val sizeOfBytes: (ImageBitmap) -> Int = { it.asAndroidBitmap().allocationByteCount }
+    budgetBytes: Long = defaultBudgetBytes(),
+    private val sizeOfBytes: (ImageBitmap) -> Long = { it.asAndroidBitmap().allocationByteCount.toLong() }
 ) {
     private val lru = ByteBoundedLru<ImageBitmap>(budgetBytes, sizeOfBytes)
 
@@ -38,11 +38,9 @@ internal class AvatarImageCache(
         /** Shared process-wide cache; avatars are host-app-global content. */
         val shared: AvatarImageCache = AvatarImageCache()
 
-        /** One-sixteenth of the max heap, bounded to [Int.MAX_VALUE] for huge heaps. */
-        internal fun defaultBudgetBytes(): Int {
-            val budget = Runtime.getRuntime().maxMemory() / 16
-            return if (budget > Int.MAX_VALUE) Int.MAX_VALUE else budget.toInt().coerceAtLeast(1)
-        }
+        /** One-sixteenth of the max heap; `maxMemory` already fits an Int per JVM spec, but keep Long. */
+        internal fun defaultBudgetBytes(): Long =
+            (Runtime.getRuntime().maxMemory() / 16).coerceAtLeast(1)
     }
 }
 
@@ -50,54 +48,48 @@ internal class AvatarImageCache(
  * Minimal thread-safe, byte-bounded LRU (mirrors `android.util.LruCache` semantics: access order,
  * entries larger than the whole budget are inserted but evicted immediately, `get` refreshes
  * recency). Pure Kotlin so JVM unit tests need no Android runtime.
+ *
+ * All map mutations, byte accounting, and trimming run under a single lock, so concurrent puts
+ * can never double-count bytes or race the eviction path. Byte totals are [Long]: on a ≥32 GiB
+ * heap the capped [Int] budget times large avatars can exceed 2 GiB, which would overflow an
+ * [Int] total and disable eviction.
  */
 internal class ByteBoundedLru<V>(
-    private val budgetBytes: Int,
-    private val sizeOfBytes: (V) -> Int
+    private val budgetBytes: Long,
+    private val sizeOfBytes: (V) -> Long
 ) {
-    private val map = Collections.synchronizedMap(object : LinkedHashMap<String, V>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, V>?): Boolean {
-            if (currentBytes() <= budgetBytes) return false
-            eldest?.let { totalBytes -= sizeOfBytes(it.value) }
-            return true
-        }
-    })
+    // Access-order LinkedHashMap: reads refresh recency, first entry is the LRU head.
+    private val map = LinkedHashMap<String, V>(16, 0.75f, true)
 
-    private var totalBytes = 0
+    private var totalBytes = 0L
 
+    @Synchronized
     fun get(key: String): V? {
         // LinkedHashMap in access order refreshes recency on read.
         return map[key]
     }
 
+    @Synchronized
     fun put(key: String, value: V) {
         val size = sizeOfBytes(value)
         val previous = map.put(key, value)
-        synchronized(this) {
-            totalBytes += size - (previous?.let(sizeOfBytes) ?: 0)
-        }
+        totalBytes += size - (previous?.let(sizeOfBytes) ?: 0L)
         trim()
     }
 
+    @Synchronized
     fun clear() {
         map.clear()
-        synchronized(this) { totalBytes = 0 }
+        totalBytes = 0L
     }
 
-    private fun currentBytes(): Int = synchronized(this) { totalBytes }
-
+    /** Evicts from the LRU head until the total fits the budget. */
     private fun trim() {
-        while (true) {
-            val over = currentBytes() > budgetBytes
-            if (!over) return
-            val eldest: MutableMap.MutableEntry<String, V>? = synchronized(map) {
-                map.entries.firstOrNull()
-            }
-            if (eldest == null) return
-            val removed = map.remove(eldest.key)
-            if (removed != null) {
-                synchronized(this) { totalBytes -= sizeOfBytes(removed) }
-            }
+        val iterator = map.entries.iterator()
+        while (totalBytes > budgetBytes && iterator.hasNext()) {
+            val entry = iterator.next()
+            iterator.remove()
+            totalBytes -= sizeOfBytes(entry.value)
         }
     }
 }

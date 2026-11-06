@@ -518,11 +518,25 @@ fun UserAvatar(
  * Decodes [stream] at the smallest power-of-two sample size that still covers [requestedPixels],
  * so a huge source image never allocates a full-resolution bitmap for a small avatar (issue #141).
  *
- * The bounds pass consumes the stream, so the bytes are buffered once and redecoded from memory.
+ * The read is capped at [MAX_AVATAR_BODY_BYTES]: a misbehaving avatar server must not exhaust the
+ * heap before downsampling starts; oversized responses fall back to initials. The bounds pass
+ * consumes the stream, so the bytes are buffered once and redecoded from memory.
  */
+private const val MAX_AVATAR_BODY_BYTES = 4 * 1024 * 1024
+
 private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels: Int): android.graphics.Bitmap? {
     val bytes = try {
-        stream.readBytes()
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val read = stream.read(chunk)
+            if (read < 0) break
+            total += read
+            if (total > MAX_AVATAR_BODY_BYTES) return null
+            buffer.write(chunk, 0, read)
+        }
+        buffer.toByteArray()
     } catch (_: java.io.IOException) {
         return null
     }
@@ -544,7 +558,6 @@ private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels
         bytes.size,
         android.graphics.BitmapFactory.Options().apply {
             inSampleSize = sampleSize
-            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
         }
     )
 }

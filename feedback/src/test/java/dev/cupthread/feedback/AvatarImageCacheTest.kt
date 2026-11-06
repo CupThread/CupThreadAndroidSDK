@@ -36,14 +36,14 @@ class AvatarImageCacheTest {
         ) {}
     }
 
-    private fun cache(budget: Int) = AvatarImageCache(
+    private fun cache(budget: Long) = AvatarImageCache(
         budgetBytes = budget,
-        sizeOfBytes = { (it as FakeBitmap).bytes }
+        sizeOfBytes = { (it as FakeBitmap).bytes.toLong() }
     )
 
     @Test
     fun getReturnsPutEntry() {
-        val cache = cache(budget = 100)
+        val cache = cache(budget = 100L)
         val bitmap = FakeBitmap(10)
         cache.put("a", bitmap)
         assertEquals(bitmap, cache.get("a"))
@@ -51,7 +51,7 @@ class AvatarImageCacheTest {
 
     @Test
     fun evictsLeastRecentlyUsedFirstWhenBudgetExceeded() {
-        val cache = cache(budget = 25)
+        val cache = cache(budget = 25L)
         val a = FakeBitmap(10)
         val b = FakeBitmap(10)
         val c = FakeBitmap(10)
@@ -67,7 +67,7 @@ class AvatarImageCacheTest {
 
     @Test
     fun oversizedSingleEntryIsEvictedRatherThanPinningTheCache() {
-        val cache = cache(budget = 20)
+        val cache = cache(budget = 20L)
         val huge = FakeBitmap(100)
         val small = FakeBitmap(10)
         cache.put("huge", huge)
@@ -81,7 +81,7 @@ class AvatarImageCacheTest {
 
     @Test
     fun twoWidthsOfOneAvatarCountSeparatelyUnderSharedBudget() {
-        val cache = cache(budget = 18)
+        val cache = cache(budget = 18L)
         val w16 = FakeBitmap(9)
         val w32 = FakeBitmap(9)
         val w160 = FakeBitmap(9)
@@ -98,15 +98,14 @@ class AvatarImageCacheTest {
 
     @Test
     fun clearDropsEverything() {
-        val cache = cache(budget = 100)
+        val cache = cache(budget = 100L)
         cache.put("a", FakeBitmap(10))
         cache.clear()
         assertNull(cache.get("a"))
     }
 
     @Test
-    fun defaultBudgetIsPositiveAndCapped() {
-        assertTrue(AvatarImageCache.defaultBudgetBytes() > 0)
-        assertTrue(AvatarImageCache.defaultBudgetBytes() <= Int.MAX_VALUE)
+    fun defaultBudgetIsPositive() {
+        assertTrue(AvatarImageCache.defaultBudgetBytes() > 0L)
     }
 }
