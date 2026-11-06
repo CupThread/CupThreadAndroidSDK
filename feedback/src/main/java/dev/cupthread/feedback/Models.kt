@@ -848,6 +848,64 @@ data class FeatureRequestItem(
     )
 
     /**
+     * Preserves binary backward compatibility for callers compiled against SDK versions
+     * prior to the addition of [commentCount] who invoke `copy(...)`.
+     */
+    @Deprecated("Preserved for binary backward compatibility", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        id: String = this.id,
+        appId: String = this.appId,
+        title: String = this.title,
+        description: String = this.description,
+        status: String = this.status,
+        columnId: String? = this.columnId,
+        columnSlug: String? = this.columnSlug,
+        columnName: String? = this.columnName,
+        columnColor: String? = this.columnColor,
+        versionId: String? = this.versionId,
+        versionLabel: String? = this.versionLabel,
+        releasedVersion: String? = this.releasedVersion,
+        requesterName: String? = this.requesterName,
+        requesterAvatarUrl: String? = this.requesterAvatarUrl,
+        requesterClerkId: String? = this.requesterClerkId,
+        approved: Boolean = this.approved,
+        voteCount: Int = this.voteCount,
+        hasVoted: Boolean = this.hasVoted,
+        isOwnRequest: Boolean = this.isOwnRequest,
+        recentCommenters: List<RecentCommenter> = this.recentCommenters,
+        hasMoreCommenters: Boolean = false,
+        createdAt: String = this.createdAt,
+        updatedAt: String = this.updatedAt,
+        importedVotes: Int = this.importedVotes
+    ): FeatureRequestItem = copy(
+        id = id,
+        appId = appId,
+        title = title,
+        description = description,
+        status = status,
+        columnId = columnId,
+        columnSlug = columnSlug,
+        columnName = columnName,
+        columnColor = columnColor,
+        versionId = versionId,
+        versionLabel = versionLabel,
+        releasedVersion = releasedVersion,
+        requesterName = requesterName,
+        requesterAvatarUrl = requesterAvatarUrl,
+        requesterClerkId = requesterClerkId,
+        approved = approved,
+        voteCount = voteCount,
+        hasVoted = hasVoted,
+        isOwnRequest = isOwnRequest,
+        recentCommenters = recentCommenters,
+        hasMoreCommenters = hasMoreCommenters,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        importedVotes = importedVotes,
+        commentCount = this.commentCount
+    )
+
+    /**
      * Display name of the roadmap stage: returns [columnName] when on the board,
      * otherwise falls back to the raw [status] slug.
      */

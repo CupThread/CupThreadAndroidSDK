@@ -3943,6 +3943,11 @@ class FeedbackClientTest {
         val withComments = item23.copy(commentCount = 25)
         val updated = withComments.withVoteState(voted = true, count = 11)
         assertEquals(25, updated.commentCount)
+
+        // Verify binary compatibility copy method exists for callers prior to commentCount
+        val copyMethods = FeatureRequestItem::class.java.declaredMethods.filter { it.name == "copy" }
+        assertTrue("Expected 25-param copy method for primary constructor with commentCount", copyMethods.any { it.parameterCount == 25 })
+        assertTrue("Expected 24-param copy method for binary backward compatibility", copyMethods.any { it.parameterCount == 24 })
         assertEquals(11, updated.voteCount)
         assertTrue(updated.hasVoted)
     }
