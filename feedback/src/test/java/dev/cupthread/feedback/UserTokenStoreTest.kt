@@ -189,6 +189,66 @@ class UserTokenStoreTest {
         assertEquals(rotatedToken, prefs.getString("user_token", null))
     }
 
+    @Test
+    fun rotateTokenIsVisibleToOtherStoreInstances() {
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val first = UserTokenStore(prefs)
+        val second = UserTokenStore(prefs)
+
+        val original = first.token
+        assertEquals(original, second.token)
+
+        val rotated = first.rotateToken()
+
+        assertTrue(rotated != original)
+        assertEquals(
+            "Other instances created from the same prefs must observe the rotation",
+            rotated,
+            second.token
+        )
+        assertEquals(rotated, prefs.getString("user_token", null))
+    }
+
+    @Test
+    fun clearTokenIsVisibleToOtherStoreInstances() {
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val first = UserTokenStore(prefs)
+        val second = UserTokenStore(prefs)
+
+        val erased = first.token
+        assertEquals(erased, second.token)
+
+        first.clearToken()
+
+        assertNull(prefs.getString("user_token", null))
+        val fresh = second.token
+        assertTrue(
+            "Other instances must mint a fresh token instead of serving the erased one",
+            fresh != erased
+        )
+        assertEquals(fresh, second.token)
+        assertEquals(fresh, prefs.getString("user_token", null))
+    }
+
+    @Test
+    fun memoizationIsSharedPerPrefsAcrossInstances() {
+        val prefs = ThreadSafeFakeSharedPreferences()
+        val first = UserTokenStore(prefs)
+        val second = UserTokenStore(prefs)
+
+        val token = first.token
+        val readsBefore = prefs.getStringCount.get()
+
+        // Reads through any instance sharing the prefs are served from the shared cache
+        assertEquals(token, first.token)
+        assertEquals(token, second.token)
+        assertEquals(
+            "Shared per-prefs cache must avoid additional prefs reads",
+            readsBefore,
+            prefs.getStringCount.get()
+        )
+    }
+
     /**
      * Thread-safe fake SharedPreferences implementation tracking operations.
      */
