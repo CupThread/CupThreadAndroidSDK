@@ -5044,6 +5044,120 @@ class FeedbackClientTest {
         assertEquals("GitHub discussion delivery is queued and retrying", res202.warning)
     }
 
+    @Test
+    fun previouslyPublicReadsMapHttp401ToAuthenticationRequired() = runTest {
+        // #39: anonymous-access enforcement now returns 401 authentication_required for these
+        // previously-public reads; the SDK must surface a single typed sign-in error.
+        val authErrorJson = """{"error":"Sign-in required","code":"authentication_required"}"""
+
+        suspend fun assertSignInRequired(call: suspend (FeedbackClient) -> Unit) {
+            try {
+                call(client { HttpResponse(401, authErrorJson, headers = mapOf("X-Request-Id" to "req_anon_401")) })
+                fail("Expected FeedbackException.AuthenticationRequired")
+            } catch (ex: FeedbackException.AuthenticationRequired) {
+                assertEquals("req_anon_401", ex.requestId)
+            }
+        }
+
+        assertSignInRequired { it.fetchColumns() }
+        assertSignInRequired { it.fetchVersions() }
+        assertSignInRequired { it.fetchCommentsPage("fr-1") }
+        assertSignInRequired { it.subscribeToChangelog("user@example.com", userToken = "tok_anon") }
+    }
+
+    @Test
+    fun subscribeToChangelogMapsHttp403EmailNotVerifiedToTypedError() = runTest {
+        val errorJson = """
+            {
+              "error": "The address does not match your signed-in account.",
+              "code": "email_not_verified"
+            }
+        """.trimIndent()
+
+        try {
+            client {
+                HttpResponse(403, errorJson, headers = mapOf("X-Request-Id" to "req_email_403"))
+            }.subscribeToChangelog("other@example.com", userToken = "tok_anon")
+            fail("Expected FeedbackException.EmailNotVerified")
+        } catch (ex: FeedbackException.EmailNotVerified) {
+            assertEquals("The address does not match your signed-in account.", ex.serverMessage)
+            assertEquals(FeedbackException.EmailNotVerified.CODE_EMAIL_NOT_VERIFIED, ex.serverCode)
+            assertEquals("req_email_403", ex.requestId)
+        }
+    }
+
+    @Test
+    fun subscribeToChangelogEmailNotVerifiedFallsBackToDefaultMessage() = runTest {
+        try {
+            client {
+                HttpResponse(403, """{"code":"email_not_verified"}""")
+            }.subscribeToChangelog("other@example.com", userToken = "tok_anon")
+            fail("Expected FeedbackException.EmailNotVerified")
+        } catch (ex: FeedbackException.EmailNotVerified) {
+            assertNull(ex.serverMessage)
+            assertEquals("email_not_verified", ex.serverCode)
+            assertEquals(
+                "Subscribe with the email address of the account you're signed in with.",
+                ex.message
+            )
+        }
+    }
+
+    @Test
+    fun subscribeToChangelogStillSurfacesUnrelated403AsUnexpectedStatus() = runTest {
+        // Only the email_not_verified code maps; other 403s (e.g. public surfaces disabled)
+        // keep their raw server body.
+        try {
+            client {
+                HttpResponse(403, """{"error":"Public surfaces are disabled for this app"}""")
+            }.subscribeToChangelog("user@example.com", userToken = "tok_anon")
+            fail("Expected FeedbackException.UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(403, ex.code)
+            assertTrue(ex.serverMessage.contains("Public surfaces are disabled"))
+        }
+    }
+
+    @Test
+    fun fetchCommentsPageMapsHttp404ToCommentsUnavailable() = runTest {
+        // #39: a comments thread returns 404 while the request awaits approval; callers must not
+        // conclude that the feature request never existed.
+        try {
+            client {
+                HttpResponse(404, """{"error":"Not found"}""", headers = mapOf("X-Request-Id" to "req_comments_404"))
+            }.fetchCommentsPage("fr-pending")
+            fail("Expected FeedbackException.CommentsUnavailable")
+        } catch (ex: FeedbackException.CommentsUnavailable) {
+            assertEquals("Not found", ex.serverMessage)
+            assertEquals("req_comments_404", ex.requestId)
+        }
+    }
+
+    @Test
+    fun fetchCommentsPropagatesCommentsUnavailable() = runTest {
+        try {
+            client {
+                HttpResponse(404, "   ")
+            }.fetchComments("fr-pending")
+            fail("Expected FeedbackException.CommentsUnavailable")
+        } catch (ex: FeedbackException.CommentsUnavailable) {
+            assertNull(ex.serverMessage)
+            assertEquals("Comments aren't available for this feature request yet.", ex.message)
+        }
+    }
+
+    @Test
+    fun nonCommentEndpointsStillSurfaceHttp404AsUnexpectedStatus() = runTest {
+        try {
+            client {
+                HttpResponse(404, """{"error":"Not found"}""")
+            }.fetchVersions()
+            fail("Expected FeedbackException.UnexpectedStatus")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(404, ex.code)
+        }
+    }
+
     companion object {
         private val CONFIG_JSON = """
             {

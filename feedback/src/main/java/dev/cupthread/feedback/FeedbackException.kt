@@ -71,6 +71,55 @@ sealed class FeedbackException(message: String, cause: Throwable? = null) : Exce
     ) : FeedbackException("These updates are only available to signed-in users.")
 
     /**
+     * Raised when a changelog subscription is rejected because the submitted address is not the
+     * verified address of the caller's signed-in session (HTTP 403 `email_not_verified`).
+     *
+     * On apps that require sign-in for the changelog surface, the server binds the subscription
+     * to the session's verified email address; a body `email` that differs from it is refused and
+     * nothing is subscribed. Prompt the user to subscribe with their signed-in account address
+     * instead of retrying the same value.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property serverCode Machine-readable rejection code from the server, if any
+     *   (the server sends [CODE_EMAIL_NOT_VERIFIED]).
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header
+     *   (see [FeedbackException.requestId]).
+     */
+    class EmailNotVerified @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        val serverCode: String? = null,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "Subscribe with the email address of the account you're signed in with."
+    ) {
+        companion object {
+            /** Standard machine-readable code returned with HTTP 403 for this rejection. */
+            const val CODE_EMAIL_NOT_VERIFIED: String = VoteWarning.CODE_EMAIL_NOT_VERIFIED
+        }
+    }
+
+    /**
+     * Raised when a feature request's comment thread is not visible (HTTP 404) — for example
+     * because the request has not been approved yet, was removed, or the app's roadmap is not
+     * accessible at all.
+     *
+     * The request itself may still exist: treat this as "comments are not available right now"
+     * rather than as proof that the feature request was never created.
+     *
+     * @property serverMessage Raw error message text returned by the server, if any.
+     * @property requestId Server correlation identifier from the `X-Request-Id` response header
+     *   (see [FeedbackException.requestId]).
+     */
+    class CommentsUnavailable @JvmOverloads constructor(
+        val serverMessage: String? = null,
+        override val requestId: String? = null
+    ) : FeedbackException(
+        serverMessage?.ifBlank { null }
+            ?: "Comments aren't available for this feature request yet."
+    )
+
+    /**
      * Raised when an attachment upload HTTP request is rejected because the file media type
      * is unsupported (HTTP 415 `unsupported_media_type`), such as SVG images or files whose
      * content does not match the accepted image formats (PNG, JPEG, WebP, GIF).
