@@ -7,15 +7,19 @@ import org.json.JSONObject
  *
  * Enforces:
  * - Valid key names conforming to `^[A-Za-z0-9_.:-]{1,64}$`
- * - Replacement of credential-looking keys (token, secret, password, apiKey, authorization, cookie, session, etc.) with `"[redacted]"`
+ * - Replacement of credential-looking keys (token, secret, password, apiKey, authorization, cookie, session, etc.) with `"[redacted]"`; the `author` word family is exempt (issue #171)
  * - Truncation of values to a maximum of 512 characters
  * - Capping total keys at 24 (including default metadata entries like sdk, platform, submittedAt), sorted deterministically
  * - Capping total serialized bytes to 8 KB (8192 bytes) of the fully serialized final JSONObject by dropping trailing custom keys in sorted order
  */
 internal object MetadataSanitizer {
     val KEY_REGEX = Regex("^[A-Za-z0-9_.:-]{1,64}$")
+    // `auth(?!or)` keeps the innocuous author word family (author, authorName, author_id,
+    // authoredBy, authors) while bare `auth`, `auth_state` and every other auth-containing
+    // key stay redacted. A word-boundary lookahead (e.g. `auth(?!o?r\b)`) would re-redact
+    // authorName/author_id because a word character follows the `r` (issue #171).
     val SENSITIVE_KEY_REGEX = Regex(
-        "(?i).*(token|secret|password|api[_-]?key|authorization|cookie|session|bearer|auth|credential).*"
+        "(?i).*(token|secret|password|api[_-]?key|authorization|cookie|session|bearer|auth(?!or)|credential).*"
     )
     const val MAX_KEYS = 24
     const val MAX_VALUE_LENGTH = 512

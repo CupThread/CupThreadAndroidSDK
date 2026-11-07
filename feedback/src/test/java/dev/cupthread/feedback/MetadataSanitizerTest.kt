@@ -64,6 +64,39 @@ class MetadataSanitizerTest {
     }
 
     @Test
+    fun keepsAuthorLikeKeysVerbatim() {
+        val input = mapOf(
+            "author" to "Jane Doe",
+            "authorName" to "Jane Doe",
+            "author_id" to "u_123",
+            "authoredBy" to "Jane Doe",
+            "authors" to "Jane and Joe",
+            "AUTHOR_ID" to "u_456"
+        )
+
+        val result = MetadataSanitizer.sanitize(input)
+
+        assertEquals(input, result)
+    }
+
+    @Test
+    fun stillRedactsBareAuthAndNonAuthorAuthKeys() {
+        val sensitiveKeys = listOf(
+            "auth",
+            "auth_state",
+            "oauth",
+            "AUTH_STATE"
+        )
+        val input = sensitiveKeys.associateWith { "secret_value" }
+
+        val result = MetadataSanitizer.sanitize(input)
+
+        for (k in sensitiveKeys) {
+            assertEquals("[redacted]", result[k])
+        }
+    }
+
+    @Test
     fun truncatesValuesExceeding512Characters() {
         val longValue = "A".repeat(600)
         val input = mapOf("long_data" to longValue)
