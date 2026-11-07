@@ -317,7 +317,9 @@ class FeedbackClient internal constructor(
      * @param filename Display file name including extension (e.g. `screenshot.png`). Control
      *   characters — CR/LF in particular — are rewritten to spaces before the name is written into
      *   a multipart header, an upload-session payload, or echoed back in the resulting
-     *   [FeedbackAttachment], so the name is sanitized, never trusted verbatim.
+     *   [FeedbackAttachment], so the name is sanitized, never trusted verbatim. The returned
+     *   [FeedbackAttachment.filename] may also be supplied by the server rather than echoing
+     *   this name; it is sanitized the same way.
      * @param mimeType MIME content type (e.g. `image/png`, `application/pdf`).
      * @param preferredKind Optional explicit [FeedbackAttachment.Kind], overriding MIME-based auto-detection.
      * @param userToken Stable user token (from [UserTokenStore]) to attribute the upload; required for non-image uploads.
@@ -392,7 +394,13 @@ class FeedbackClient internal constructor(
                 mapImageUploadErrors = true
             )
             return try {
-                parseAttachment(json).copy(userToken = userToken?.trim()?.takeIf { it.isNotEmpty() })
+                val attachment = parseAttachment(json)
+                // The response filename is server-controlled, so it passes through the same
+                // #162 sanitizer before it can reach the caller or the composer UI.
+                attachment.copy(
+                    filename = attachment.filename?.let(::sanitizeMultipartFilename),
+                    userToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+                )
             } catch (_: Exception) {
                 throw FeedbackException.UnreadableUploadResponse()
             }
@@ -503,7 +511,9 @@ class FeedbackClient internal constructor(
         return FeedbackAttachment(
             kind = FeedbackAttachment.Kind.R2,
             uploadId = uploaded.uploadId,
-            filename = uploaded.filename ?: filename,
+            // `filename` here is already the sanitized caller name; a server-supplied
+            // response filename goes through the same #162 sanitizer.
+            filename = uploaded.filename?.let(::sanitizeMultipartFilename) ?: filename,
             mimeType = uploaded.contentType ?: mimeType,
             size = uploaded.sizeBytes ?: data.size.toLong(),
             userToken = token

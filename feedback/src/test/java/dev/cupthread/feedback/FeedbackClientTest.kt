@@ -515,6 +515,46 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun uploadAttachmentSanitizesServerReturnedFilenameOnImagePath() = runTest {
+        // The response filename is server-controlled, so it passes through the same #162
+        // sanitizer before the FeedbackAttachment is handed back to the caller/UI.
+        val json = """
+            {"kind":"image","uploadId":"upl_resp162","stored":true,
+             "filename":"evil\r\nX-Evil: injected.png","mimeType":"image/png","size":${validPngBytes.size}}
+        """.trimIndent()
+
+        val attachment = client {
+            HttpResponse(201, json)
+        }.uploadAttachment(data = validPngBytes, filename = "shot.png", mimeType = "image/png")
+
+        assertEquals("evil  X-Evil: injected.png", attachment.filename)
+    }
+
+    @Test
+    fun uploadAttachmentSanitizesServerReturnedFilenameOnSessionPath() = runTest {
+        // Non-image path: a server-supplied filename in the PUT response is sanitized too.
+        val uploadedJson = """
+            {"uploadId":"upl_resp162s","clientFileId":"c162s","filename":"evil\r\n.txt",
+             "contentType":"text/plain","sizeBytes":2,"sha256":"aa","stored":true}
+        """.trimIndent()
+
+        val attachment = client { request ->
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(
+            data = byteArrayOf(0x0A, 0x0D),
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_session"
+        )
+
+        assertEquals("evil  .txt", attachment.filename)
+    }
+
+    @Test
     fun uploadAttachmentStripsGpsMetadataFromImageBeforeUpload() = runTest {
         // #21: the exact EXIF GPS bytes must never appear in the multipart body.
         val photoWithGps = TestImageFixtures.jpegWithExif(bigEndian = false, includeGps = true)
