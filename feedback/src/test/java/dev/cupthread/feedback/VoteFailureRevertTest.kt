@@ -29,6 +29,8 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -114,6 +116,20 @@ class VoteFailureRevertTest {
             baseUrl = "https://api.example.com",
             appKey = APP_KEY,
             turnstileTokenProvider = TurnstileTokenProvider { null }
+        ),
+        transport = transport
+    )
+
+    // A client whose host-side turnstile bridge times out on its own: the provider wraps
+    // its token await in an inner withTimeout that always elapses, so the vote handler
+    // sees a TimeoutCancellationException while its own job is still alive.
+    private val clientWithTimingOutTurnstileProvider = FeedbackClient(
+        config = FeedbackClientConfig(
+            baseUrl = "https://api.example.com",
+            appKey = APP_KEY,
+            turnstileTokenProvider = TurnstileTokenProvider {
+                withTimeout(1) { awaitCancellation() }
+            }
         ),
         transport = transport
     )
@@ -248,6 +264,29 @@ class VoteFailureRevertTest {
         compose.onNodeWithContentDescription("Vote, 10").assertExists()
         compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
         compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+    }
+
+    @Test
+    fun turnstileProviderTimeoutRevertsLikeAFailureInsteadOfStayingOptimistic() {
+        compose.setContent { FeatureRequestsScreen(clientWithTimingOutTurnstileProvider, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // The host's turnstile bridge times out on its own (an inner withTimeout inside
+        // the provider): the cancellation is provider-local, the screen stays mounted,
+        // and no vote request is ever sent. The row must revert like a generic failure —
+        // keeping the optimistic flip on screen would make the next tap try to DELETE a
+        // vote that was never recorded (CodeRabbit review of the #190 rethrow).
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+
+        awaitCondition { pillEnabled("Vote, 10") }
+        awaitCondition { voteCalls() == 0 }
+        compose.onNodeWithContentDescription("Vote, 10").assertExists()
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
+
+        // Silent, exactly like the generic failure branch: no snackbar either.
+        assertNoVoteFailureFeedbackWhilePumping()
     }
 
     @Test

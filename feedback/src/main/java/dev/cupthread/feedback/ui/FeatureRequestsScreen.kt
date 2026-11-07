@@ -62,6 +62,7 @@ import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -468,10 +469,17 @@ private fun FeatureRequestsScreenContent(
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                                             showFeedbackSnackbar(signInRequiredMessage)
                                         } catch (e: CancellationException) {
-                                            // Cancelled votes must not run the failure
-                                            // recovery path (issue #190): propagate the
-                                            // cancellation protocol instead.
-                                            throw e
+                                            // Propagate only our own cancellation (issue
+                                            // #190): a screen leaving composition cancels
+                                            // the job, so ensureActive() rethrows it. A
+                                            // provider-local timeout inside the host's
+                                            // turnstile bridge arrives as a
+                                            // CancellationException too while the job is
+                                            // still alive — recover that one as a failure
+                                            // instead of keeping the optimistic flip.
+                                            coroutineContext.ensureActive()
+                                            items = revertedItems(items, previous, optimisticRow)
+                                            selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                                         } catch (_: Exception) {
                                             items = revertedItems(items, previous, optimisticRow)
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
@@ -567,9 +575,12 @@ private fun FeatureRequestsScreenContent(
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(signInRequiredMessage)
                     } catch (e: CancellationException) {
-                        // Cancelled votes must not run the failure recovery path
-                        // (issue #190): propagate the cancellation protocol instead.
-                        throw e
+                        // Propagate only our own cancellation (issue #190); recover a
+                        // provider-local turnstile timeout as a failure (see the list
+                        // pill handler for the full rationale).
+                        coroutineContext.ensureActive()
+                        items = revertedItems(items, previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } catch (_: Exception) {
                         items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
