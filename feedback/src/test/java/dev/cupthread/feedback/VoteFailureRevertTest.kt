@@ -1,11 +1,21 @@
 package dev.cupthread.feedback
 
+import android.os.SystemClock
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsOwner
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import dev.cupthread.feedback.internal.HttpRequest
@@ -24,6 +34,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowDialog
 import org.robolectric.annotation.Config
 
 /**
@@ -48,6 +59,7 @@ class VoteFailureRevertTest {
     private val holdVote = AtomicBoolean(false)
     private val ioFailure = AtomicBoolean(false)
     private val refreshed = AtomicBoolean(false)
+    private val voteSucceeds = AtomicBoolean(false)
     private val token = mutableStateOf(USER_TOKEN)
     private var voteGate = CountDownLatch(1)
 
@@ -60,12 +72,20 @@ class VoteFailureRevertTest {
                     HttpResponse(200, configJson())
                 request.url.contains("/api/v1/public/versions/") ->
                     HttpResponse(200, """{"versions":[]}""")
-                request.method == "POST" && request.url.contains("/vote") -> {
+                (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") -> {
                     // Hold the vote in flight until the test releases the gate, so a reload
                     // can complete while the request is still pending.
                     if (holdVote.get()) voteGate.await(HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     if (ioFailure.get()) throw IOException("transport lost")
-                    HttpResponse(429, "")
+                    if (voteSucceeds.get()) {
+                        // A reconciled server answer: upvote -> voted, unvote -> not voted.
+                        HttpResponse(
+                            200,
+                            """{"voted":${request.method == "POST"},"voteCount":${if (request.method == "POST") 11 else 10}}"""
+                        )
+                    } else {
+                        HttpResponse(429, "")
+                    }
                 }
                 request.method == "GET" && request.url.contains("/api/v1/feature-requests") ->
                     if (refreshed.get()) HttpResponse(200, REFRESHED_JSON) else HttpResponse(200, PAGE1_JSON)
@@ -80,6 +100,7 @@ class VoteFailureRevertTest {
         holdVote.set(false)
         ioFailure.set(false)
         refreshed.set(false)
+        voteSucceeds.set(false)
         token.value = USER_TOKEN
         voteGate = CountDownLatch(1)
         synchronized(calls) { calls.clear() }
@@ -161,13 +182,109 @@ class VoteFailureRevertTest {
         compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
     }
 
+    @Test
+    fun staleRefreshDuringFailedUnvoteStillRestoresUpvote() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // A successful upvote (10 -> 11) reconciles the row to "Remove vote, 11".
+        voteSucceeds.set(true)
+        holdVote.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitCondition { voteCalls() == 1 }
+        voteGate.countDown()
+        awaitCondition { pillEnabled("Remove vote, 11") }
+
+        // The unvote is held in flight; meanwhile a stale reload lands — a snapshot taken
+        // BEFORE the upvote was applied (still "Vote, 10"). It replaces the optimistic
+        // instance with a refetched row carrying the pre-revert vote values.
+        voteSucceeds.set(false)
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        compose.onNodeWithContentDescription("Remove vote, 11").performClick()
+        awaitCondition { voteCalls() == 2 }
+        token.value = USER_TOKEN_2
+        awaitCondition { pageCalls() == 2 }
+
+        // The unvote fails: without reconciliation the stale refetch (matching the
+        // optimistic values on a different instance) would bypass the rollback and the
+        // successful upvote would stay hidden.
+        ioFailure.set(true)
+        voteGate.countDown()
+        awaitCondition { pillEnabled("Remove vote, 11") }
+
+        compose.onNodeWithContentDescription("Remove vote, 11").assertExists()
+        compose.onNodeWithContentDescription("Vote, 10").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
+    }
+
+    @Test
+    fun failedSheetVoteRevertsListToTheRowItOptimisticallyChanged() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // A reload lands while the sheet is open: the list row is refetched to count 12,
+        // but the sheet keeps showing the instance it was opened on (still count 10).
+        refreshed.set(true)
+        token.value = USER_TOKEN_2
+        awaitVotePill("Vote, 12")
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // Voting from the sheet optimistically changes the list's refetched row (11) and
+        // the sheet's own copy (11). The 429 must restore the list row it actually changed
+        // — the refetched one — not the sheet's stale snapshot.
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 1 }
+
+        voteGate.countDown()
+        awaitNode(VOTE_RATE_LIMITED)
+
+        // The list row keeps its refetched count (12); the sheet reverted to its own
+        // tap-time values (10). The optimistic 11 is gone from both.
+        compose.onNodeWithContentDescription("Vote, 12").assertExists()
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+        awaitCondition { "Vote, 10" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+    }
+
+    @Test
+    fun dismissedSheetStaysClosedWhenItsVoteSucceeds() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // Vote from the sheet, then dismiss the sheet while the vote is in flight.
+        voteSucceeds.set(true)
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 1 }
+        awaitCondition { "Remove vote, 11" in dialogDescriptions() }
+
+        tapDialogScrim()
+        awaitCondition { dialogDescriptions().isEmpty() }
+
+        // The vote succeeds after dismissal: the sheet must not be resurrected; the list
+        // row still reconciles to the returned state.
+        voteGate.countDown()
+        awaitCondition { pillEnabled("Remove vote, 11") }
+
+        compose.onNodeWithContentDescription("Remove vote, 11").assertExists()
+        assertTrue("detail sheet re-appeared after its vote succeeded", dialogDescriptions().isEmpty())
+    }
+
     /** GET feature-request page fetches (first pages only; cursor pages are not used here). */
     private fun pageCalls(): Int = synchronized(calls) {
         calls.count { it.method == "GET" && it.url.contains("/api/v1/feature-requests") }
     }
 
     private fun voteCalls(): Int = synchronized(calls) {
-        calls.count { it.method == "POST" && it.url.contains("/vote") }
+        calls.count { (it.method == "POST" || it.method == "DELETE") && it.url.contains("/vote") }
     }
 
     /** True when the vote pill with [desc] is rendered and no longer in flight (disabled). */
@@ -175,15 +292,146 @@ class VoteFailureRevertTest {
         compose.onNodeWithContentDescription(desc).assertIsEnabled()
     }.isSuccess
 
-    private fun dumpTree(): String = compose.onRoot().fetchSemanticsNode().let { root ->
-        buildString {
-            fun walk(node: androidx.compose.ui.semantics.SemanticsNode, depth: Int) {
-                append("  ".repeat(depth) + "<node>" +
-                    node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }
-                        .joinToString("|") + "\n")
-                node.children.forEach { walk(it, depth + 1) }
+    /**
+     * Content descriptions currently visible inside the detail sheet.
+     *
+     * [androidx.compose.material3.ModalBottomSheet] hosts its content in a separate dialog
+     * window that the compose test rule's `onNode*` matchers do not reach, so the dialog's
+     * semantics owner is scanned explicitly (same approach as [ChangelogOverlayRecoveryTest]).
+     * Dismissed dialogs are skipped (`isShowing`) so stale trees cannot satisfy absence checks.
+     */
+    private fun dialogDescriptions(): Set<String> {
+        val dialog = ShadowDialog.getLatestDialog() ?: return emptySet()
+        if (!dialog.isShowing) return emptySet()
+        val descriptions = mutableSetOf<String>()
+        dialog.window?.decorView?.let { collectDialogDescriptions(it, descriptions) }
+        return descriptions
+    }
+
+    private fun collectDialogDescriptions(view: View, into: MutableSet<String>) {
+        semanticsOwnerOf(view)?.rootSemanticsNode?.let { root ->
+            fun walk(node: SemanticsNode) {
+                node.config.getOrNull(SemanticsProperties.ContentDescription)?.forEach { into += it }
+                node.children.forEach { walk(it) }
             }
-            walk(root, depth = 0)
+            walk(root)
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) collectDialogDescriptions(view.getChildAt(i), into)
+        }
+    }
+
+    /**
+     * Taps the sheet node carrying [desc] by injecting a touch pair into the dialog window:
+     * the detail sheet lives outside the compose test rule's reachable tree, so interactions
+     * inside it must be dispatched on the dialog's decor view directly.
+     */
+    private fun tapDescriptionInDialog(desc: String) {
+        val dialog = ShadowDialog.getLatestDialog()
+        val decor = dialog?.window?.decorView
+            ?: throw AssertionError("no dialog showing; cannot tap $desc")
+        val (composeView, owner) = dialogSemanticsRoot(decor)
+            ?: throw AssertionError("no compose semantics inside the dialog")
+        val root = owner.rootSemanticsNode
+            ?: throw AssertionError("empty semantics tree inside the dialog")
+        val matches = mutableListOf<SemanticsNode>()
+        fun walk(node: SemanticsNode) {
+            if (node.config.getOrNull(SemanticsProperties.ContentDescription)?.contains(desc) == true) {
+                matches += node
+            }
+            node.children.forEach { walk(it) }
+        }
+        walk(root)
+        // Prefer the innermost match: the pill's own node bounds the tap area exactly.
+        val target = matches.lastOrNull()
+            ?: throw AssertionError("$desc not found in the dialog tree")
+        val location = IntArray(2)
+        composeView.getLocationInWindow(location)
+        val bounds = target.boundsInRoot
+        val x = (location[0] + bounds.left + bounds.width / 2).toFloat()
+        val y = (location[1] + bounds.top + bounds.height / 2).toFloat()
+        dispatchTap(decor, x, y)
+    }
+
+    /**
+     * Dismisses the sheet with the dialog window's back handling (material3's
+     * `dismissOnBackPress`): the sheet fills the small test viewport, leaving no reachable
+     * scrim to tap.
+     */
+    private fun tapDialogScrim() {
+        val dialog = ShadowDialog.getLatestDialog()
+        val decor = dialog?.window?.decorView
+            ?: throw AssertionError("no dialog showing; cannot press back")
+        val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK)
+        val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK)
+        decor.dispatchKeyEvent(down)
+        decor.dispatchKeyEvent(up)
+    }
+
+    private fun dispatchTap(decor: View, x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+        decor.dispatchTouchEvent(down)
+        down.recycle()
+        val up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, x, y, 0)
+        decor.dispatchTouchEvent(up)
+        up.recycle()
+    }
+
+    /** First view under [view] that owns a compose semantics tree, with that tree's owner. */
+    private fun dialogSemanticsRoot(view: View): Pair<View, SemanticsOwner>? {
+        semanticsOwnerOf(view)?.let { return view to it }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                dialogSemanticsRoot(view.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The compose semantics owner of [view]'s view subtree, if any.
+     *
+     * The view that hosts sheet content (the internal compose view) exposes its
+     * `getSemanticsOwner()` accessor only reflectively, so it is resolved as such.
+     */
+    private fun semanticsOwnerOf(view: View): SemanticsOwner? = runCatching {
+        view.javaClass.methods
+            .firstOrNull { it.name == "getSemanticsOwner" && it.parameterCount == 0 }
+            ?.invoke(view) as? SemanticsOwner
+    }.getOrNull()
+
+    private fun dumpTree(): String {
+        val descriptions = dialogDescriptions()
+        val roots = mutableListOf<androidx.compose.ui.semantics.SemanticsNode>()
+        runCatching { compose.onRoot().fetchSemanticsNode() }.getOrNull()?.let { roots += it }
+        ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }?.window?.decorView?.let { decor ->
+            collectDialogRoots(decor, roots)
+        }
+        return buildString {
+            roots.forEachIndexed { index, root ->
+                append("<window#$index>")
+                fun walk(node: androidx.compose.ui.semantics.SemanticsNode, depth: Int) {
+                    append(
+                        "\n" + "  ".repeat(depth) + "<node>" +
+                            node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }
+                                .joinToString("|") +
+                            "/" + (node.config
+                            .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)
+                            ?.joinToString("|") ?: "")
+                    )
+                    node.children.forEach { walk(it, depth + 1) }
+                }
+                walk(root, 0)
+            }
+            if (descriptions.isNotEmpty()) append("\n<dialog descs: $descriptions>")
+        }
+    }
+
+    private fun collectDialogRoots(view: View, into: MutableList<androidx.compose.ui.semantics.SemanticsNode>) {
+        dialogSemanticsRoot(view)?.let { (_, owner) -> owner.rootSemanticsNode?.let { into += it } }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) collectDialogRoots(view.getChildAt(i), into)
         }
     }
 

@@ -384,15 +384,15 @@ private fun RoadmapBoardScreenContent(
                         requests = requests.map {
                             if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it
                         }
-                        selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                        selectedItem = reconciledSelection(selectedItem, currentItem.id, result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
-                        requests = revertedItems(requests, previous, optimisticRow)
+                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
                         showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
-                        requests = revertedItems(requests, previous, optimisticRow)
+                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id

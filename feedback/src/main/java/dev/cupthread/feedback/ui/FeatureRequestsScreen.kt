@@ -418,9 +418,7 @@ private fun FeatureRequestsScreenContent(
                                             items = items.map {
                                                 if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
                                             }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
-                                            }
+                                            selectedItem = reconciledSelection(selectedItem, item.id, result.voted, result.voteCount)
                                         } catch (e: FeedbackException.RateLimited) {
                                             items = revertedItems(items, previous, optimisticRow)
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
@@ -495,15 +493,15 @@ private fun FeatureRequestsScreenContent(
                             client.vote(currentItem.id, userToken)
                         }
                         items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
-                        selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                        selectedItem = reconciledSelection(selectedItem, currentItem.id, result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
-                        items = revertedItems(items, previous, optimisticRow)
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
                         showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
-                        items = revertedItems(items, previous, optimisticRow)
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id
@@ -528,6 +526,12 @@ private fun FeatureRequestsScreenContent(
  * the list. A row refetched while the vote was in flight (pull-to-refresh, a search or
  * version reload, token rotation) is a different instance and keeps its fresh server state
  * instead of being clobbered by the stale tap-time snapshot.
+ *
+ * One refetch shape is reconciled rather than skipped: a response snapshotted before the
+ * failed call's target change (e.g. taken before an overlapping upvote was applied) can
+ * replace [optimistic] while still carrying its pre-revert vote state. Such a row still
+ * shows the state the failed call was supposed to undo, so [previous]'s vote values are
+ * applied onto it — while its other refetched fields survive.
  */
 internal fun revertedItems(
     items: List<FeatureRequestItem>,
@@ -535,7 +539,16 @@ internal fun revertedItems(
     optimistic: FeatureRequestItem?
 ): List<FeatureRequestItem> = when (optimistic) {
     null -> items
-    else -> items.map { if (it === optimistic) previous else it }
+    else -> items.map { row ->
+        when {
+            row === optimistic -> previous
+            row.id == optimistic.id &&
+                row.hasVoted == optimistic.hasVoted &&
+                row.voteCount == optimistic.voteCount ->
+                row.withVoteState(previous.hasVoted, previous.voteCount)
+            else -> row
+        }
+    }
 }
 
 /**
@@ -551,6 +564,23 @@ internal fun revertedSelection(
     selection.withVoteState(previous.hasVoted, previous.voteCount)
 } else {
     selection
+}
+
+/**
+ * Applies a successful vote's returned state onto the current detail-sheet selection, but
+ * only while the selection still shows the voted request: a sheet dismissed or reopened
+ * on another request while the vote was in flight is neither resurrected nor swapped, and
+ * a selection refetched to a fresher instance of the same request keeps its newer fields.
+ */
+internal fun reconciledSelection(
+    selection: FeatureRequestItem?,
+    votedId: String,
+    voted: Boolean,
+    voteCount: Int
+): FeatureRequestItem? = when {
+    selection == null -> null
+    selection.id != votedId -> selection
+    else -> selection.withVoteState(voted, voteCount)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
