@@ -28,6 +28,7 @@
     <string name="cupthread_feedback_attachment_scan_rejected">Et vedlegg ble avvist av innholdsskanningen og kunne ikke lastes opp.</string>
     <string name="cupthread_feedback_attachment_already_finalized">Dette vedlegget er allerede sendt inn.</string>
     <string name="cupthread_feedback_verification_required">Fullfør den menneskelige verifiseringen, og prøv igjen.</string>
+    <string name="cupthread_features_vote_verification_unavailable">Avstemming krever menneskelig verifisering, men den er ikke tilgjengelig i denne appen akkurat nå.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Funksjonsønsker</string>
@@ -51,6 +52,7 @@
     <string name="cupthread_features_vote_desc">Stem, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Fjern stemme, %1$d</string>
     <string name="cupthread_features_vote_rate_limited">Du stemmer for raskt. Prøv igjen om et øyeblikk.</string>
+    <string name="cupthread_features_vote_sign_in_required">Logg inn for å stemme.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Veikart</string>

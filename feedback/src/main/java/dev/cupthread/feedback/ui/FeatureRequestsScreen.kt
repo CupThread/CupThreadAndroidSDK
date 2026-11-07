@@ -160,12 +160,24 @@ private fun FeatureRequestsScreenContent(
     val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Coalesces repeated rate-limit feedback: SnackbarHostState serializes every
-    // showSnackbar call, so identical messages from repeated failures (vote taps or
-    // retries during a 429) would otherwise queue up and outlast the tapping.
-    fun showRateLimitSnackbar(message: String) {
+    // Coalesces repeated feedback: SnackbarHostState serializes every showSnackbar
+    // call, so identical messages from repeated failures (vote taps or retries during
+    // a 429) would otherwise queue up and outlast the tapping. Both the currently
+    // displayed message and the messages already queued behind it are suppressed; a
+    // queued entry leaves `pendingSnackbarMessages` when its snackbar finishes, so a
+    // later identical failure can surface again. All callers run on the main
+    // dispatcher, so the plain set needs no synchronization.
+    val pendingSnackbarMessages = remember { mutableSetOf<String>() }
+    fun showFeedbackSnackbar(message: String) {
         if (snackbarHostState.currentSnackbarData?.visuals?.message == message) return
-        scope.launch { snackbarHostState.showSnackbar(message) }
+        if (!pendingSnackbarMessages.add(message)) return
+        scope.launch {
+            try {
+                snackbarHostState.showSnackbar(message)
+            } finally {
+                pendingSnackbarMessages.remove(message)
+            }
+        }
     }
 
     // Searches share a strict per-IP budget with every other client (30/min); the throttler
@@ -212,7 +224,7 @@ private fun FeatureRequestsScreenContent(
                 // paging position, so paging must not continue into the retained results.
                 hasMore = false
                 refreshFailed = searchRateLimitedMessage
-                showRateLimitSnackbar(searchRateLimitedMessage)
+                showFeedbackSnackbar(searchRateLimitedMessage)
             } else {
                 error = e.message
             }
@@ -250,7 +262,7 @@ private fun FeatureRequestsScreenContent(
             loadMoreFailed = true
             // Fire-and-forget: loadMore must release `loadingMore` (unblocking the retry
             // footer) without waiting for the snackbar to go away.
-            showRateLimitSnackbar(searchRateLimitedMessage)
+            showFeedbackSnackbar(searchRateLimitedMessage)
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -298,6 +310,17 @@ private fun FeatureRequestsScreenContent(
     }
 
     val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
+    // With a turnstile token provider installed the host renders the challenge, so "complete
+    // the step" is an actionable ask (the client already retried once with a fresh token
+    // before surfacing the rejection). Without one the gate can never be satisfied from this
+    // UI: telling the user to complete a step that does not exist would send them retrying
+    // into the same 403, so the message says verification is unavailable instead (issue #184).
+    val voteVerificationMessage = if (client.config.turnstileTokenProvider != null) {
+        stringResource(R.string.cupthread_feedback_verification_required)
+    } else {
+        stringResource(R.string.cupthread_features_vote_verification_unavailable)
+    }
+    val signInRequiredMessage = stringResource(R.string.cupthread_features_vote_sign_in_required)
 
     Scaffold(
         modifier = modifier,
@@ -425,7 +448,19 @@ private fun FeatureRequestsScreenContent(
                                             // Fire-and-forget: the vote must release
                                             // `votingIds` (unblocking the pill) without
                                             // waiting for the snackbar to go away.
-                                            showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
+                                            showFeedbackSnackbar(e.serverMessage ?: rateLimitedMessage)
+                                        } catch (e: FeedbackException.VerificationRequired) {
+                                            // The human-verification gate rejected the vote
+                                            // (issue #184): tell the user instead of silently
+                                            // reverting the optimistic flip.
+                                            items = revertedItems(items, previous, optimisticRow)
+                                            selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
+                                            showFeedbackSnackbar(voteVerificationMessage)
+                                        } catch (e: FeedbackException.AuthenticationRequired) {
+                                            // Anonymous voting is disabled on this app (issue #184).
+                                            items = revertedItems(items, previous, optimisticRow)
+                                            selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
+                                            showFeedbackSnackbar(signInRequiredMessage)
                                         } catch (_: Exception) {
                                             items = revertedItems(items, previous, optimisticRow)
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
@@ -499,7 +534,18 @@ private fun FeatureRequestsScreenContent(
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
-                        showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
+                        showFeedbackSnackbar(e.serverMessage ?: rateLimitedMessage)
+                    } catch (e: FeedbackException.VerificationRequired) {
+                        // The human-verification gate rejected the vote (issue #184): tell
+                        // the user instead of silently reverting the optimistic flip.
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
+                        showFeedbackSnackbar(voteVerificationMessage)
+                    } catch (e: FeedbackException.AuthenticationRequired) {
+                        // Anonymous voting is disabled on this app (issue #184).
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
+                        showFeedbackSnackbar(signInRequiredMessage)
                     } catch (_: Exception) {
                         items = revertedItems(items, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)

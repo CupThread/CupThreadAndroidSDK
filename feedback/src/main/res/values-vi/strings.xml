@@ -28,6 +28,7 @@
     <string name="cupthread_feedback_attachment_scan_rejected">Tệp đính kèm đã bị từ chối trong quá trình quét nội dung và không thể tải lên.</string>
     <string name="cupthread_feedback_attachment_already_finalized">Tệp đính kèm này đã được gửi trước đó.</string>
     <string name="cupthread_feedback_verification_required">Vui lòng hoàn tất bước xác minh con người và thử lại.</string>
+    <string name="cupthread_features_vote_verification_unavailable">Bình chọn cần xác minh con người, nhưng tính năng này hiện không khả dụng trong ứng dụng.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Yêu cầu tính năng</string>
@@ -51,6 +52,7 @@
     <string name="cupthread_features_vote_desc">Bình chọn, %1$d</string>
     <string name="cupthread_features_remove_vote_desc">Hủy bình chọn, %1$d</string>
     <string name="cupthread_features_vote_rate_limited">Bạn đang bình chọn quá nhanh. Vui lòng thử lại sau giây lát.</string>
+    <string name="cupthread_features_vote_sign_in_required">Vui lòng đăng nhập để bình chọn.</string>
 
     <!-- Roadmap -->
     <string name="cupthread_roadmap_title">Lộ trình</string>
