@@ -65,40 +65,53 @@ class VoteFailureRevertTest {
     private val token = mutableStateOf(USER_TOKEN)
     private var voteGate = CountDownLatch(1)
 
+    private val transport = HttpTransport { request ->
+        calls += request
+        when {
+            request.url.contains("/api/v1/public/config/") ->
+                HttpResponse(200, configJson())
+            request.url.contains("/api/v1/public/versions/") ->
+                HttpResponse(200, """{"versions":[]}""")
+            (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") -> {
+                // Hold the vote in flight until the test releases the gate, so a reload
+                // can complete while the request is still pending.
+                if (holdVote.get()) voteGate.await(HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                when {
+                    ioFailure.get() -> throw IOException("transport lost")
+                    // Typed server rejections (issue #184): the turnstile gate and the
+                    // anonymous-voting-disabled answer must reach the UI as their own
+                    // FeedbackException subclasses, not as silent generic failures.
+                    turnstileRejected.get() -> HttpResponse(403, """{"error":"turnstile_required"}""")
+                    authRejected.get() -> HttpResponse(401, """{"error":"authentication_required"}""")
+                    voteSucceeds.get() ->
+                        // A reconciled server answer: upvote -> voted, unvote -> not voted.
+                        HttpResponse(
+                            200,
+                            """{"voted":${request.method == "POST"},"voteCount":${if (request.method == "POST") 11 else 10}}"""
+                        )
+                    else -> HttpResponse(429, "")
+                }
+            }
+            request.method == "GET" && request.url.contains("/api/v1/feature-requests") ->
+                if (refreshed.get()) HttpResponse(200, REFRESHED_JSON) else HttpResponse(200, PAGE1_JSON)
+            else -> HttpResponse(404, """{"error":"not_found"}""")
+        }
+    }
+
     private val client = FeedbackClient(
         config = FeedbackClientConfig(baseUrl = "https://api.example.com", appKey = APP_KEY),
-        transport = HttpTransport { request ->
-            calls += request
-            when {
-                request.url.contains("/api/v1/public/config/") ->
-                    HttpResponse(200, configJson())
-                request.url.contains("/api/v1/public/versions/") ->
-                    HttpResponse(200, """{"versions":[]}""")
-                (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") -> {
-                    // Hold the vote in flight until the test releases the gate, so a reload
-                    // can complete while the request is still pending.
-                    if (holdVote.get()) voteGate.await(HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                    when {
-                        ioFailure.get() -> throw IOException("transport lost")
-                        // Typed server rejections (issue #184): the turnstile gate and the
-                        // anonymous-voting-disabled answer must reach the UI as their own
-                        // FeedbackException subclasses, not as silent generic failures.
-                        turnstileRejected.get() -> HttpResponse(403, """{"error":"turnstile_required"}""")
-                        authRejected.get() -> HttpResponse(401, """{"error":"authentication_required"}""")
-                        voteSucceeds.get() ->
-                            // A reconciled server answer: upvote -> voted, unvote -> not voted.
-                            HttpResponse(
-                                200,
-                                """{"voted":${request.method == "POST"},"voteCount":${if (request.method == "POST") 11 else 10}}"""
-                            )
-                        else -> HttpResponse(429, "")
-                    }
-                }
-                request.method == "GET" && request.url.contains("/api/v1/feature-requests") ->
-                    if (refreshed.get()) HttpResponse(200, REFRESHED_JSON) else HttpResponse(200, PAGE1_JSON)
-                else -> HttpResponse(404, """{"error":"not_found"}""")
-            }
-        }
+        transport = transport
+    )
+
+    // The same client with a turnstile token provider installed: the host now renders the
+    // verification challenge, so the rejection keeps the actionable "complete the step" ask.
+    private val clientWithTurnstileProvider = FeedbackClient(
+        config = FeedbackClientConfig(
+            baseUrl = "https://api.example.com",
+            appKey = APP_KEY,
+            turnstileTokenProvider = TurnstileTokenProvider { null }
+        ),
+        transport = transport
     )
 
     @Before
@@ -199,13 +212,34 @@ class VoteFailureRevertTest {
 
         // HTTP 403 turnstile_required (issue #184): the vote gate rejected the tap. The
         // generic catch used to revert silently — the user could not tell the vote apart
-        // from "recorded" or "rate limited".
+        // from "recorded" or "rate limited". Without a token provider there is no
+        // verification step this app could offer, so the message says it is unavailable
+        // instead of pointing at a step that does not exist.
+        turnstileRejected.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+
+        awaitNode(VOTE_VERIFICATION_UNAVAILABLE)
+
+        // The optimistic flip is gone: the row shows its pre-tap values again.
+        compose.onNodeWithContentDescription("Vote, 10").assertExists()
+        compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+    }
+
+    @Test
+    fun turnstileRejectedVoteWithProviderAsksToCompleteVerification() {
+        compose.setContent { FeatureRequestsScreen(clientWithTurnstileProvider, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // With a provider installed the host renders the challenge, so the actionable
+        // "complete the step" ask survives (the client retries once with a fresh token
+        // before surfacing this — the stub gate still rejects it).
         turnstileRejected.set(true)
         compose.onNodeWithContentDescription("Vote, 10").performClick()
 
         awaitNode(VOTE_VERIFICATION_REQUIRED)
 
-        // The optimistic flip is gone: the row shows its pre-tap values again.
         compose.onNodeWithContentDescription("Vote, 10").assertExists()
         compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
         compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
@@ -236,16 +270,54 @@ class VoteFailureRevertTest {
         awaitCondition { "Vote, 10" in dialogDescriptions() }
 
         // The detail-sheet vote path hits the same turnstile gate: it must surface the
-        // same feedback and revert the sheet's copy instead of failing silently.
+        // same feedback and revert the sheet's copy instead of failing silently. The
+        // no-provider message branch applies here too.
         turnstileRejected.set(true)
         tapDescriptionInDialog("Vote, 10")
 
-        awaitNode(VOTE_VERIFICATION_REQUIRED)
+        awaitNode(VOTE_VERIFICATION_UNAVAILABLE)
         // With the sheet open both the list row and the sheet row carry "Vote, 10"
         // (onNodeWithContentDescription would be ambiguous), so the revert is asserted
         // through the dialog descriptions: the sheet is back to its tap-time values and
         // the optimistic flip is gone.
         awaitCondition { "Vote, 10" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+    }
+
+    @Test
+    fun repeatedIdenticalFailuresDoNotQueueDuplicateSnackbars() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // Failure 1 (429) shows the rate-limit snackbar; failures 2 and 3 (403) land while
+        // that snackbar is still up, so their verification message is only pending behind
+        // it. The pending coalescing must queue that message once: it surfaces after the
+        // rate-limit snackbar dismisses and never re-appears afterwards (a queued duplicate
+        // would show the pill a second time at roughly double the Short duration).
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitNode(VOTE_RATE_LIMITED)
+        awaitVotePill("Vote, 10")
+
+        turnstileRejected.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitVotePill("Vote, 10")
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+
+        // Pump past the rate-limit snackbar's Short duration (~4 s): the verification
+        // message becomes the displayed snackbar.
+        awaitCondition { snackbarGone(VOTE_RATE_LIMITED) }
+        awaitNode(VOTE_VERIFICATION_UNAVAILABLE)
+
+        // Pump past the verification snackbar's own duration: with the coalescing, nothing
+        // is queued behind it, so the message is gone for good. A queued duplicate would
+        // surface within a frame of the first dismissal and stay up for another Short
+        // duration, so the absence is re-asserted on every pump across that whole window.
+        awaitCondition { snackbarGone(VOTE_VERIFICATION_UNAVAILABLE) }
+        repeat(SNACKBAR_RESHOW_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+            compose.onNodeWithText(VOTE_VERIFICATION_UNAVAILABLE).assertDoesNotExist()
+        }
     }
 
 
@@ -508,6 +580,14 @@ class VoteFailureRevertTest {
      * [androidx.compose.ui.test.junit4.ComposeContentTestRule.waitUntil] alone does not resume
      * composition-scoped coroutines under Robolectric, so the frame clock is advanced and the
      * looper idled explicitly on every iteration (same harness as [RateLimitRecoveryTest]).
+     *
+     * The pump advances virtual time in [FRAME_MS] steps per iteration: a queued snackbar
+     * (its Short duration runs on the virtual clock) needs ~4 s of advancement, and at a
+     * fine-grained 16 ms step that translates into enough iterations that CI's loaded
+     * 2-core runners could burn the wall-clock deadline before the state appeared. The
+     * larger step keeps the same coverage in a quarter of the iterations, and the generous
+     * [WAIT_TIMEOUT_MS] absorbs a load spike; a genuinely broken assertion still fails,
+     * visibly, once the deadline passes.
      */
     private fun awaitCondition(condition: () -> Boolean) {
         val deadline = System.nanoTime() + WAIT_TIMEOUT_MS * 1_000_000L
@@ -525,6 +605,10 @@ class VoteFailureRevertTest {
     private fun awaitNode(text: String) = awaitCondition {
         compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
     }
+
+    /** A poll condition, not an awaiter: true once no node carries [text] any more. */
+    private fun snackbarGone(text: String) =
+        compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()
 
     private fun awaitVotePill(desc: String) = awaitCondition {
         compose.onAllNodesWithContentDescription(desc).fetchSemanticsNodes().isNotEmpty()
@@ -553,10 +637,18 @@ class VoteFailureRevertTest {
         const val USER_TOKEN_2 = "token-voterevert-0001"
         const val VOTE_RATE_LIMITED = "You're voting too fast. Please try again shortly."
         const val VOTE_VERIFICATION_REQUIRED = "Please complete the human verification step and try again."
+        // Matches cupthread_features_vote_verification_unavailable: the no-provider branch of
+        // the turnstile rejection message, which must not send the user to a step the app
+        // cannot offer (issue #184 review).
+        const val VOTE_VERIFICATION_UNAVAILABLE =
+            "Voting requires human verification that isn\u2019t available in this app right now."
         const val VOTE_SIGN_IN_REQUIRED = "Please sign in to vote."
-        const val WAIT_TIMEOUT_MS = 10_000L
+        const val WAIT_TIMEOUT_MS = 30_000L
         const val HOLD_TIMEOUT_MS = 10_000L
-        const val FRAME_MS = 16L
+        const val FRAME_MS = 64L
+        // 100 pumps x 64 ms ≈ 6.4 s of virtual time: longer than one Short snackbar, so a
+        // duplicate queued behind the dismissed one cannot hide inside the window.
+        const val SNACKBAR_RESHOW_PUMPS = 100
         val PAGE1_JSON = """
             {"requests":[
                 {"id":"fr-1","appId":"app-1","title":"Alpha request","description":"first",

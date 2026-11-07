@@ -28,6 +28,7 @@
     <string name="cupthread_feedback_attachment_scan_rejected">첨부 파일이 콘텐츠 검사에서 거부되어 업로드할 수 없습니다.</string>
     <string name="cupthread_feedback_attachment_already_finalized">이 첨부 파일은 이미 제출되었습니다.</string>
     <string name="cupthread_feedback_verification_required">사람 확인 절차를 완료한 후 다시 시도해 주세요.</string>
+    <string name="cupthread_features_vote_verification_unavailable">투푘하려면 사람 확인이 필요하지만, 현재 이 앱에서는 사용할 수 없습니다.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">기능 요청</string>

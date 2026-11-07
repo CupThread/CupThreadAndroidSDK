@@ -28,6 +28,7 @@
     <string name="cupthread_feedback_attachment_scan_rejected">Załącznik został odrzucony podczas skanowania zawartości i nie mógł zostać przesłany.</string>
     <string name="cupthread_feedback_attachment_already_finalized">Ten załącznik został już przesłany.</string>
     <string name="cupthread_feedback_verification_required">Ukończ weryfikację, czy jesteś człowiekiem, i spróbuj ponownie.</string>
+    <string name="cupthread_features_vote_verification_unavailable">Głosowanie wymaga weryfikacji, czy jesteś człowiekiem, ale jest ona obecnie niedostępna w tej aplikacji.</string>
 
     <!-- Feature Requests -->
     <string name="cupthread_features_title">Propozycje funkcji</string>

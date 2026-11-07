@@ -170,10 +170,22 @@ private fun RoadmapBoardScreenContent(
 
     // Coalesces repeated feedback: SnackbarHostState serializes every showSnackbar
     // call, so identical messages from repeated failures (vote taps or retries during
-    // a 429) would otherwise queue up and outlast the tapping.
+    // a 429) would otherwise queue up and outlast the tapping. Both the currently
+    // displayed message and the messages already queued behind it are suppressed; a
+    // queued entry leaves `pendingSnackbarMessages` when its snackbar finishes, so a
+    // later identical failure can surface again. All callers run on the main
+    // dispatcher, so the plain set needs no synchronization.
+    val pendingSnackbarMessages = remember { mutableSetOf<String>() }
     fun showFeedbackSnackbar(message: String) {
         if (snackbarHostState.currentSnackbarData?.visuals?.message == message) return
-        scope.launch { snackbarHostState.showSnackbar(message) }
+        if (!pendingSnackbarMessages.add(message)) return
+        scope.launch {
+            try {
+                snackbarHostState.showSnackbar(message)
+            } finally {
+                pendingSnackbarMessages.remove(message)
+            }
+        }
     }
 
     // Searches share a strict per-IP budget with every other client (30/min); the throttler
@@ -294,7 +306,16 @@ private fun RoadmapBoardScreenContent(
     }
 
     val rateLimitedMessage = stringResource(R.string.cupthread_features_vote_rate_limited)
-    val verificationRequiredMessage = stringResource(R.string.cupthread_feedback_verification_required)
+    // With a turnstile token provider installed the host renders the challenge, so "complete
+    // the step" is an actionable ask (the client already retried once with a fresh token
+    // before surfacing the rejection). Without one the gate can never be satisfied from this
+    // UI: telling the user to complete a step that does not exist would send them retrying
+    // into the same 403, so the message says verification is unavailable instead (issue #184).
+    val voteVerificationMessage = if (client.config.turnstileTokenProvider != null) {
+        stringResource(R.string.cupthread_feedback_verification_required)
+    } else {
+        stringResource(R.string.cupthread_features_vote_verification_unavailable)
+    }
     val signInRequiredMessage = stringResource(R.string.cupthread_features_vote_sign_in_required)
 
     Scaffold(
@@ -398,7 +419,7 @@ private fun RoadmapBoardScreenContent(
                         // the user instead of silently reverting the optimistic flip.
                         requests = revertedItems(requests, listRow ?: previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
-                        showFeedbackSnackbar(verificationRequiredMessage)
+                        showFeedbackSnackbar(voteVerificationMessage)
                     } catch (e: FeedbackException.AuthenticationRequired) {
                         // Anonymous voting is disabled on this app (issue #184).
                         requests = revertedItems(requests, listRow ?: previous, optimisticRow)

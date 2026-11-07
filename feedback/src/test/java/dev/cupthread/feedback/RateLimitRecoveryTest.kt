@@ -153,6 +153,14 @@ class RateLimitRecoveryTest {
      * [androidx.compose.ui.test.junit4.ComposeContentTestRule.waitUntil] alone does not resume
      * composition-scoped coroutines under Robolectric, so the frame clock is advanced and the
      * looper idled explicitly on every iteration (same harness as [RefreshFailurePreservationTest]).
+     *
+     * The pump advances virtual time in [FRAME_MS] steps per iteration: a queued snackbar
+     * (its Short duration runs on the virtual clock) needs ~4 s of advancement, and at a
+     * fine-grained 16 ms step that translates into enough iterations that CI's loaded
+     * 2-core runners could burn the wall-clock deadline before the state appeared. The
+     * larger step keeps the same coverage in a quarter of the iterations, and the generous
+     * [WAIT_TIMEOUT_MS] absorbs a load spike; a genuinely broken assertion still fails,
+     * visibly, once the deadline passes.
      */
     private fun awaitCondition(condition: () -> Boolean) {
         val deadline = System.nanoTime() + WAIT_TIMEOUT_MS * 1_000_000L
@@ -199,8 +207,8 @@ class RateLimitRecoveryTest {
         const val SEARCH_RATE_LIMITED = "Too many searches. Please wait a moment and try again."
         const val VOTE_RATE_LIMITED = "You're voting too fast. Please try again shortly."
         const val VOTE_DESC = "Vote, 3"
-        const val WAIT_TIMEOUT_MS = 10_000L
-        const val FRAME_MS = 16L
+        const val WAIT_TIMEOUT_MS = 30_000L
+        const val FRAME_MS = 64L
         val PAGE1_JSON = """
             {"requests":[
                 {"id":"fr-1","appId":"app-1","title":"Alpha request","description":"first",
