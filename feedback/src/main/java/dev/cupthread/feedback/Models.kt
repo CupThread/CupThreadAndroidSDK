@@ -1518,6 +1518,26 @@ data class ChangelogUnsubscribeResult(
 )
 
 /**
+ * Result of unsubscribing from the weekly digest email via
+ * [FeedbackClient.unsubscribeFromWeeklyDigest].
+ *
+ * The weekly digest is opted out through the token-gated one-click unsubscribe endpoint
+ * (`POST /api/v1/public/digest/unsubscribe`, RFC 8058) whose token is carried by the
+ * `List-Unsubscribe` header and the footer link of every digest email. Replay is idempotent:
+ * the server answers the uniform 200 whether or not the address was still subscribed.
+ *
+ * Unsubscribing clears only the workspace `weekly.digest` email event; inbox notifications
+ * are unchanged. The `GET /api/v1/public/digest/unsubscribe` confirm page is a browser
+ * interstitial (non-destructive, HTML) and is intentionally not surfaced by the SDK.
+ *
+ * @property unsubscribed Whether the unsubscribe request was processed (uniform `true`,
+ *   whether or not a subscription existed).
+ */
+data class WeeklyDigestUnsubscribeResult(
+    val unsubscribed: Boolean
+)
+
+/**
  * Result of confirming a changelog email subscription via [FeedbackClient.confirmChangelogSubscription].
  *
  * Confirming a subscription requires the single-use token delivered in the confirmation email
