@@ -207,6 +207,52 @@ class FeatureRequestPagingTest {
     }
 
     @Test
+    fun repeatedCursorStopsPagingEvenWhenHasMoreIsReported() = runTest {
+        // A misbehaving deployment echoes the cursor it was given: re-requesting the same
+        // page can never advance, so the pager must stop instead of looping forever.
+        var requests = 0
+        val pager = FeatureRequestPager(pageSize = 50) { request ->
+            requests++
+            parseListFeatureRequests(
+                JSONObject(pageJson(ids("a", 50), total = 120, hasMore = true, nextCursor = "cur-2")),
+                request.offset
+            )
+        }
+
+        // The first page is cursorless: a non-null nextCursor must still advance.
+        var items = pager.loadFirstPage()!!.requests
+        assertTrue("Cursorless first page with nextCursor must keep paging", pager.hasMore)
+
+        while (pager.hasMore) {
+            val page = pager.loadNextPage() ?: break
+            items = FeatureRequestPager.append(items, page.requests)
+        }
+
+        assertEquals(2, requests)
+        assertFalse(pager.hasMore)
+        assertNull(pager.loadNextPage())
+        assertEquals(50, items.size)
+        assertEquals(ids("a", 50), items.map { it.id })
+    }
+
+    @Test
+    fun firstPageWithoutCursorAdvancesEvenWhenNextCursorIsPresent() = runTest {
+        // The repeated-cursor guard only applies when a cursor was actually sent; a first
+        // page without one keeps paging so keyset mode still starts.
+        val pager = FeatureRequestPager(pageSize = 50) { request ->
+            assertNull(request.cursor)
+            parseListFeatureRequests(
+                JSONObject(pageJson(ids("a", 50), total = 120, hasMore = true, nextCursor = "cur-2")),
+                request.offset
+            )
+        }
+
+        pager.loadFirstPage()
+
+        assertTrue(pager.hasMore)
+    }
+
+    @Test
     fun singlePageResultDoesNotRequestMore() = runTest {
         var requests = 0
         val pager = FeatureRequestPager(pageSize = 50) { request ->
