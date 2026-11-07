@@ -25,7 +25,9 @@ internal data class FeatureRequestPageRequest(
  * working.
  *
  * The pager never requests another page after the API reported the last one, and it treats an empty
- * page as terminal even if a server wrongly reports `hasMore = true`.
+ * page as terminal even if a server wrongly reports `hasMore = true`. A keyset cursor that repeats
+ * the one already sent is terminal too: the server cannot make progress, so re-requesting the same
+ * page would loop forever.
  */
 internal class FeatureRequestPager(
     private val pageSize: Int = DEFAULT_PAGE_SIZE,
@@ -74,13 +76,19 @@ internal class FeatureRequestPager(
 
     private suspend fun fetch(discardIfReset: Boolean): ListFeatureRequestsResult? {
         val requestGeneration = generation
-        val page = fetchPage(FeatureRequestPageRequest(limit = pageSize, offset = offset, cursor = cursor))
+        val requestCursor = cursor
+        val page = fetchPage(FeatureRequestPageRequest(limit = pageSize, offset = offset, cursor = requestCursor))
         if (discardIfReset && requestGeneration != generation) return null
         started = true
         total = page.total
-        cursor = page.nextCursor
+        val next = page.nextCursor
+        cursor = next
         offset += page.requests.size
-        hasMore = page.hasMore && page.requests.isNotEmpty()
+        hasMore = page.hasMore &&
+            page.requests.isNotEmpty() &&
+            // A repeated keyset cursor can never advance; stop like ChangelogPager does.
+            // Legacy offset paging (nextCursor == null) is unaffected.
+            !(next != null && next == requestCursor)
         return page
     }
 
