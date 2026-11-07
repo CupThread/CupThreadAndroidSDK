@@ -467,6 +467,11 @@ private fun FeatureRequestsScreenContent(
                                             items = revertedItems(items, previous, optimisticRow)
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                                             showFeedbackSnackbar(signInRequiredMessage)
+                                        } catch (e: CancellationException) {
+                                            // Cancelled votes must not run the failure
+                                            // recovery path (issue #190): propagate the
+                                            // cancellation protocol instead.
+                                            throw e
                                         } catch (_: Exception) {
                                             items = revertedItems(items, previous, optimisticRow)
                                             selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
@@ -561,6 +566,10 @@ private fun FeatureRequestsScreenContent(
                         items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(signInRequiredMessage)
+                    } catch (e: CancellationException) {
+                        // Cancelled votes must not run the failure recovery path
+                        // (issue #190): propagate the cancellation protocol instead.
+                        throw e
                     } catch (_: Exception) {
                         items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)

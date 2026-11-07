@@ -23,6 +23,7 @@ import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.ui.FeatureRequestsScreen
+import dev.cupthread.feedback.ui.RoadmapBoardScreen
 import java.io.IOException
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
@@ -63,6 +64,7 @@ class VoteFailureRevertTest {
     private val turnstileRejected = AtomicBoolean(false)
     private val authRejected = AtomicBoolean(false)
     private val token = mutableStateOf(USER_TOKEN)
+    private val screenVisible = mutableStateOf(true)
     private var voteGate = CountDownLatch(1)
 
     private val transport = HttpTransport { request ->
@@ -72,6 +74,8 @@ class VoteFailureRevertTest {
                 HttpResponse(200, configJson())
             request.url.contains("/api/v1/public/versions/") ->
                 HttpResponse(200, """{"versions":[]}""")
+            request.url.contains("/api/v1/public/columns/") ->
+                HttpResponse(200, COLUMNS_JSON)
             (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") -> {
                 // Hold the vote in flight until the test releases the gate, so a reload
                 // can complete while the request is still pending.
@@ -124,6 +128,7 @@ class VoteFailureRevertTest {
         turnstileRejected.set(false)
         authRejected.set(false)
         token.value = USER_TOKEN
+        screenVisible.value = true
         voteGate = CountDownLatch(1)
         synchronized(calls) { calls.clear() }
     }
@@ -459,6 +464,150 @@ class VoteFailureRevertTest {
         assertTrue("detail sheet re-appeared after its vote succeeded", dialogDescriptions().isEmpty())
     }
 
+    @Test
+    fun cancelledListVoteShowsNoFailureFeedbackAndFreshScreenWorks() {
+        compose.setContent {
+            if (screenVisible.value) FeatureRequestsScreen(client, token.value)
+        }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // Hold the vote in flight, then take the whole screen out of composition: the
+        // screen-scoped coroutine (rememberCoroutineScope) dies while the vote is still
+        // pending in the stub transport (issue #190).
+        holdVote.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitCondition { voteCalls() == 1 }
+        setScreenVisible(false)
+
+        // The stub only unblocks now: the response resumes into an already cancelled
+        // coroutine, so the vote must end as a cancellation — never as a vote failure.
+        // The recovery path used to catch the CancellationException in the generic
+        // failure branch and revert against the dead tree; pump the frames so that
+        // resumption is forced to run while nothing is mounted.
+        voteGate.countDown()
+        holdVote.set(false)
+        repeat(SETTLE_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+        }
+
+        // A fresh mount starts clean (remember slots are re-created): no failure
+        // feedback may bleed in from the cancelled vote (not even queued behind another
+        // snackbar), and the screen must be fully functional again — the pill votes
+        // through and reconciles.
+        voteSucceeds.set(true)
+        setScreenVisible(true)
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+        assertNoVoteFailureFeedbackWhilePumping()
+
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitCondition { pillEnabled("Remove vote, 11") }
+        // The cancelled vote burned exactly one call; the fresh screen's vote is the
+        // second and last one (a cancellation-triggered retry would show up here).
+        awaitCondition { voteCalls() == 2 }
+    }
+
+    @Test
+    fun cancelledSheetVoteShowsNoFailureFeedbackAndFreshScreenWorks() {
+        compose.setContent {
+            if (screenVisible.value) FeatureRequestsScreen(client, token.value)
+        }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // The sheet's vote runs in the same screen-scoped coroutine, so unmounting the
+        // screen while the vote is in flight cancels it too (issue #190).
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 1 }
+        setScreenVisible(false)
+
+        voteGate.countDown()
+        holdVote.set(false)
+        repeat(SETTLE_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+        }
+
+        // Same contract as the list-pill cancellation: the fresh screen carries no
+        // failure feedback from the cancelled sheet vote and keeps working.
+        voteSucceeds.set(true)
+        setScreenVisible(true)
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+        assertNoVoteFailureFeedbackWhilePumping()
+
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+        awaitCondition { pillEnabled("Remove vote, 11") }
+        awaitCondition { voteCalls() == 2 }
+    }
+
+    @Test
+    fun cancelledRoadmapSheetVoteShowsNoFailureFeedbackAndFreshScreenWorks() {
+        compose.setContent {
+            if (screenVisible.value) RoadmapBoardScreen(client, token.value)
+        }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // The roadmap board's sheet vote ladder is the third copy of the same pattern
+        // (issue #190): cancelling it by unmounting the board must behave identically.
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 1 }
+        setScreenVisible(false)
+
+        voteGate.countDown()
+        holdVote.set(false)
+        repeat(SETTLE_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+        }
+
+        voteSucceeds.set(true)
+        setScreenVisible(true)
+        awaitNode("Alpha request")
+        assertNoVoteFailureFeedbackWhilePumping()
+
+        // The fresh board's sheet still votes through and reconciles.
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 2 && "Remove vote, 11" in dialogDescriptions() }
+    }
+
+    /**
+     * Pumps a full Short-snackbar window while asserting none of the vote failure
+     * feedback messages is visible: a cancelled vote must never surface the rate-limited,
+     * verification, or sign-in asks — not even queued behind another snackbar (issue #190).
+     */
+    private fun assertNoVoteFailureFeedbackWhilePumping() {
+        repeat(SNACKBAR_RESHOW_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+            VOTE_FAILURE_FEEDBACK_TEXTS.forEach { compose.onNodeWithText(it).assertDoesNotExist() }
+        }
+    }
+
+    /**
+     * Flips the screen's presence in the composition and pumps frames until the change
+     * is applied: leaving composition cancels the screen-scoped coroutine (and any vote
+     * it holds in flight), re-entering builds the screen from fresh remember slots.
+     */
+    private fun setScreenVisible(visible: Boolean) {
+        compose.runOnIdle { screenVisible.value = visible }
+        repeat(SETTLE_PUMPS) {
+            compose.mainClock.advanceTimeBy(FRAME_MS)
+            compose.waitForIdle()
+        }
+    }
+
     /** GET feature-request page fetches (first pages only; cursor pages are not used here). */
     private fun pageCalls(): Int = synchronized(calls) {
         calls.count { it.method == "GET" && it.url.contains("/api/v1/feature-requests") }
@@ -685,17 +834,36 @@ class VoteFailureRevertTest {
         const val VOTE_VERIFICATION_UNAVAILABLE =
             "Voting requires human verification that isn\u2019t available in this app right now."
         const val VOTE_SIGN_IN_REQUIRED = "Please sign in to vote."
+        // Every feedback message a vote failure branch can surface; a cancelled vote
+        // must show none of them (issue #190).
+        val VOTE_FAILURE_FEEDBACK_TEXTS = listOf(
+            VOTE_RATE_LIMITED,
+            VOTE_VERIFICATION_UNAVAILABLE,
+            VOTE_SIGN_IN_REQUIRED
+        )
         const val WAIT_TIMEOUT_MS = 30_000L
         const val HOLD_TIMEOUT_MS = 10_000L
         const val FRAME_MS = 64L
+        // A short settle window for the cancelled vote's final resumption: the response
+        // resumes into the dead scope on these pumped frames, before the fresh mount.
+        const val SETTLE_PUMPS = 8
         // 100 pumps x 64 ms ≈ 6.4 s of virtual time: longer than one Short snackbar, so a
         // duplicate queued behind the dismissed one cannot hide inside the window.
         const val SNACKBAR_RESHOW_PUMPS = 100
         val PAGE1_JSON = """
             {"requests":[
                 {"id":"fr-1","appId":"app-1","title":"Alpha request","description":"first",
-                 "status":"open","voteCount":10,"hasVoted":false,"isOwnRequest":false}
+                 "status":"open","voteCount":10,"hasVoted":false,"isOwnRequest":false,
+                 "columnId":"col-1"}
              ],"total":1,"hasMore":false,"nextCursor":null}
+        """.trimIndent()
+        // The single roadmap column the board groups the page-1 request into.
+        val COLUMNS_JSON = """
+            {"columns":[
+                {"id":"col-1","appId":"app-1","name":"Planned","slug":"planned","position":0,
+                 "isVisible":true,"isSystem":true,"kind":"normal","color":null,
+                 "createdAt":"","updatedAt":""}
+             ]}
         """.trimIndent()
         // The reload's answer for the same row while the vote is in flight: another user's
         // vote arrived in the meantime (10 -> 12).
