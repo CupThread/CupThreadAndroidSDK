@@ -222,4 +222,99 @@ class ChangelogPagingTest {
         assertFalse(pager.hasMore)
         assertNull(pager.loadNextPage())
     }
+
+    /** Legacy deployment payload: `{entries, nextCursor}` without a `hasMore` field. */
+    private fun legacyChangelogJson(nextCursorJson: String): String =
+        """
+        {
+          "entries": [
+            {"id":"cl-1","title":"Release 1","content":"C1","publishedAt":"2026-09-18T12:00:00.000Z","version":"1.0.3"}
+          ],
+          "nextCursor": $nextCursorJson
+        }
+        """.trimIndent()
+
+    @Test
+    fun legacyPayloadWithoutHasMoreDerivesTrueFromCursor() = runTest {
+        val page = client { HttpResponse(200, legacyChangelogJson("\"c2\"")) }
+            .fetchChangelogPage()
+        assertTrue(page.hasMore)
+        assertEquals("c2", page.nextCursor)
+    }
+
+    @Test
+    fun legacyPayloadWithNullCursorDerivesFalse() = runTest {
+        val page = client { HttpResponse(200, legacyChangelogJson("null")) }
+            .fetchChangelogPage()
+        assertFalse(page.hasMore)
+        assertNull(page.nextCursor)
+    }
+
+    @Test
+    fun explicitHasMoreFalseStaysAuthoritativeOverStaleCursor() = runTest {
+        val page = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [
+                    {"id":"cl-1","title":"Release 1","content":"C1","publishedAt":"2026-09-18T12:00:00.000Z","version":"1.0.3"}
+                  ],
+                  "hasMore": false,
+                  "nextCursor": "stale_cursor"
+                }
+                """.trimIndent()
+            )
+        }.fetchChangelogPage()
+        assertFalse(page.hasMore)
+        assertEquals("stale_cursor", page.nextCursor)
+    }
+
+    @Test
+    fun legacyFirstPageWithCursorTriggersSecondFetch() = runTest {
+        val requests = mutableListOf<String>()
+        val client = client { req ->
+            requests.add(req.url)
+            if (req.url.contains("cursor=legacy_c2")) {
+                HttpResponse(
+                    200,
+                    """
+                    {
+                      "entries": [
+                        {"id":"cl-2","title":"Release 2","content":"C2","publishedAt":"2026-09-17T12:00:00.000Z","version":"1.0.2"}
+                      ],
+                      "nextCursor": null
+                    }
+                    """.trimIndent()
+                )
+            } else {
+                HttpResponse(
+                    200,
+                    """
+                    {
+                      "entries": [
+                        {"id":"cl-1","title":"Release 1","content":"C1","publishedAt":"2026-09-18T12:00:00.000Z","version":"1.0.3"}
+                      ],
+                      "nextCursor": "legacy_c2"
+                    }
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val pager = ChangelogPager(pageSize = 100) { limit, cursor ->
+            client.fetchChangelogPage(limit, cursor)
+        }
+
+        val first = pager.loadFirstPage()!!
+        assertTrue(first.hasMore)
+        assertTrue(pager.hasMore)
+
+        val second = pager.loadNextPage()
+        requireNotNull(second)
+        assertEquals(listOf("cl-2"), second.entries.map { it.id })
+        assertFalse(second.hasMore)
+        assertFalse(pager.hasMore)
+        assertTrue(requests[1].contains("cursor=legacy_c2"))
+    }
 }

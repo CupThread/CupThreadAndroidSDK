@@ -286,12 +286,14 @@ internal fun parseListChangelog(json: JSONObject): ListChangelogResult {
             add(parseChangelogEntry(array.getJSONObject(i)))
         }
     }.sortedByDescending { it.publishedAt }
+    // Older deployments answer {entries, nextCursor} only; derive hasMore from the cursor then
+    // (same defect class as parseListComments, fixed in #153). An explicit hasMore stays authoritative.
+    val nextCursor = json.stringOrNull("nextCursor")?.takeIf { it.isNotEmpty() }
     val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
         json.getBoolean("hasMore")
     } else {
-        false
+        entries.isNotEmpty() && nextCursor != null
     }
-    val nextCursor = json.stringOrNull("nextCursor")?.takeIf { it.isNotEmpty() }
     return ListChangelogResult(
         entries = entries,
         hasMore = hasMore,
