@@ -4,6 +4,7 @@ import dev.cupthread.feedback.AppVersion
 import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.CommentDraft
 import dev.cupthread.feedback.FeatureRequestComment
+import dev.cupthread.feedback.FeedbackException
 import dev.cupthread.feedback.PublicAppSummary
 import dev.cupthread.feedback.PublicUserProfile
 import dev.cupthread.feedback.PublicUserProfileResult
@@ -336,8 +337,24 @@ internal fun parseChangelogSubscription(json: JSONObject): ChangelogSubscription
 internal fun parseChangelogUnsubscribe(json: JSONObject): ChangelogUnsubscribeResult =
     ChangelogUnsubscribeResult(unsubscribed = json.booleanOr("unsubscribed", true))
 
-internal fun parseWeeklyDigestUnsubscribe(json: JSONObject): WeeklyDigestUnsubscribeResult =
-    WeeklyDigestUnsubscribeResult(unsubscribed = json.booleanOr("unsubscribed", true))
+internal fun parseWeeklyDigestUnsubscribe(json: JSONObject): WeeklyDigestUnsubscribeResult {
+    // Strict by contract (issue #36 review): a conforming 200 always carries the boolean
+    // `unsubscribed` confirmation, so a missing field is a non-conforming response rather
+    // than a silent success — reporting `true` there would tell the user they are
+    // unsubscribed when the deployment answered something else. Malformed values wrap into
+    // the documented FeedbackException.InvalidResponse instead of a raw JSONException.
+    if (!json.has("unsubscribed") || json.isNull("unsubscribed")) {
+        throw FeedbackException.InvalidResponse(
+            IllegalStateException("Digest unsubscribe response is missing the \"unsubscribed\" confirmation: $json")
+        )
+    }
+    val unsubscribed = try {
+        json.getBoolean("unsubscribed")
+    } catch (error: Exception) {
+        throw FeedbackException.InvalidResponse(error)
+    }
+    return WeeklyDigestUnsubscribeResult(unsubscribed = unsubscribed)
+}
 
 internal fun parseChangelogConfirmationResult(json: JSONObject): ChangelogConfirmationResult =
     ChangelogConfirmationResult(confirmed = json.booleanOr("confirmed", true))

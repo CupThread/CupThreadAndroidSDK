@@ -2635,6 +2635,32 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun unsubscribeFromWeeklyDigestRejectsResponseMissingConfirmation() = runTest {
+        // #36 review: a 200 without the `unsubscribed` confirmation is a non-conforming
+        // response, not a success — the SDK must not tell the user they are unsubscribed.
+        try {
+            client {
+                HttpResponse(200, """{"ok":true}""")
+            }.unsubscribeFromWeeklyDigest("digest_token_from_email_link")
+            fail("Expected FeedbackException.InvalidResponse on a 200 without the confirmation field")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause?.message.orEmpty().contains("unsubscribed"))
+        }
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestWrapsMalformedConfirmationAsInvalidResponse() = runTest {
+        try {
+            client {
+                HttpResponse(200, """{"unsubscribed":[]}""")
+            }.unsubscribeFromWeeklyDigest("digest_token_from_email_link")
+            fail("Expected FeedbackException.InvalidResponse on a malformed confirmation value")
+        } catch (ex: FeedbackException.InvalidResponse) {
+            assertTrue(ex.cause !is FeedbackException)
+        }
+    }
+
+    @Test
     fun unsubscribeFromWeeklyDigestSurfacesInvalidTokenAsUnexpectedStatus() = runTest {
         try {
             client {

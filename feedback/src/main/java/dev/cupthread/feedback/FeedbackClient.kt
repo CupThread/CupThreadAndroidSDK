@@ -1534,7 +1534,9 @@ class FeedbackClient internal constructor(
      *
      * Behavior (API contract):
      * - Replay is idempotent: the uniform 200 `{"unsubscribed": true}` is returned whether
-     *   or not the address was still subscribed.
+     *   or not the address was still subscribed. A 200 without the boolean `unsubscribed`
+     *   confirmation is rejected as [FeedbackException.InvalidResponse] rather than treated
+     *   as a silent success (issue #36 review).
      * - Unsubscribing clears only the workspace `weekly.digest` **email** event; inbox
      *   notifications are unchanged.
      * - A missing, invalid, or expired token fails with HTTP 400.
