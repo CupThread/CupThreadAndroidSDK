@@ -9,6 +9,7 @@ import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.internal.UrlConnectionTransport
 import dev.cupthread.feedback.internal.AttachmentLimits
 import dev.cupthread.feedback.internal.ImageMetadataScrubber
+import dev.cupthread.feedback.internal.encodePathSegment
 import dev.cupthread.feedback.internal.encodeQuery
 import dev.cupthread.feedback.internal.hmacSha256Hex
 import dev.cupthread.feedback.internal.joinUrl
@@ -495,7 +496,7 @@ class FeedbackClient internal constructor(
         }
         val uploadedJson = sendBinary(
             method = "PUT",
-            path = "/api/v1/uploads/${reservation.slot.uploadId}",
+            path = "/api/v1/uploads/${encodePathSegment(reservation.slot.uploadId)}",
             contentType = mimeType,
             body = data,
             bearerToken = reservation.sessionToken,
@@ -552,7 +553,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchAppConfig(): PublicAppConfig {
-        val appConfig = parsePublicAppConfig(get("/api/v1/public/config/${config.appKey}"))
+        val appConfig = parsePublicAppConfig(get("/api/v1/public/config/${encodePathSegment(config.appKey)}"))
         SdkAppearanceCache.put(config.baseUrl, config.appKey, appConfig.sdk)
         return appConfig
     }
@@ -576,7 +577,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchColumns(): List<BoardColumn> {
-        val json = get("/api/v1/public/columns/${config.appKey}", mapRateLimitErrors = true)
+        val json = get("/api/v1/public/columns/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
         val array = json.optJSONArray("columns") ?: JSONArray()
         return buildList {
             for (i in 0 until array.length()) add(parseBoardColumn(array.getJSONObject(i)))
@@ -602,7 +603,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchVersions(): List<AppVersion> {
-        val json = get("/api/v1/public/versions/${config.appKey}", mapRateLimitErrors = true)
+        val json = get("/api/v1/public/versions/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
         val array = json.optJSONArray("versions") ?: JSONArray()
         return buildList {
             for (i in 0 until array.length()) add(parseAppVersion(array.getJSONObject(i)))
@@ -727,9 +728,10 @@ class FeedbackClient internal constructor(
         userToken: String?
     ): FeatureRequestItem {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedId = featureRequestId.trim()
         val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
         if (trimmedToken != null) {
-            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${featureRequestId.trim()}")
+            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${encodePathSegment(trimmedId)}")
             val parsedUri = try {
                 java.net.URI(targetUrl)
             } catch (_: Exception) {
@@ -740,7 +742,7 @@ class FeedbackClient internal constructor(
             }
         }
         val json = get(
-            path = "/api/v1/feature-requests/${featureRequestId.trim()}",
+            path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}",
             userToken = trimmedToken,
             mapRateLimitErrors = true
         )
@@ -917,6 +919,7 @@ class FeedbackClient internal constructor(
      * @param shipNotifyEmail Optional email address to opt into ship notifications for this request.
      * @return [VoteResult] containing the updated vote state (`voted`), current total count (`voteCount`),
      *   and an optional [VoteResult.warning] when a secondary action was refused.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the vote (HTTP 403 `turnstile_*`).
@@ -940,9 +943,11 @@ class FeedbackClient internal constructor(
         turnstileToken: String? = null,
         shipNotifyEmail: String? = null
     ): VoteResult {
+        require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedId = featureRequestId.trim()
         val trimmedEmail = shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }
         if (trimmedEmail != null) {
-            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/$featureRequestId/vote")
+            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote")
             val parsedUri = try {
                 java.net.URI(targetUrl)
             } catch (_: Exception) {
@@ -973,7 +978,7 @@ class FeedbackClient internal constructor(
             parseVoteResult(
                 sendJson(
                     method = "POST",
-                    path = "/api/v1/feature-requests/$featureRequestId/vote",
+                    path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
                     body = payload,
                     userToken = userToken,
                     accepted = setOf(200),
@@ -1035,12 +1040,15 @@ class FeedbackClient internal constructor(
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @return [VoteResult] containing the reconciled vote state (`voted = false`) and current total count (`voteCount`).
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      */
     suspend fun deleteVote(featureRequestId: String, userToken: String): VoteResult {
+        require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedId = featureRequestId.trim()
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             put("userToken", userToken)
@@ -1048,7 +1056,7 @@ class FeedbackClient internal constructor(
         return parseVoteResult(
             sendJson(
                 method = "DELETE",
-                path = "/api/v1/feature-requests/$featureRequestId/vote",
+                path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
                 body = payload,
                 userToken = userToken,
                 accepted = setOf(200),
@@ -1098,6 +1106,7 @@ class FeedbackClient internal constructor(
         cursor: String? = null
     ): ListCommentsResult {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedId = featureRequestId.trim()
         val clampedLimit = limit.coerceIn(1, 200)
         val params = mutableListOf<Pair<String, String>>()
         if (clampedLimit != 200 || !cursor.isNullOrBlank()) {
@@ -1107,9 +1116,9 @@ class FeedbackClient internal constructor(
             params += "cursor" to cursor
         }
         val path = if (params.isNotEmpty()) {
-            "/api/v1/feature-requests/${featureRequestId.trim()}/comments?${encodeQuery(params)}"
+            "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments?${encodeQuery(params)}"
         } else {
-            "/api/v1/feature-requests/${featureRequestId.trim()}/comments"
+            "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments"
         }
         val json = get(
             path,
@@ -1187,6 +1196,7 @@ class FeedbackClient internal constructor(
      * @param draft Comment text and optional author/reply metadata ([CommentDraft]).
      * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
+     * @throws IllegalArgumentException if [featureRequestId] is blank.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
      * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
      * @throws FeedbackException.RateLimited if the per-client comment rate limit is exceeded (HTTP 429).
@@ -1210,6 +1220,8 @@ class FeedbackClient internal constructor(
         draft: CommentDraft,
         userToken: String
     ): FeatureRequestComment {
+        require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
+        val trimmedId = featureRequestId.trim()
         val payload = JSONObject().apply {
             put("body", draft.body.trim())
             putOptString("authorName", draft.authorName?.trim()?.ifEmpty { null })
@@ -1222,7 +1234,7 @@ class FeedbackClient internal constructor(
         return parseFeatureRequestComment(
             sendJson(
                 method = "POST",
-                path = "/api/v1/feature-requests/$featureRequestId/comments",
+                path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments",
                 body = payload,
                 userToken = userToken,
                 accepted = setOf(200, 201),
@@ -1271,7 +1283,7 @@ class FeedbackClient internal constructor(
             params += "cursor" to cursor
         }
         val json = get(
-            "/api/v1/public/apps/${config.appKey}/changelog?${encodeQuery(params)}",
+            "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog?${encodeQuery(params)}",
             mapRateLimitErrors = true
         )
         return parseListChangelog(json)
@@ -1447,7 +1459,7 @@ class FeedbackClient internal constructor(
         return parseChangelogSubscription(
             sendJson(
                 "POST",
-                "/api/v1/public/apps/${config.appKey}/changelog/subscribe",
+                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/subscribe",
                 payload,
                 userToken = userToken,
                 accepted = setOf(200, 201),
@@ -1501,7 +1513,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromChangelog(token: String): ChangelogUnsubscribeResult {
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${config.appKey}/changelog/unsubscribe")
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe")
         val parsedUri = try {
             java.net.URI(targetUrl)
         } catch (_: Exception) {
@@ -1514,7 +1526,7 @@ class FeedbackClient internal constructor(
         return parseChangelogUnsubscribe(
             sendJson(
                 "POST",
-                "/api/v1/public/apps/${config.appKey}/changelog/unsubscribe",
+                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe",
                 payload,
                 accepted = setOf(200)
             )
@@ -1613,7 +1625,7 @@ class FeedbackClient internal constructor(
     suspend fun confirmChangelogSubscription(token: String): ChangelogConfirmationResult {
         val cleanToken = token.trim()
         require(cleanToken.isNotEmpty()) { "Confirmation token cannot be blank" }
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${config.appKey}/changelog/confirm")
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/confirm")
         val parsedUri = try {
             java.net.URI(targetUrl)
         } catch (_: Exception) {
@@ -1625,7 +1637,7 @@ class FeedbackClient internal constructor(
         val payload = JSONObject().put("token", cleanToken)
         val response = sendJson(
             "POST",
-            "/api/v1/public/apps/${config.appKey}/changelog/confirm",
+            "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/confirm",
             payload,
             accepted = setOf(200)
         )
@@ -1731,7 +1743,7 @@ class FeedbackClient internal constructor(
         return parseUserAttributesUpdate(
             sendJson(
                 "PUT",
-                "/api/v1/public/apps/${config.appKey}/user",
+                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/user",
                 payload,
                 userToken = userToken,
                 accepted = setOf(200),
@@ -1764,10 +1776,11 @@ class FeedbackClient internal constructor(
      */
     suspend fun fetchUserProfile(userId: String): PublicUserProfileResult {
         require(userId.isNotBlank()) { "userId cannot be blank" }
+        val trimmedId = userId.trim()
         val query = encodeQuery(listOf("appKey" to config.appKey))
         return parsePublicUserProfileResult(
             get(
-                path = "/api/v1/users/${userId.trim()}/profile?$query",
+                path = "/api/v1/users/${encodePathSegment(trimmedId)}/profile?$query",
                 mapRateLimitErrors = true
             )
         )

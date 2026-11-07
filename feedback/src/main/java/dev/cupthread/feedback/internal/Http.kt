@@ -91,6 +91,23 @@ internal fun encodeQuery(params: List<Pair<String, String>>): String {
 internal fun encodeComponent(value: String): String =
     java.net.URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
+/**
+ * Encodes a host-supplied value interpolated into a request **path** segment (#196). `/`
+ * becomes `%2F`, so the segment can neither escape its position nor inject `?`/`#` query or
+ * fragment syntax; the `+`-to-`%20` rewrite already happens inside [encodeComponent].
+ *
+ * Dot-only ids are rejected: `URLEncoder` leaves `.` unreserved, so `"."`/`".."` would
+ * survive as a literal dot path segment, and Android's URL parser normalizes those away —
+ * `/api/v1/feature-requests/../vote` would target `/api/v1/vote`.
+ */
+internal fun encodePathSegment(value: String): String {
+    val encoded = encodeComponent(value)
+    require(encoded != "." && encoded != "..") {
+        "path segment cannot be a dot segment: \"$value\""
+    }
+    return encoded
+}
+
 // A caller-supplied filename is interpolated into the raw multipart header block. CR/LF (and any
 // other C0 control character) written verbatim would let a crafted name terminate the header
 // section early and smuggle additional header lines or multipart parts into the request (#162).
