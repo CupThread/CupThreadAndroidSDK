@@ -547,16 +547,16 @@ private fun FeatureRequestsScreenContent(
                     } catch (e: FeedbackException.VerificationRequired) {
                         // The human-verification gate rejected the vote (issue #184): tell
                         // the user instead of silently reverting the optimistic flip.
-                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(voteVerificationMessage)
                     } catch (e: FeedbackException.AuthenticationRequired) {
                         // Anonymous voting is disabled on this app (issue #184).
-                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(signInRequiredMessage)
                     } catch (_: Exception) {
-                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        items = revertedItems(items, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id

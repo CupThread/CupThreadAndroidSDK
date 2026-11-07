@@ -426,12 +426,12 @@ private fun RoadmapBoardScreenContent(
                     } catch (e: FeedbackException.VerificationRequired) {
                         // The human-verification gate rejected the vote (issue #184): tell
                         // the user instead of silently reverting the optimistic flip.
-                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
+                        requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(voteVerificationMessage)
                     } catch (e: FeedbackException.AuthenticationRequired) {
                         // Anonymous voting is disabled on this app (issue #184).
-                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
+                        requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(signInRequiredMessage)
                     } catch (_: Exception) {
