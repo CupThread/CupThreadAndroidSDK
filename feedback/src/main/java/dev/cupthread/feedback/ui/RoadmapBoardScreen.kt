@@ -212,7 +212,10 @@ private fun RoadmapBoardScreenContent(
                 // wipe already-rendered content (issue #23). The pager already reset its
                 // paging position, so paging must not continue into the retained results.
                 hasMore = false
-                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+                refreshFailed = searchRateLimitedMessage
+                // Fire-and-forget: showSnackbar suspends until dismissal, and the load must
+                // finish (clear `loading`) without waiting for the snackbar to go away.
+                scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
             } else {
                 error = e.message
             }
@@ -224,7 +227,7 @@ private fun RoadmapBoardScreenContent(
                 // the retained results (and the no-match auto-pagination effect must stop).
                 hasMore = false
                 refreshFailed = ex.message ?: defaultLoadError
-                snackbarHostState.showSnackbar(ex.message ?: defaultLoadError)
+                scope.launch { snackbarHostState.showSnackbar(ex.message ?: defaultLoadError) }
             } else {
                 error = ex.message ?: defaultLoadError
             }
@@ -302,6 +305,16 @@ private fun RoadmapBoardScreenContent(
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.cupthread_roadmap_search_placeholder)) }
                 )
+                // A failed refresh keeps the rendered board and shows this fixed, always-visible
+                // retry banner instead of the full-screen error state (issue #163). It sits above
+                // every content branch (board, empty state, paging footer); `error` and
+                // `refreshFailed` are mutually exclusive, and a new load clears the banner.
+                refreshFailed?.let { message ->
+                    RefreshFailedBanner(
+                        message = message,
+                        onRetry = { scope.launch { load() } }
+                    )
+                }
                 when {
                     loading && !hasLoaded -> BoxPad { SkeletonCardList() }
                     error != null -> LoadErrorState(error!!) { scope.launch { load() } }
@@ -317,24 +330,16 @@ private fun RoadmapBoardScreenContent(
                             onLoadMore = { scope.launch { loadMore() } }
                         )
                     }
-                    else -> Column(Modifier.fillMaxSize()) {
-                        refreshFailed?.let { message ->
-                            RefreshFailedBanner(
-                                message = message,
-                                onRetry = { scope.launch { load() } }
-                            )
-                        }
-                        PagedBoard(
-                            groups = visible,
-                            query = search,
-                            hasMore = hasMore,
-                            loadingMore = loadingMore,
-                            loadMoreFailed = loadMoreFailed,
-                            onLoadMore = { scope.launch { loadMore() } },
-                            onCardClick = { selectedItem = it },
-                            onOpenProfile = { selectedProfileUserId = it }
-                        )
-                    }
+                    else -> PagedBoard(
+                        groups = visible,
+                        query = search,
+                        hasMore = hasMore,
+                        loadingMore = loadingMore,
+                        loadMoreFailed = loadMoreFailed,
+                        onLoadMore = { scope.launch { loadMore() } },
+                        onCardClick = { selectedItem = it },
+                        onOpenProfile = { selectedProfileUserId = it }
+                    )
                 }
             }
         }

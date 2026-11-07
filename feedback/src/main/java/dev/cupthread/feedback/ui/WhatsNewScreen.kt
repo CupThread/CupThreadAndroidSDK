@@ -143,6 +143,8 @@ private fun WhatsNewScreenContent(
             // Set on success only (like the other bundled screens): a failed first load must
             // not make later attempts look like refreshes of preserved content.
             hasLoaded = true
+        } catch (e: CancellationException) {
+            throw e
         } catch (ex: FeedbackException.AuthenticationRequired) {
             error = ex.message
         } catch (ex: Exception) {
