@@ -2,6 +2,7 @@ package dev.cupthread.feedback
 
 import android.content.Context
 import dev.cupthread.feedback.internal.REQUEST_ID_HEADER
+import dev.cupthread.feedback.internal.carriesCredentials
 import dev.cupthread.feedback.internal.REQUEST_ID_PATTERN
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpTransport
@@ -167,8 +168,10 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token minted for the
      *   [TurnstileAction.FEEDBACK] action with the app key as `cdata`. When provided, the configured
      *   token provider is not consulted before the first attempt.
-     * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
-     * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
+ * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
+ * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is transmitted —
+ *   the anonymous identity token is never sent in cleartext.
+ * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the submission (HTTP 403 `turnstile_*`).
@@ -784,6 +787,8 @@ class FeedbackClient internal constructor(
      *   [TurnstileAction.FEATURE_REQUEST] action with the app key as `cdata`. When provided, the
      *   configured token provider is not consulted before the first attempt.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
+     * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is transmitted —
+     *   the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if the app's roadmap requires sign-in (`allowAnonymousRoadmap=false`)
      *   and no end-user session is present (HTTP 401 `authentication_required`).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
@@ -812,32 +817,45 @@ class FeedbackClient internal constructor(
         draft: FeatureRequestDraft,
         userToken: String,
         turnstileToken: String? = null
-    ): FeatureRequestSubmissionResult = sendWithTurnstileRetry(
-        challenge = TurnstileChallenge.featureRequest(config.appKey),
-        explicitToken = turnstileToken
-    ) { token ->
-        val payload = JSONObject().apply {
-            put("appKey", config.appKey)
-            put("title", draft.title.trim())
-            put("description", draft.description.trim())
-            putOptString("requesterName", draft.requesterName.trim().ifEmpty { null })
-            put("requesterToken", userToken)
-            if (token != null) {
-                put("turnstileToken", token)
-            }
+    ): FeatureRequestSubmissionResult {
+        // The requester token travels in the JSON body (#64), not the X-User-Token header, so the
+        // central send() credential guard (#199) cannot see it — enforce the cleartext policy here.
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
         }
-        parseFeatureRequestSubmission(
-            sendJson(
-                method = "POST",
-                path = "/api/v1/feature-requests",
-                body = payload,
-                userToken = null,
-                accepted = setOf(200, 201),
-                mapSubmissionQuotaErrors = true,
-                mapVerificationErrors = true,
-                mapRateLimitErrors = true
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "submitFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
+        }
+        return sendWithTurnstileRetry(
+            challenge = TurnstileChallenge.featureRequest(config.appKey),
+            explicitToken = turnstileToken
+        ) { token ->
+            val payload = JSONObject().apply {
+                put("appKey", config.appKey)
+                put("title", draft.title.trim())
+                put("description", draft.description.trim())
+                putOptString("requesterName", draft.requesterName.trim().ifEmpty { null })
+                put("requesterToken", userToken)
+                if (token != null) {
+                    put("turnstileToken", token)
+                }
+            }
+            parseFeatureRequestSubmission(
+                sendJson(
+                    method = "POST",
+                    path = "/api/v1/feature-requests",
+                    body = payload,
+                    userToken = null,
+                    accepted = setOf(200, 201),
+                    mapSubmissionQuotaErrors = true,
+                    mapVerificationErrors = true,
+                    mapRateLimitErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -852,7 +870,7 @@ class FeedbackClient internal constructor(
      *
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
-     * @return [VoteResult] containing the reconciled vote state (`voted`) and current total count (`voteCount`).
+     * @return [VoteResult] containing the reconciled vote state (`voted = true`).
      */
     suspend fun vote(
         featureRequestId: String,
@@ -919,7 +937,9 @@ class FeedbackClient internal constructor(
      * @param shipNotifyEmail Optional email address to opt into ship notifications for this request.
      * @return [VoteResult] containing the updated vote state (`voted`), current total count (`voteCount`),
      *   and an optional [VoteResult.warning] when a secondary action was refused.
-     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
+     *   HTTPS while the vote transmits the user token — the anonymous identity token is never sent
+     *   in cleartext, whether or not [shipNotifyEmail] participates.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the vote (HTTP 403 `turnstile_*`).
@@ -1040,7 +1060,8 @@ class FeedbackClient internal constructor(
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @return [VoteResult] containing the reconciled vote state (`voted = false`) and current total count (`voteCount`).
-     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
+     *   HTTPS while the user token is transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
@@ -1196,7 +1217,8 @@ class FeedbackClient internal constructor(
      * @param draft Comment text and optional author/reply metadata ([CommentDraft]).
      * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
-     * @throws IllegalArgumentException if [featureRequestId] is blank.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
+     *   HTTPS while [userToken] is transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
      * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
      * @throws FeedbackException.RateLimited if the per-client comment rate limit is exceeded (HTTP 429).
@@ -1421,6 +1443,8 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
      *   (pending confirmation).
+     * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is
+     *   transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.EmailNotVerified if the app requires a signed-in session and
      *   [email] does not match that session's verified address (HTTP 403 `email_not_verified`).
      *   Prompt the user to subscribe with their signed-in account address.
@@ -1674,8 +1698,10 @@ class FeedbackClient internal constructor(
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
-     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, or if a payment attribute
-     *   or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret] is configured.
+     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, if a payment attribute
+     *   or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret] is configured, or if
+     *   the destination is not HTTPS while [userToken] is transmitted — the anonymous identity
+     *   token (and any HMAC-signed payment attributes) is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
      *   `stale_signature` when the configured secret does not match the app's).
      * @throws FeedbackException.ReservedPlanSentinel on HTTP 400 when the server rejects a reserved
@@ -2090,6 +2116,31 @@ class FeedbackClient internal constructor(
         mapUploaderErrors = mapUploaderErrors
     )
 
+    /**
+     * Enforces the SDK's cleartext-credential policy once for every outgoing request instead of
+     * per endpoint (issue #199): when a request carries a bearer credential — a non-blank
+     * `X-User-Token` or `Authorization` header — the destination must use HTTPS. A malformed
+     * destination URL fails closed just like the per-endpoint checks do.
+     *
+     * The per-endpoint `require` checks are kept so their established error messages stay stable;
+     * this central guard closes the gaps between them — `submit`, `vote` without a ship-notify
+     * email, `deleteVote`, `postComment`, `subscribeToChangelog`, and `updateUserAttributes` all
+     * transmit the same `X-User-Token` credential but previously had no protection at all.
+     * `submitFeatureRequest` is also guarded per endpoint because its requester token travels
+     * only in the JSON body (#64), where this header-based check cannot see it.
+     */
+    private fun requireHttpsForCredentials(request: HttpRequest) {
+        if (!request.carriesCredentials()) return
+        val scheme = try {
+            java.net.URI(request.url).scheme
+        } catch (_: Exception) {
+            null
+        }
+        require(scheme.equals("https", ignoreCase = true)) {
+            "request destination must use HTTPS when transmitting credentials: ${request.url}"
+        }
+    }
+
     private suspend fun send(
         request: HttpRequest,
         accepted: Set<Int>,
@@ -2105,8 +2156,9 @@ class FeedbackClient internal constructor(
         mapImageUploadErrors: Boolean = false,
         mapEmailNotVerifiedErrors: Boolean = false,
         mapCommentsUnavailableErrors: Boolean = false
-    ): JSONObject =
-        withContext(Dispatchers.IO) {
+    ): JSONObject {
+        requireHttpsForCredentials(request)
+        return withContext(Dispatchers.IO) {
             val response = try {
                 transport.execute(request)
             } catch (error: FeedbackException) {
@@ -2251,6 +2303,7 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.InvalidResponse(error)
             }
         }
+    }
 
     private fun parseErrorPayload(body: String): Pair<String?, String?>? {
         if (body.isBlank()) return null

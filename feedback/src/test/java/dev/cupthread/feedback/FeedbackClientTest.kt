@@ -393,6 +393,26 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the submission attributes the draft to the anonymous identity, so a cleartext
+        // destination must fail closed instead of silently leaking the token.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(201, """{"submissionId":"s-1","forwardedToGithub":false}""") }
+        )
+
+        try {
+            insecureClient.submit(
+                FeedbackDraft(title = "Crash", description = "It crashed on launch", platform = FeedbackPlatform.ANDROID),
+                userToken = "secret_user_token"
+            )
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
+    }
+
+    @Test
     fun submitDecodesWarningCode() = runTest {
         val result = client {
             HttpResponse(
@@ -2509,6 +2529,22 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun subscribeToChangelogRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the subscription carries the anonymous identity in the X-User-Token header.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"subscribed":true,"alreadySubscribed":false}""") }
+        )
+
+        try {
+            insecureClient.subscribeToChangelog("user@example.com", userToken = "secret_user_token")
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
+    }
+
+    @Test
     fun subscribeToChangelogSurfacesHttp403TurnstileVerificationFailedAsUnexpectedStatus() = runTest {
         val userToken = "tok_anon_user"
         val errorJson = """{"error":"Human verification failed. Please try again.","code":"turnstile_verification_failed"}"""
@@ -3205,18 +3241,29 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun toggleVotePermitsHttpDestinationWhenShipNotifyEmailIsOmittedOrBlank() = runTest {
+    fun voteRejectsHttpDestinationWhetherOrNotShipNotifyEmailParticipates() = runTest {
+        // #199: the vote request always carries the userToken credential, so a non-HTTPS
+        // destination is rejected regardless of the unrelated optional shipNotifyEmail —
+        // the two parameter shapes must not diverge into silent-leak vs. crash.
         val userToken = UUID.randomUUID().toString()
         val insecureClient = FeedbackClient(
             config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
             transport = HttpTransport { HttpResponse(200, """{"voted":true,"voteCount":1}""") }
         )
 
-        val r1 = insecureClient.toggleVote("fr-205", userToken)
-        assertTrue(r1.voted)
+        try {
+            insecureClient.vote("fr-205", userToken)
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
 
-        val r2 = insecureClient.toggleVote("fr-205", userToken, shipNotifyEmail = "   ")
-        assertTrue(r2.voted)
+        try {
+            insecureClient.vote("fr-205", userToken, shipNotifyEmail = "   ")
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
     }
 
     @Test
@@ -3365,6 +3412,23 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun deleteVoteRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the DELETE vote carries the anonymous identity in both the body and the
+        // X-User-Token header, so a cleartext destination must fail closed.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"voted":false,"voteCount":3}""") }
+        )
+
+        try {
+            insecureClient.deleteVote("fr-12", "secret_user_token")
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
+    }
+
+    @Test
     fun fetchColumnsMapsHttp429ToRateLimited() = runTest {
         try {
             client {
@@ -3476,6 +3540,28 @@ class FeedbackClientTest {
         val payload = requireNotNull(body)
         assertTrue(payload.contains("\"isPaying\":true"))
         assertTrue(payload.contains("\"plan\":\"pro\""))
+    }
+
+    @Test
+    fun updateUserAttributesRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the most sensitive payload in the SDK — the identity token plus HMAC-signed
+        // payment attributes — must never travel over a cleartext destination. The HMAC
+        // authenticates but does not encrypt.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://insecure.example.com",
+                appKey = appKey,
+                sdkSigningSecret = signingSecret
+            ),
+            transport = HttpTransport { HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""") }
+        )
+
+        try {
+            insecureClient.updateUserAttributes(userToken = "secret_user_token", isPaying = true)
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
     }
 
     @Test
@@ -3968,6 +4054,28 @@ class FeedbackClientTest {
         assertTrue(payload.contains("\"replyToAuthorName\":\"Bob\""))
         assertEquals("c-2", comment.id)
         assertEquals("Bob", comment.replyToAuthorName)
+    }
+
+    @Test
+    fun postCommentRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the comment attribution carries the anonymous identity in the X-User-Token header.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport {
+                HttpResponse(201, """{"id":"c-9","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+            }
+        )
+
+        try {
+            insecureClient.postComment(
+                "fr-1",
+                CommentDraft(body = "hi"),
+                userToken = "secret_user_token"
+            )
+            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
     }
 
     @Test
@@ -4877,6 +4985,26 @@ class FeedbackClientTest {
 
         assertEquals("fr_new_1", result.featureRequestId)
         assertFalse(result.pending)
+    }
+
+    @Test
+    fun submitFeatureRequestRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
+        // #199: the requester token travels only in the JSON body (#64), where the central
+        // send() credential guard cannot see it, so the endpoint enforces the policy itself.
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(201, """{"featureRequestId":"fr_new_1","pending":false}""") }
+        )
+
+        try {
+            insecureClient.submitFeatureRequest(
+                FeatureRequestDraft(title = "Custom Keyboard Shortcuts", description = "Allow users to bind custom hotkeys."),
+                userToken = "secret_user_token"
+            )
+            fail("Expected IllegalArgumentException when requesterToken is transmitted over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting userToken"))
+        }
     }
 
     @Test

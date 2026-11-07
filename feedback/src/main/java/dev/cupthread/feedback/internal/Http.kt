@@ -28,13 +28,19 @@ internal fun interface HttpTransport {
     fun execute(request: HttpRequest): HttpResponse
 }
 
-internal fun HttpRequest.shouldFollowRedirects(): Boolean {
-    val hasCredentials = headers.any { (key, value) ->
+/**
+ * True when a request carries a bearer credential (`X-User-Token` or `Authorization` header).
+ * Two policies key on this: redirect-following is disabled so a credential is never replayed
+ * to a redirect target, and the destination scheme must be HTTPS so the credential is never
+ * transmitted in cleartext (issue #199).
+ */
+internal fun HttpRequest.carriesCredentials(): Boolean =
+    headers.any { (key, value) ->
         (key.equals("X-User-Token", ignoreCase = true) || key.equals("Authorization", ignoreCase = true)) &&
             value.isNotBlank()
     }
-    return !hasCredentials
-}
+
+internal fun HttpRequest.shouldFollowRedirects(): Boolean = !carriesCredentials()
 
 internal class UrlConnectionTransport : HttpTransport {
     override fun execute(request: HttpRequest): HttpResponse {
