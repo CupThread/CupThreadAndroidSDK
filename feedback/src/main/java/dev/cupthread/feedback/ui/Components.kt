@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -212,29 +213,44 @@ internal fun HighlightedText(
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     maxLines: Int = Int.MAX_VALUE
 ) {
+    Text(
+        text = highlightedSearchText(text, query, MaterialTheme.colorScheme.primary),
+        style = style,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+/**
+ * Builds the search-highlight rendering of [text] against [query], with each match bolded and
+ * tinted with [highlightColor] (issue #183).
+ *
+ * Matches are located with case-insensitive scans that stay in [text]'s own coordinates. The
+ * previous implementation matched on a `lowercase()`d copy but sliced [text] with those
+ * indexes; full Unicode lowercase mappings can expand in length (`İ` U+0130 → "i\u0307"),
+ * which desynchronized the two coordinate systems and crashed composition with a
+ * `StringIndexOutOfBoundsException` — or silently highlighted the wrong characters when the
+ * drift stayed in bounds. Matching [text] directly cannot drift, and every highlighted run
+ * appends the original substring, so the rendered text is always exactly [text].
+ *
+ * A blank [query] renders [text] without any highlighting.
+ */
+internal fun highlightedSearchText(text: String, query: String, highlightColor: Color): AnnotatedString {
     val needle = query.trim()
-    if (needle.isEmpty()) {
-        Text(text = text, style = style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
-        return
-    }
-    val annotated = buildAnnotatedString {
-        val lower = text.lowercase()
-        val q = needle.lowercase()
+    if (needle.isEmpty()) return AnnotatedString(text)
+    return buildAnnotatedString {
         var start = 0
-        while (start <= text.length) {
-            val index = lower.indexOf(q, start)
-            if (index < 0) {
-                append(text.substring(start))
-                break
-            }
-            append(text.substring(start, index))
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
-                append(text.substring(index, index + needle.length))
+        while (true) {
+            val index = text.indexOf(needle, start, ignoreCase = true)
+            if (index < 0) break
+            append(text, start, index)
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = highlightColor)) {
+                append(text, index, index + needle.length)
             }
             start = index + needle.length
         }
+        append(text, start, text.length)
     }
-    Text(text = annotated, style = style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
