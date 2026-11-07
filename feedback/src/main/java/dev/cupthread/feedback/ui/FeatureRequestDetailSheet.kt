@@ -229,7 +229,7 @@ fun FeatureRequestDetailSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    relativeOrDate(item.createdAt),
+                    friendlyDate(item.createdAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -464,7 +464,7 @@ private fun CommentItemRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        relativeOrDate(comment.createdAt),
+                        friendlyDate(comment.createdAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
