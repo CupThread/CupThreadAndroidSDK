@@ -91,6 +91,18 @@ internal fun encodeQuery(params: List<Pair<String, String>>): String {
 internal fun encodeComponent(value: String): String =
     java.net.URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
+// A caller-supplied filename is interpolated into the raw multipart header block. CR/LF (and any
+// other C0 control character) written verbatim would let a crafted name terminate the header
+// section early and smuggle additional header lines or multipart parts into the request (#162).
+internal val MULTIPART_FILENAME_CONTROL_CHARS = Regex("[\\x00-\\x1F\\x7F]")
+
+/**
+ * Rewrites control characters (including CR/LF) in a caller-supplied multipart filename to spaces
+ * so the name stays a single line inside its quoted `Content-Disposition` attribute.
+ */
+internal fun sanitizeMultipartFilename(filename: String): String =
+    filename.replace(MULTIPART_FILENAME_CONTROL_CHARS, " ")
+
 internal fun multipartBody(
     boundary: String,
     appKey: String,
@@ -100,7 +112,7 @@ internal fun multipartBody(
 ): ByteArray {
     val output = ByteArrayOutputStream()
     fun write(text: String) = output.write(text.toByteArray(StandardCharsets.UTF_8))
-    val safeName = filename.replace("\\", "\\\\").replace("\"", "\\\"")
+    val safeName = sanitizeMultipartFilename(filename).replace("\\", "\\\\").replace("\"", "\\\"")
     write("--$boundary\r\n")
     write("Content-Disposition: form-data; name=\"appKey\"\r\n\r\n")
     write("$appKey\r\n")

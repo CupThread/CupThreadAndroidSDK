@@ -8,6 +8,7 @@ import dev.cupthread.feedback.internal.hmacSha256Hex
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.shouldFollowRedirects
 import dev.cupthread.feedback.internal.userAttributesCanonicalString
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
@@ -449,6 +450,108 @@ class FeedbackClientTest {
         assertEquals(FeedbackAttachment.Kind.IMAGE, attachment.kind)
         assertEquals("uploads/img-123.png", attachment.key)
         assertEquals("https://cdn.example.com/uploads/img-123.png", attachment.url)
+    }
+
+    @Test
+    fun uploadAttachmentNeutralizesCrLfInFilenameBeforeSend() = runTest {
+        // #162: the caller-supplied filename is sanitized before it reaches the multipart body,
+        // so a crafted name cannot terminate the header block early and smuggle extra parts
+        // past the server's multipart parser.
+        val hostileName = "shot.png\r\nX-Evil: injected\r\n\r\n" +
+            "Content-Disposition: form-data; name=\"appKey\"\r\n\r\n" +
+            "other-app\r\n--"
+        var sentBody: ByteArray? = null
+        var sentContentType: String? = null
+        client { request ->
+            sentBody = request.body
+            sentContentType = request.contentType
+            HttpResponse(
+                201,
+                """{"kind":"image","uploadId":"upl_162","stored":true,"filename":"shot.png",
+                    "mimeType":"image/png","size":${validPngBytes.size}}"""
+            )
+        }.uploadAttachment(data = validPngBytes, filename = hostileName, mimeType = "image/png")
+
+        val boundary = requireNotNull(sentContentType).substringAfter("boundary=")
+        val body = String(requireNotNull(sentBody), StandardCharsets.UTF_8)
+        // Exactly one intra-body part separator and one final terminator: no smuggled parts.
+        assertEquals(1, body.split("\r\n--$boundary\r\n").size - 1)
+        assertEquals(1, body.split("\r\n--$boundary--\r\n").size - 1)
+        assertTrue(body.endsWith("\r\n--$boundary--\r\n"))
+        // The injected text survives only inside the quoted filename attribute, never as its
+        // own header line.
+        val lines = body.split("\r\n")
+        assertFalse(lines.any { it.startsWith("X-Evil:") })
+        assertEquals(1, lines.count { it == "Content-Disposition: form-data; name=\"appKey\"" })
+    }
+
+    @Test
+    fun uploadAttachmentSanitizesFilenameOnUploadSessionPath() = runTest {
+        // #162: the non-image (upload-session) path also carries the sanitized name, so the
+        // JSON payload — and the echoed FeedbackAttachment when the server does not return one —
+        // are CRLF-free.
+        val uploadedJson = """
+            {"uploadId":"upl_slot162","clientFileId":"c162","contentType":"text/plain","sizeBytes":2,"sha256":"aa","stored":true}
+        """.trimIndent()
+        val requests = mutableListOf<HttpRequest>()
+
+        val attachment = client { request ->
+            requests += request
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(
+            data = byteArrayOf(0x0A, 0x0D),
+            filename = "log\r\n.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_session"
+        )
+
+        val createBody = JSONObject(String(requireNotNull(requests[0].body), Charsets.UTF_8))
+        assertEquals("log  .txt", createBody.getJSONArray("files").getJSONObject(0).getString("filename"))
+        assertEquals("log  .txt", attachment.filename)
+    }
+
+    @Test
+    fun uploadAttachmentSanitizesServerReturnedFilenameOnImagePath() = runTest {
+        // The response filename is server-controlled, so it passes through the same #162
+        // sanitizer before the FeedbackAttachment is handed back to the caller/UI.
+        val json = """
+            {"kind":"image","uploadId":"upl_resp162","stored":true,
+             "filename":"evil\r\nX-Evil: injected.png","mimeType":"image/png","size":${validPngBytes.size}}
+        """.trimIndent()
+
+        val attachment = client {
+            HttpResponse(201, json)
+        }.uploadAttachment(data = validPngBytes, filename = "shot.png", mimeType = "image/png")
+
+        assertEquals("evil  X-Evil: injected.png", attachment.filename)
+    }
+
+    @Test
+    fun uploadAttachmentSanitizesServerReturnedFilenameOnSessionPath() = runTest {
+        // Non-image path: a server-supplied filename in the PUT response is sanitized too.
+        val uploadedJson = """
+            {"uploadId":"upl_resp162s","clientFileId":"c162s","filename":"evil\r\n.txt",
+             "contentType":"text/plain","sizeBytes":2,"sha256":"aa","stored":true}
+        """.trimIndent()
+
+        val attachment = client { request ->
+            if (request.url.endsWith("/uploads/sessions")) {
+                uploadSessionResponseFor(request)
+            } else {
+                HttpResponse(200, uploadedJson)
+            }
+        }.uploadAttachment(
+            data = byteArrayOf(0x0A, 0x0D),
+            filename = "log.txt",
+            mimeType = "text/plain",
+            userToken = "usr_tok_session"
+        )
+
+        assertEquals("evil  .txt", attachment.filename)
     }
 
     @Test

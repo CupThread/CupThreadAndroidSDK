@@ -164,7 +164,10 @@ data class FeedbackClientConfig(
  *   attachments. Image attachments are stored privately and are only retrievable through the
  *   authorized download route after the feedback submission finalizes; current uploads always
  *   carry [uploadId] and leave [url] `null`.
- * @property filename Original file name provided during upload (e.g., `"screenshot.png"`), or `null`.
+ * @property filename File name for the attachment (e.g., `"screenshot.png"`), or `null`. Control
+ *   characters — CR/LF in particular — in the upload name are rewritten to spaces, and the
+ *   returned name may instead be supplied by the server, so it is not guaranteed to match the
+ *   name passed to [FeedbackClient.uploadAttachment] verbatim.
  * @property mimeType Standard MIME type provided during upload (e.g., `"image/png"`), or `null`.
  * @property size File size in bytes as reported by the storage backend, or `null`.
  * @property uploadId Unique upload identifier assigned by the storage backend, or `null`.
