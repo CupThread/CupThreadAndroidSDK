@@ -292,7 +292,7 @@ internal fun parseListChangelog(json: JSONObject): ListChangelogResult {
     val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
         json.getBoolean("hasMore")
     } else {
-        entries.isNotEmpty() && nextCursor != null
+        entries.isNotEmpty() && !nextCursor.isNullOrBlank()
     }
     return ListChangelogResult(
         entries = entries,
