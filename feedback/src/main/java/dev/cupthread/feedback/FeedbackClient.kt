@@ -787,6 +787,7 @@ class FeedbackClient internal constructor(
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the proposal (HTTP 403 `turnstile_*`).
+     * @throws FeedbackException.RateLimited if the per-client submission rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
      * @throws FeedbackException.InvalidResponse on network or parsing failure.
      *
@@ -831,7 +832,8 @@ class FeedbackClient internal constructor(
                 userToken = null,
                 accepted = setOf(200, 201),
                 mapSubmissionQuotaErrors = true,
-                mapVerificationErrors = true
+                mapVerificationErrors = true,
+                mapRateLimitErrors = true
             )
         )
     }

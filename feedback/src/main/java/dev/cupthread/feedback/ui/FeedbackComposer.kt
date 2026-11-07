@@ -359,6 +359,7 @@ internal fun FeedbackFormBody(
     val alreadyFinalizedError = stringResource(R.string.cupthread_feedback_attachment_already_finalized)
     val verificationRequiredError = stringResource(R.string.cupthread_feedback_verification_required)
     val imageUploadFailedError = stringResource(R.string.cupthread_feedback_image_upload_failed)
+    val submitRateLimitedError = stringResource(R.string.cupthread_features_submit_rate_limited)
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -668,6 +669,10 @@ internal fun FeedbackFormBody(
                         error = verificationRequiredError
                     } catch (ex: FeedbackException.ValidationFailed) {
                         error = validationFailedMessage(ex, fieldLabels, defaultGenericError)
+                    } catch (ex: FeedbackException.RateLimited) {
+                        // The client maps HTTP 429 to the typed RateLimited; show the
+                        // localized text instead of the server message (issue #191).
+                        error = submitRateLimitedError
                     } catch (ex: Exception) {
                         error = ex.message ?: defaultGenericError
                     } finally {

@@ -39,6 +39,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Regression coverage for issue #169: tapping "Send More Feedback" must start a fresh report.
+ * The shared harness also pins the rate-limited submit error text (issue #191).
  *
  * The sheet presentation ([FeedbackComposerSheet] renders [FeedbackFormBody] directly) keeps the
  * form composable in composition while the confirmation is showing, so without an explicit reset
@@ -258,6 +259,35 @@ class FeedbackComposerSendMoreTest {
     }
 
     @Test
+    fun rateLimitedSubmitShowsLocalizedTextInsteadOfServerMessage() {
+        // #191: the client answers a 429 with the typed RateLimited whose message is the
+        // server's own "Too many requests"; the composer must show its localized text for
+        // that case instead of leaking the server message through the generic catch.
+        val rateLimitedClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = "app_sendmore1234",
+                defaultPlatform = FeedbackPlatform.ANDROID
+            ),
+            transport = HttpTransport { request ->
+                calls += request
+                if (request.method == "POST" && request.url.contains("/api/v1/feedback")) {
+                    HttpResponse(429, """{"error":"Too many requests"}""")
+                } else {
+                    HttpResponse(404, """{"error":"not_found"}""")
+                }
+            }
+        )
+        setContent(feedbackClient = rateLimitedClient)
+
+        submitWithTitleAndDescription("Rate limited report", "The composer must localize this failure")
+
+        awaitNode(RATE_LIMITED_SUBMIT)
+        compose.onNodeWithText("Too many requests").assertDoesNotExist()
+        compose.onNodeWithText("failed (429)", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun sendMoreDropsConsumedUploadIdsFromRestoredSeed() {
         // The photo-picker cannot be driven from Robolectric, so the attachments ride the
         // host-supplied initialDraft — the same path a host uses for pre-uploaded diagnostics.
@@ -375,6 +405,7 @@ class FeedbackComposerSendMoreTest {
     }
 
     private companion object {
+        const val RATE_LIMITED_SUBMIT = "You're submitting too fast. Please try again shortly."
         const val WAIT_TIMEOUT_MS = 10_000L
         const val FRAME_MS = 16L
         const val RESPONSE_TIMEOUT_S = 10L

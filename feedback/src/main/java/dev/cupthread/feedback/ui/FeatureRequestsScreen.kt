@@ -756,6 +756,27 @@ private fun FeatureRequestComposeSheet(
     onDismiss: () -> Unit,
     onSubmitted: () -> Unit
 ) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        FeatureRequestComposeSheetBody(
+            client = client,
+            userToken = userToken,
+            onSubmitted = onSubmitted
+        )
+    }
+}
+
+/**
+ * The feature-request form the compose sheet hosts, split out of the modal window so
+ * Robolectric tests can render it directly (same pattern as `FeedbackFormBody`, which
+ * Robolectric cannot query across).
+ */
+@Composable
+internal fun FeatureRequestComposeSheetBody(
+    client: FeedbackClient,
+    userToken: String,
+    onSubmitted: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -765,44 +786,48 @@ private fun FeatureRequestComposeSheet(
     val canSubmit = title.trim().length >= 3 && description.trim().length >= 5
     val defaultSubmitError = stringResource(R.string.cupthread_features_submit_failed)
     val verificationRequiredError = stringResource(R.string.cupthread_feedback_verification_required)
+    val submitRateLimitedError = stringResource(R.string.cupthread_features_submit_rate_limited)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(stringResource(R.string.cupthread_features_compose_title), style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.cupthread_feedback_title_label)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(description, { description = it }, label = { Text(stringResource(R.string.cupthread_feedback_desc_label)) }, modifier = Modifier.fillMaxWidth(), minLines = 4)
-            OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.cupthread_features_your_name_optional)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            if (error != null) {
-                Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            TextButton(
-                onClick = {
-                    scope.launch {
-                        submitting = true
-                        error = null
-                        try {
-                            client.submitFeatureRequest(
-                                FeatureRequestDraft(title, description, name),
-                                userToken
-                            )
-                            onSubmitted()
-                        } catch (ex: FeedbackException.VerificationRequired) {
-                            error = verificationRequiredError
-                        } catch (ex: Exception) {
-                            error = ex.message ?: defaultSubmitError
-                        } finally {
-                            submitting = false
-                        }
+    Column(
+        modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(stringResource(R.string.cupthread_features_compose_title), style = MaterialTheme.typography.titleLarge)
+        OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.cupthread_feedback_title_label)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(description, { description = it }, label = { Text(stringResource(R.string.cupthread_feedback_desc_label)) }, modifier = Modifier.fillMaxWidth(), minLines = 4)
+        OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.cupthread_features_your_name_optional)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        if (error != null) {
+            Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        TextButton(
+            onClick = {
+                scope.launch {
+                    submitting = true
+                    error = null
+                    try {
+                        client.submitFeatureRequest(
+                            FeatureRequestDraft(title, description, name),
+                            userToken
+                        )
+                        onSubmitted()
+                    } catch (ex: FeedbackException.VerificationRequired) {
+                        error = verificationRequiredError
+                    } catch (ex: FeedbackException.RateLimited) {
+                        // The submission endpoint sits behind the same per-client rate
+                        // limiting as the vote paths (issue #191): show the localized
+                        // text instead of the raw 429 response body.
+                        error = submitRateLimitedError
+                    } catch (ex: Exception) {
+                        error = ex.message ?: defaultSubmitError
+                    } finally {
+                        submitting = false
                     }
-                },
-                enabled = canSubmit && !submitting,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text(if (submitting) stringResource(R.string.cupthread_features_compose_sending) else stringResource(R.string.cupthread_features_compose_submit))
-            }
+                }
+            },
+            enabled = canSubmit && !submitting,
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text(if (submitting) stringResource(R.string.cupthread_features_compose_sending) else stringResource(R.string.cupthread_features_compose_submit))
         }
     }
 }
