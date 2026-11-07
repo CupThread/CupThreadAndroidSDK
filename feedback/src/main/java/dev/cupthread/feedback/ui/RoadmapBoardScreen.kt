@@ -53,7 +53,6 @@ import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -395,62 +394,25 @@ private fun RoadmapBoardScreenContent(
                 scope.launch {
                     if (currentItem.isOwnRequest || votingIds.contains(currentItem.id)) return@launch
                     votingIds = votingIds + currentItem.id
-                    // The fresher list row is the baseline for the shared vote state (issue
-                    // #182): the sheet's own snapshot can be stale once a reload replaced
-                    // the list while the sheet stayed open, and mixing the sheet's values
-                    // onto the refetched row rendered the optimistic count below the
-                    // server's baseline — a vote that looks like the count went down. When
-                    // the row is absent from the list, the sheet's own instance stays the
-                    // baseline.
-                    val listRow = requests.firstOrNull { it.id == currentItem.id }
-                    val previous = listRow ?: currentItem
-                    val newVoted = !previous.hasVoted
-                    val newCount = if (previous.hasVoted) previous.voteCount - 1 else previous.voteCount + 1
-                    val optimisticRow = listRow?.withVoteState(newVoted, newCount)
-                    if (listRow != null && optimisticRow != null) {
-                        requests = requests.map { if (it === listRow) optimisticRow else it }
-                    }
-                    // The sheet flips on the same baseline so both views agree during the
-                    // optimistic window even though its copy still shows the stale instance.
-                    val optimisticSelection = currentItem.withVoteState(newVoted, newCount)
-                    selectedItem = optimisticSelection
                     try {
-                        val result = if (previous.hasVoted) {
-                            client.deleteVote(currentItem.id, userToken)
-                        } else {
-                            client.vote(currentItem.id, userToken)
-                        }
-                        requests = requests.map {
-                            if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it
-                        }
-                        selectedItem = reconciledSelection(selectedItem, currentItem.id, result.voted, result.voteCount)
-                    } catch (e: FeedbackException.RateLimited) {
-                        requests = revertedItems(requests, previous, optimisticRow)
-                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
-                        // Fire-and-forget: the vote must release `votingIds` (unblocking
-                        // the pill) without waiting for the snackbar to go away.
-                        showFeedbackSnackbar(e.serverMessage ?: rateLimitedMessage)
-                    } catch (e: FeedbackException.VerificationRequired) {
-                        // The human-verification gate rejected the vote (issue #184): tell
-                        // the user instead of silently reverting the optimistic flip.
-                        requests = revertedItems(requests, previous, optimisticRow)
-                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
-                        showFeedbackSnackbar(voteVerificationMessage)
-                    } catch (e: FeedbackException.AuthenticationRequired) {
-                        // Anonymous voting is disabled on this app (issue #184).
-                        requests = revertedItems(requests, previous, optimisticRow)
-                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
-                        showFeedbackSnackbar(signInRequiredMessage)
-                    } catch (e: CancellationException) {
-                        // Propagate only our own cancellation (issue #190); recover a
-                        // provider-local turnstile timeout as a failure (see the
-                        // FeatureRequestsScreen vote handlers for the rationale).
-                        coroutineContext.ensureActive()
-                        requests = revertedItems(requests, previous, optimisticRow)
-                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
-                    } catch (_: Exception) {
-                        requests = revertedItems(requests, previous, optimisticRow)
-                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
+                        applyOptimisticVote(
+                            readRows = { requests },
+                            commitRows = { requests = it },
+                            readSelection = { selectedItem },
+                            commitSelection = { selectedItem = it },
+                            target = currentItem,
+                            rateLimitedMessage = rateLimitedMessage,
+                            verificationRequiredMessage = voteVerificationMessage,
+                            signInRequiredMessage = signInRequiredMessage,
+                            request = { baseline ->
+                                if (baseline.hasVoted) {
+                                    client.deleteVote(currentItem.id, userToken)
+                                } else {
+                                    client.vote(currentItem.id, userToken)
+                                }
+                            },
+                            onFeedback = { showFeedbackSnackbar(it) }
+                        )
                     } finally {
                         votingIds = votingIds - currentItem.id
                     }
