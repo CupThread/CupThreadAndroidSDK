@@ -251,7 +251,10 @@ private fun RoadmapBoardScreenContent(
             // and paging can resume where it stopped; cool down before further auto loads.
             searchThrottler.penalize()
             loadMoreFailed = true
-            snackbarHostState.showSnackbar(searchRateLimitedMessage)
+            // Fire-and-forget: showSnackbar suspends until dismissal, and loadMore must
+            // release `loadingMore` (unblocking the retry footer) without waiting for the
+            // snackbar to go away.
+            scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -375,7 +378,12 @@ private fun RoadmapBoardScreenContent(
                     } catch (e: FeedbackException.RateLimited) {
                         requests = requests.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
-                        snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
+                        // Fire-and-forget: showSnackbar suspends until dismissal, and the
+                        // vote must release `votingIds` (unblocking the pill) without waiting
+                        // for the snackbar to go away.
+                        scope.launch {
+                            snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
+                        }
                     } catch (_: Exception) {
                         requests = requests.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
