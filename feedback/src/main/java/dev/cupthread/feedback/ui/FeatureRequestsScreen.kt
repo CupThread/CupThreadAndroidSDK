@@ -399,14 +399,16 @@ private fun FeatureRequestsScreenContent(
                                         if (item.isOwnRequest || votingIds.contains(item.id)) return@launch
                                         votingIds = votingIds + item.id
                                         val previous = item
-                                        items = items.map {
-                                            if (it.id == item.id) {
-                                                it.withVoteState(!it.hasVoted, if (it.hasVoted) it.voteCount - 1 else it.voteCount + 1)
-                                            } else it
+                                        val newVoted = !previous.hasVoted
+                                        val newCount = if (previous.hasVoted) previous.voteCount - 1 else previous.voteCount + 1
+                                        val optimisticRow = previous.withVoteState(newVoted, newCount)
+                                        items = items.map { if (it.id == item.id) optimisticRow else it }
+                                        val optimisticSelection = selectedItem
+                                            ?.takeIf { it.id == item.id }
+                                            ?.withVoteState(newVoted, newCount)
+                                        if (optimisticSelection != null) {
+                                            selectedItem = optimisticSelection
                                         }
-                                        selectedItem = if (selectedItem?.id == item.id) {
-                                            selectedItem?.withVoteState(!item.hasVoted, if (item.hasVoted) item.voteCount - 1 else item.voteCount + 1)
-                                        } else selectedItem
                                         try {
                                             val result = if (previous.hasVoted) {
                                                 client.deleteVote(item.id, userToken)
@@ -416,23 +418,17 @@ private fun FeatureRequestsScreenContent(
                                             items = items.map {
                                                 if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
                                             }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
-                                            }
+                                            selectedItem = reconciledSelection(selectedItem, item.id, result.voted, result.voteCount)
                                         } catch (e: FeedbackException.RateLimited) {
-                                            items = items.map { if (it.id == item.id) previous else it }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = previous
-                                            }
+                                            items = revertedItems(items, previous, optimisticRow)
+                                            selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                                             // Fire-and-forget: the vote must release
                                             // `votingIds` (unblocking the pill) without
                                             // waiting for the snackbar to go away.
                                             showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                                         } catch (_: Exception) {
-                                            items = items.map { if (it.id == item.id) previous else it }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = previous
-                                            }
+                                            items = revertedItems(items, previous, optimisticRow)
+                                            selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                                         } finally {
                                             votingIds = votingIds - item.id
                                         }
@@ -483,8 +479,13 @@ private fun FeatureRequestsScreenContent(
                     val previous = currentItem
                     val newVoted = !currentItem.hasVoted
                     val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
-                    items = items.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it }
-                    selectedItem = currentItem.withVoteState(newVoted, newCount)
+                    val listRow = items.firstOrNull { it.id == currentItem.id }
+                    val optimisticRow = listRow?.withVoteState(newVoted, newCount)
+                    if (listRow != null && optimisticRow != null) {
+                        items = items.map { if (it === listRow) optimisticRow else it }
+                    }
+                    val optimisticSelection = currentItem.withVoteState(newVoted, newCount)
+                    selectedItem = optimisticSelection
                     try {
                         val result = if (previous.hasVoted) {
                             client.deleteVote(currentItem.id, userToken)
@@ -492,16 +493,16 @@ private fun FeatureRequestsScreenContent(
                             client.vote(currentItem.id, userToken)
                         }
                         items = items.map { if (it.id == currentItem.id) it.withVoteState(result.voted, result.voteCount) else it }
-                        selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
+                        selectedItem = reconciledSelection(selectedItem, currentItem.id, result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
-                        items = items.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = previous
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
                         showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
-                        items = items.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = previous
+                        items = revertedItems(items, listRow ?: previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id
                     }
@@ -517,6 +518,69 @@ private fun FeatureRequestsScreenContent(
             onDismiss = { selectedProfileUserId = null }
         )
     }
+}
+
+/**
+ * Reverts exactly the optimistic vote change from a row list (issue #178): the tap-time
+ * [previous] row replaces only [optimistic] — the instance the optimistic update put into
+ * the list. A row refetched while the vote was in flight (pull-to-refresh, a search or
+ * version reload, token rotation) is a different instance and keeps its fresh server state
+ * instead of being clobbered by the stale tap-time snapshot.
+ *
+ * One refetch shape is reconciled rather than skipped: a response snapshotted before the
+ * failed call's target change (e.g. taken before an overlapping upvote was applied) can
+ * replace [optimistic] while still carrying its pre-revert vote state. Such a row still
+ * shows the state the failed call was supposed to undo, so [previous]'s vote values are
+ * applied onto it — while its other refetched fields survive.
+ */
+internal fun revertedItems(
+    items: List<FeatureRequestItem>,
+    previous: FeatureRequestItem,
+    optimistic: FeatureRequestItem?
+): List<FeatureRequestItem> = when (optimistic) {
+    null -> items
+    else -> items.map { row ->
+        when {
+            row === optimistic -> previous
+            row.id == optimistic.id &&
+                row.hasVoted == optimistic.hasVoted &&
+                row.voteCount == optimistic.voteCount ->
+                row.withVoteState(previous.hasVoted, previous.voteCount)
+            else -> row
+        }
+    }
+}
+
+/**
+ * Instance-level revert for a detail-sheet item: restores the tap-time vote values only
+ * while the sheet still shows [optimisticSelection], the copy the optimistic update set.
+ * A dismissed sheet (null) or one reopened on a refetched row is left untouched.
+ */
+internal fun revertedSelection(
+    selection: FeatureRequestItem?,
+    optimisticSelection: FeatureRequestItem?,
+    previous: FeatureRequestItem
+): FeatureRequestItem? = if (selection != null && selection === optimisticSelection) {
+    selection.withVoteState(previous.hasVoted, previous.voteCount)
+} else {
+    selection
+}
+
+/**
+ * Applies a successful vote's returned state onto the current detail-sheet selection, but
+ * only while the selection still shows the voted request: a sheet dismissed or reopened
+ * on another request while the vote was in flight is neither resurrected nor swapped, and
+ * a selection refetched to a fresher instance of the same request keeps its newer fields.
+ */
+internal fun reconciledSelection(
+    selection: FeatureRequestItem?,
+    votedId: String,
+    voted: Boolean,
+    voteCount: Int
+): FeatureRequestItem? = when {
+    selection == null -> null
+    selection.id != votedId -> selection
+    else -> selection.withVoteState(voted, voteCount)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
