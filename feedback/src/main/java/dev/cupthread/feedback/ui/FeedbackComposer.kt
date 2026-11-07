@@ -227,6 +227,8 @@ private fun FeedbackComposerContent(
             FeedbackSent(
                 warning = result?.warning,
                 modifier = Modifier.padding(padding),
+                // FeedbackFormBody leaves composition while the confirmation is showing, so
+                // its draft state is recreated from the same seed when the user sends more.
                 onSendMore = { result = null }
             )
         } else {
@@ -252,7 +254,7 @@ private fun FeedbackComposerContent(
 }
 
 @Composable
-private fun FeedbackFormBody(
+internal fun FeedbackFormBody(
     client: FeedbackClient,
     userToken: String?,
     initialDraft: FeedbackDraft?,
@@ -264,22 +266,21 @@ private fun FeedbackFormBody(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var draft by remember {
-        mutableStateOf(
-            initialDraft ?: run {
-                val info = try {
-                    context.packageManager.getPackageInfo(context.packageName, 0)
-                } catch (_: PackageManager.NameNotFoundException) {
-                    null
-                }
-                FeedbackDraft.autofilled(
-                    platform = client.config.defaultPlatform,
-                    versionName = info?.versionName.orEmpty(),
-                    versionCode = info?.longVersionCode?.toString().orEmpty()
-                )
-            }
+    // Seed used both for the first presentation and for "Send more" resets: the host-provided
+    // draft when one was supplied, otherwise an auto-filled draft for the current package.
+    fun freshDraft(): FeedbackDraft = initialDraft ?: run {
+        val info = try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        }
+        FeedbackDraft.autofilled(
+            platform = client.config.defaultPlatform,
+            versionName = info?.versionName.orEmpty(),
+            versionCode = info?.longVersionCode?.toString().orEmpty()
         )
     }
+    var draft by remember { mutableStateOf(freshDraft()) }
     var submitting by remember { mutableStateOf(false) }
     var uploadingAttachment by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -459,7 +460,14 @@ private fun FeedbackFormBody(
         FeedbackSent(
             warning = result?.warning,
             modifier = modifier,
-            onSendMore = { result = null }
+            onSendMore = {
+                // "Send more" starts a new report: the submitted text and its server-finalized
+                // uploadIds must not survive into the next submission (resubmitting them
+                // answers 409 attachment_already_finalized).
+                result = null
+                error = null
+                draft = freshDraft()
+            }
         )
         return
     }
