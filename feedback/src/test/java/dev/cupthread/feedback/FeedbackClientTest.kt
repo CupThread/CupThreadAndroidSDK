@@ -2095,6 +2095,172 @@ class FeedbackClientTest {
         }
     }
 
+    // Issue #200: every public parsing endpoint must surface contract drift (a 200 body that
+    // parses as JSON but is missing a required field) as the documented
+    // FeedbackException.InvalidResponse with the JSONException as cause — not as a raw
+    // org.json.JSONException. One test per endpoint from the issue's table.
+
+    @Test
+    fun submitThrowsInvalidResponseWhenSubmissionIdMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"forwardedToGithub":false}""")
+        }
+        try {
+            c.submit(
+                FeedbackDraft(title = "Crash", description = "It crashed on launch", platform = FeedbackPlatform.ANDROID)
+            )
+            fail("Expected InvalidResponse when 'submissionId' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun submitFeatureRequestThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(201, """{"pending":false}""")
+        }
+        try {
+            c.submitFeatureRequest(
+                FeatureRequestDraft(title = "Custom Keyboard Shortcuts", description = "Allow users to bind custom hotkeys."),
+                userToken = "tok_anon_user"
+            )
+            fail("Expected InvalidResponse when 'featureRequestId' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchAppConfigThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"appKey":"app_testkey123456","slug":"test","name":"Test"}""")
+        }
+        try {
+            c.fetchAppConfig()
+            fail("Expected InvalidResponse when 'appId' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchColumnsThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"columns":[{"appId":"app_1","name":"Todo","slug":"todo"}]}""")
+        }
+        try {
+            c.fetchColumns()
+            fail("Expected InvalidResponse when a column is missing 'id'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchVersionsThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"versions":[{"id":"v1","appId":"app_1"}]}""")
+        }
+        try {
+            c.fetchVersions()
+            fail("Expected InvalidResponse when a version is missing 'label'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchFeatureRequestsThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"requests":[{"id":"fr_1","appId":"app_1"}],"total":1,"hasMore":false}""")
+        }
+        try {
+            c.fetchFeatureRequests(userToken = "tok_anon_user")
+            fail("Expected InvalidResponse when a request is missing 'title'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun voteThrowsInvalidResponseWhenVotedFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, "{}")
+        }
+        try {
+            c.vote("fr-drift", userToken = "tok_anon_user")
+            fail("Expected InvalidResponse when 'voted' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun deleteVoteThrowsInvalidResponseWhenVotedFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, "{}")
+        }
+        try {
+            c.deleteVote("fr-drift", userToken = "tok_anon_user")
+            fail("Expected InvalidResponse when 'voted' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchCommentsPageThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"comments":[{"id":"c1"}],"total":1,"hasMore":false}""")
+        }
+        try {
+            c.fetchCommentsPage("fr-drift")
+            fail("Expected InvalidResponse when a comment is missing 'body'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun postCommentThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(201, """{"id":"c-9","featureRequestId":"fr-drift"}""")
+        }
+        try {
+            c.postComment("fr-drift", CommentDraft(body = "hi"), userToken = "tok_anon_user")
+            fail("Expected InvalidResponse when the comment is missing 'body'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchChangelogPageThrowsInvalidResponseWhenRequiredFieldMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"entries":[{"id":"cl_1","title":"Release"}],"hasMore":false}""")
+        }
+        try {
+            c.fetchChangelogPage()
+            fail("Expected InvalidResponse when an entry is missing 'publishedAt'")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
+    @Test
+    fun fetchUserProfileThrowsInvalidResponseWhenProfileMissing() = runTest {
+        val c = client {
+            HttpResponse(200, """{"publicApps":[],"recentComments":[]}""")
+        }
+        try {
+            c.fetchUserProfile("u_123")
+            fail("Expected InvalidResponse when 'profile' is missing")
+        } catch (e: FeedbackException.InvalidResponse) {
+            assertTrue(e.cause is org.json.JSONException)
+        }
+    }
+
     @Test
     fun fetchFeatureRequestRequiresHttpsWhenUserTokenProvided() = runTest {
         val insecureClient = FeedbackClient(

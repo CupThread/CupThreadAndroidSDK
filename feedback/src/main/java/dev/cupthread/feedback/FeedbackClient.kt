@@ -34,6 +34,7 @@ import dev.cupthread.feedback.internal.parseFeatureRequestSubmission
 import dev.cupthread.feedback.internal.parseFeedbackSubmission
 import dev.cupthread.feedback.internal.parseListChangelog
 import dev.cupthread.feedback.internal.parseListFeatureRequests
+import dev.cupthread.feedback.internal.parseOrInvalidResponse
 import dev.cupthread.feedback.internal.parsePublicAppConfig
 import dev.cupthread.feedback.internal.parsePublicUserProfileResult
 import dev.cupthread.feedback.internal.parseUserAttributesUpdate
@@ -52,7 +53,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -223,21 +223,23 @@ class FeedbackClient internal constructor(
             challenge = TurnstileChallenge.feedback(config.appKey),
             explicitToken = turnstileToken
         ) { token ->
-            parseFeedbackSubmission(
-                sendJson(
-                    method = "POST",
-                    path = "/api/v1/feedback",
-                    body = feedbackSubmitPayload(draft, token),
-                    userToken = userToken,
-                    accepted = setOf(200, 201, 202),
-                    mapSubmissionQuotaErrors = true,
-                    mapAttachmentScanErrors = true,
-                    mapAttachmentAlreadyFinalizedErrors = true,
-                    mapVerificationErrors = true,
-                    mapUploaderErrors = true,
-                    mapRateLimitErrors = true
+            parseOrInvalidResponse {
+                parseFeedbackSubmission(
+                    sendJson(
+                        method = "POST",
+                        path = "/api/v1/feedback",
+                        body = feedbackSubmitPayload(draft, token),
+                        userToken = userToken,
+                        accepted = setOf(200, 201, 202),
+                        mapSubmissionQuotaErrors = true,
+                        mapAttachmentScanErrors = true,
+                        mapAttachmentAlreadyFinalizedErrors = true,
+                        mapVerificationErrors = true,
+                        mapUploaderErrors = true,
+                        mapRateLimitErrors = true
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -556,7 +558,9 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchAppConfig(): PublicAppConfig {
-        val appConfig = parsePublicAppConfig(get("/api/v1/public/config/${encodePathSegment(config.appKey)}"))
+        val appConfig = parseOrInvalidResponse {
+            parsePublicAppConfig(get("/api/v1/public/config/${encodePathSegment(config.appKey)}"))
+        }
         SdkAppearanceCache.put(config.baseUrl, config.appKey, appConfig.sdk)
         return appConfig
     }
@@ -582,9 +586,11 @@ class FeedbackClient internal constructor(
     suspend fun fetchColumns(): List<BoardColumn> {
         val json = get("/api/v1/public/columns/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
         val array = json.optJSONArray("columns") ?: JSONArray()
-        return buildList {
-            for (i in 0 until array.length()) add(parseBoardColumn(array.getJSONObject(i)))
-        }.sortedBy { it.position }
+        return parseOrInvalidResponse {
+            buildList {
+                for (i in 0 until array.length()) add(parseBoardColumn(array.getJSONObject(i)))
+            }.sortedBy { it.position }
+        }
     }
 
     /**
@@ -608,9 +614,11 @@ class FeedbackClient internal constructor(
     suspend fun fetchVersions(): List<AppVersion> {
         val json = get("/api/v1/public/versions/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
         val array = json.optJSONArray("versions") ?: JSONArray()
-        return buildList {
-            for (i in 0 until array.length()) add(parseAppVersion(array.getJSONObject(i)))
-        }.sortedBy { it.position }
+        return parseOrInvalidResponse {
+            buildList {
+                for (i in 0 until array.length()) add(parseAppVersion(array.getJSONObject(i)))
+            }.sortedBy { it.position }
+        }
     }
 
     /**
@@ -669,16 +677,18 @@ class FeedbackClient internal constructor(
         if (!versionId.isNullOrBlank()) params += "versionId" to versionId
         if (!query.isNullOrBlank()) params += "q" to query
         if (!cursor.isNullOrBlank()) params += "cursor" to cursor
-        return parseListFeatureRequests(
-            get(
-                path = "/api/v1/feature-requests?${encodeQuery(params)}",
-                userToken = userToken,
-                // Search 429s surface as a typed RateLimited error instead of a raw JSON body
-                // inside UnexpectedStatus (issue #23).
-                mapRateLimitErrors = true
-            ),
-            offset
-        )
+        return parseOrInvalidResponse {
+            parseListFeatureRequests(
+                get(
+                    path = "/api/v1/feature-requests?${encodeQuery(params)}",
+                    userToken = userToken,
+                    // Search 429s surface as a typed RateLimited error instead of a raw JSON body
+                    // inside UnexpectedStatus (issue #23).
+                    mapRateLimitErrors = true
+                ),
+                offset
+            )
+        }
     }
 
     /**
@@ -751,11 +761,7 @@ class FeedbackClient internal constructor(
         )
         val requestJson = json.optJSONObject("request")
             ?: throw FeedbackException.InvalidResponse(IllegalStateException("Missing 'request' in response: $json"))
-        return try {
-            parseFeatureRequestItem(requestJson)
-        } catch (error: JSONException) {
-            throw FeedbackException.InvalidResponse(error)
-        }
+        return parseOrInvalidResponse { parseFeatureRequestItem(requestJson) }
     }
 
     /**
@@ -843,18 +849,20 @@ class FeedbackClient internal constructor(
                     put("turnstileToken", token)
                 }
             }
-            parseFeatureRequestSubmission(
-                sendJson(
-                    method = "POST",
-                    path = "/api/v1/feature-requests",
-                    body = payload,
-                    userToken = null,
-                    accepted = setOf(200, 201),
-                    mapSubmissionQuotaErrors = true,
-                    mapVerificationErrors = true,
-                    mapRateLimitErrors = true
+            parseOrInvalidResponse {
+                parseFeatureRequestSubmission(
+                    sendJson(
+                        method = "POST",
+                        path = "/api/v1/feature-requests",
+                        body = payload,
+                        userToken = null,
+                        accepted = setOf(200, 201),
+                        mapSubmissionQuotaErrors = true,
+                        mapVerificationErrors = true,
+                        mapRateLimitErrors = true
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -995,17 +1003,19 @@ class FeedbackClient internal constructor(
                     put("shipNotifyEmail", it)
                 }
             }
-            parseVoteResult(
-                sendJson(
-                    method = "POST",
-                    path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
-                    body = payload,
-                    userToken = userToken,
-                    accepted = setOf(200),
-                    mapRateLimitErrors = true,
-                    mapVerificationErrors = true
+            parseOrInvalidResponse {
+                parseVoteResult(
+                    sendJson(
+                        method = "POST",
+                        path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
+                        body = payload,
+                        userToken = userToken,
+                        accepted = setOf(200),
+                        mapRateLimitErrors = true,
+                        mapVerificationErrors = true
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -1074,16 +1084,18 @@ class FeedbackClient internal constructor(
             put("appKey", config.appKey)
             put("userToken", userToken)
         }
-        return parseVoteResult(
-            sendJson(
-                method = "DELETE",
-                path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
-                body = payload,
-                userToken = userToken,
-                accepted = setOf(200),
-                mapRateLimitErrors = true
+        return parseOrInvalidResponse {
+            parseVoteResult(
+                sendJson(
+                    method = "DELETE",
+                    path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
+                    body = payload,
+                    userToken = userToken,
+                    accepted = setOf(200),
+                    mapRateLimitErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1146,7 +1158,7 @@ class FeedbackClient internal constructor(
             mapRateLimitErrors = true,
             mapCommentsUnavailableErrors = true
         )
-        return parseListComments(json)
+        return parseOrInvalidResponse { parseListComments(json) }
     }
 
     /**
@@ -1253,17 +1265,19 @@ class FeedbackClient internal constructor(
             putOptString("replyToClerkId", draft.replyToClerkId)
             putOptString("replyToAuthorName", draft.replyToAuthorName?.trim()?.ifEmpty { null })
         }
-        return parseFeatureRequestComment(
-            sendJson(
-                method = "POST",
-                path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments",
-                body = payload,
-                userToken = userToken,
-                accepted = setOf(200, 201),
-                mapCommentErrors = true,
-                mapRateLimitErrors = true
+        return parseOrInvalidResponse {
+            parseFeatureRequestComment(
+                sendJson(
+                    method = "POST",
+                    path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments",
+                    body = payload,
+                    userToken = userToken,
+                    accepted = setOf(200, 201),
+                    mapCommentErrors = true,
+                    mapRateLimitErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1308,7 +1322,7 @@ class FeedbackClient internal constructor(
             "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog?${encodeQuery(params)}",
             mapRateLimitErrors = true
         )
-        return parseListChangelog(json)
+        return parseOrInvalidResponse { parseListChangelog(json) }
     }
 
     /**
@@ -1480,17 +1494,19 @@ class FeedbackClient internal constructor(
                 put("turnstileToken", it)
             }
         }
-        return parseChangelogSubscription(
-            sendJson(
-                "POST",
-                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/subscribe",
-                payload,
-                userToken = userToken,
-                accepted = setOf(200, 201),
-                mapRateLimitErrors = true,
-                mapEmailNotVerifiedErrors = true
+        return parseOrInvalidResponse {
+            parseChangelogSubscription(
+                sendJson(
+                    "POST",
+                    "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/subscribe",
+                    payload,
+                    userToken = userToken,
+                    accepted = setOf(200, 201),
+                    mapRateLimitErrors = true,
+                    mapEmailNotVerifiedErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1547,14 +1563,16 @@ class FeedbackClient internal constructor(
             "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
         }
         val payload = JSONObject().put("token", token.trim())
-        return parseChangelogUnsubscribe(
-            sendJson(
-                "POST",
-                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe",
-                payload,
-                accepted = setOf(200)
+        return parseOrInvalidResponse {
+            parseChangelogUnsubscribe(
+                sendJson(
+                    "POST",
+                    "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe",
+                    payload,
+                    accepted = setOf(200)
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1665,11 +1683,7 @@ class FeedbackClient internal constructor(
             payload,
             accepted = setOf(200)
         )
-        return try {
-            parseChangelogConfirmationResult(response)
-        } catch (e: JSONException) {
-            throw FeedbackException.InvalidResponse(e)
-        }
+        return parseOrInvalidResponse { parseChangelogConfirmationResult(response) }
     }
 
     /**
@@ -1766,17 +1780,19 @@ class FeedbackClient internal constructor(
             payload.put("timestamp", timestampSeconds)
             payload.put("signature", signature)
         }
-        return parseUserAttributesUpdate(
-            sendJson(
-                "PUT",
-                "/api/v1/public/apps/${encodePathSegment(config.appKey)}/user",
-                payload,
-                userToken = userToken,
-                accepted = setOf(200),
-                mapRateLimitErrors = true,
-                mapUserAttributeErrors = true
+        return parseOrInvalidResponse {
+            parseUserAttributesUpdate(
+                sendJson(
+                    "PUT",
+                    "/api/v1/public/apps/${encodePathSegment(config.appKey)}/user",
+                    payload,
+                    userToken = userToken,
+                    accepted = setOf(200),
+                    mapRateLimitErrors = true,
+                    mapUserAttributeErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1804,12 +1820,14 @@ class FeedbackClient internal constructor(
         require(userId.isNotBlank()) { "userId cannot be blank" }
         val trimmedId = userId.trim()
         val query = encodeQuery(listOf("appKey" to config.appKey))
-        return parsePublicUserProfileResult(
-            get(
-                path = "/api/v1/users/${encodePathSegment(trimmedId)}/profile?$query",
-                mapRateLimitErrors = true
+        return parseOrInvalidResponse {
+            parsePublicUserProfileResult(
+                get(
+                    path = "/api/v1/users/${encodePathSegment(trimmedId)}/profile?$query",
+                    mapRateLimitErrors = true
+                )
             )
-        )
+        }
     }
 
     /**
@@ -1866,11 +1884,7 @@ class FeedbackClient internal constructor(
             bearerToken = sessionToken?.trim()?.takeIf { it.isNotEmpty() },
             accepted = setOf(200)
         )
-        return try {
-            parseEndUserEraseResult(response)
-        } catch (e: JSONException) {
-            throw FeedbackException.InvalidResponse(e)
-        }
+        return parseOrInvalidResponse { parseEndUserEraseResult(response) }
     }
 
     /**
@@ -1924,11 +1938,7 @@ class FeedbackClient internal constructor(
             bearerToken = sessionToken.trim(),
             accepted = setOf(200)
         )
-        return try {
-            parseEndUserLinkResult(response)
-        } catch (e: JSONException) {
-            throw FeedbackException.InvalidResponse(e)
-        }
+        return parseOrInvalidResponse { parseEndUserLinkResult(response) }
     }
 
     private fun defaultMetadata(draft: FeedbackDraft): Map<String, String> {

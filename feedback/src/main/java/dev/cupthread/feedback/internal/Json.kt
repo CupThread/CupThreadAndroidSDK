@@ -37,6 +37,7 @@ import dev.cupthread.feedback.UserAttributesUpdateResult
 import dev.cupthread.feedback.VoteResult
 import dev.cupthread.feedback.VoteWarning
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -53,6 +54,26 @@ internal fun JSONObject.intOr(name: String, default: Int): Int =
 
 internal fun JSONObject.longOr(name: String, default: Long): Long =
     if (!has(name) || isNull(name)) default else getLong(name)
+
+/**
+ * Parses a 200 response body, translating contract drift into the documented
+ * [FeedbackException.InvalidResponse] (issue #200): the parsers below throw a raw
+ * `JSONException` when a required field is missing, renamed, or mistyped, but every public
+ * `FeedbackClient` method documents the typed exception, so hosts that catch it get one
+ * failure shape regardless of which endpoint drifted. The wrapping happens once here instead
+ * of as ad-hoc `try/catch` copies at each call site.
+ *
+ * Upload responses are exempt: they keep their deliberate catch-all
+ * [FeedbackException.UnreadableUploadResponse] contract, and
+ * [parseWeeklyDigestUnsubscribe] stays strict on its own (it already throws
+ * [FeedbackException.InvalidResponse] directly, which passes through this helper unchanged).
+ */
+internal inline fun <T> parseOrInvalidResponse(block: () -> T): T =
+    try {
+        block()
+    } catch (error: JSONException) {
+        throw FeedbackException.InvalidResponse(error)
+    }
 
 internal fun parsePublicAppConfig(json: JSONObject): PublicAppConfig {
     val platforms = json.optJSONArray("allowedPlatforms") ?: JSONArray()
