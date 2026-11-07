@@ -181,8 +181,11 @@ private fun WhatsNewScreenContent(
 
     LaunchedEffect(client) { load() }
 
-    LaunchedEffect(listState, hasMore, entries.size) {
-        if (!hasMore) return@LaunchedEffect
+    // Failed pages stop auto-paging (same contract as FeatureRequestsScreen/RoadmapBoardScreen):
+    // keying on `loadMoreFailed` disposes the scroll collector while the failure persists, so
+    // scroll events cannot keep re-firing page requests behind the footer's explicit Retry.
+    LaunchedEffect(listState, hasMore, entries.size, loadMoreFailed) {
+        if (!hasMore || loadMoreFailed) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { lastVisible ->
                 if (lastVisible >= entries.size - 3) loadMore()
