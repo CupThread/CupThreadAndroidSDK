@@ -156,6 +156,9 @@ private fun RoadmapBoardScreenContent(
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
+    // Non-null while the last refresh of the already-rendered board failed: the board stays
+    // mounted (issue #163) and the value is the failure message shown by the inline retry banner.
+    var refreshFailed by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
@@ -189,6 +192,7 @@ private fun RoadmapBoardScreenContent(
         loading = true
         error = null
         loadMoreFailed = false
+        refreshFailed = null
         try {
             val fetchedColumns = client.fetchColumns()
             // A pull-to-refresh launch outlives a token rotation (the collector restarts
@@ -213,7 +217,17 @@ private fun RoadmapBoardScreenContent(
                 error = e.message
             }
         } catch (ex: Exception) {
-            error = ex.message ?: defaultLoadError
+            if (hasLoaded) {
+                // Keep the last successful board on screen: a failed refresh must not wipe
+                // already-rendered content (issue #163), matching the 429 handling above. The
+                // pager already reset its paging position, so paging must not continue into
+                // the retained results (and the no-match auto-pagination effect must stop).
+                hasMore = false
+                refreshFailed = ex.message ?: defaultLoadError
+                snackbarHostState.showSnackbar(ex.message ?: defaultLoadError)
+            } else {
+                error = ex.message ?: defaultLoadError
+            }
         } finally {
             if (generation == loadGeneration) loading = false
         }
@@ -303,16 +317,24 @@ private fun RoadmapBoardScreenContent(
                             onLoadMore = { scope.launch { loadMore() } }
                         )
                     }
-                    else -> PagedBoard(
-                        groups = visible,
-                        query = search,
-                        hasMore = hasMore,
-                        loadingMore = loadingMore,
-                        loadMoreFailed = loadMoreFailed,
-                        onLoadMore = { scope.launch { loadMore() } },
-                        onCardClick = { selectedItem = it },
-                        onOpenProfile = { selectedProfileUserId = it }
-                    )
+                    else -> Column(Modifier.fillMaxSize()) {
+                        refreshFailed?.let { message ->
+                            RefreshFailedBanner(
+                                message = message,
+                                onRetry = { scope.launch { load() } }
+                            )
+                        }
+                        PagedBoard(
+                            groups = visible,
+                            query = search,
+                            hasMore = hasMore,
+                            loadingMore = loadingMore,
+                            loadMoreFailed = loadMoreFailed,
+                            onLoadMore = { scope.launch { loadMore() } },
+                            onCardClick = { selectedItem = it },
+                            onOpenProfile = { selectedProfileUserId = it }
+                        )
+                    }
                 }
             }
         }

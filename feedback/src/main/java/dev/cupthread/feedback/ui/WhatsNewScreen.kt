@@ -121,6 +121,9 @@ private fun WhatsNewScreenContent(
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
+    // Non-null while the last refresh of already-rendered entries failed: the list stays
+    // mounted (issue #163) and the value is the failure message shown by the inline retry banner.
+    var refreshFailed by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var subscribeOpen by remember { mutableStateOf(false) }
     val defaultLoadError = stringResource(R.string.cupthread_whatsnew_empty_body)
@@ -130,19 +133,30 @@ private fun WhatsNewScreenContent(
         loading = true
         error = null
         loadMoreFailed = false
+        refreshFailed = null
         try {
             // When the pager discards this page because a newer load superseded it, keep the
             // newer load's entries on screen instead of overwriting them.
             val page = pager.loadFirstPage() ?: return
             entries = page.entries
             hasMore = pager.hasMore
+            // Set on success only (like the other bundled screens): a failed first load must
+            // not make later attempts look like refreshes of preserved content.
+            hasLoaded = true
         } catch (ex: FeedbackException.AuthenticationRequired) {
             error = ex.message
         } catch (ex: Exception) {
-            error = ex.message ?: defaultLoadError
+            if (hasLoaded) {
+                // Keep the last successful entries on screen: a failed refresh must not wipe
+                // already-rendered content (issue #163). The pager already reset its paging
+                // position, so paging must not continue into the retained entries.
+                hasMore = false
+                refreshFailed = ex.message ?: defaultLoadError
+            } else {
+                error = ex.message ?: defaultLoadError
+            }
         } finally {
             if (generation == loadGeneration) loading = false
-            hasLoaded = true
         }
     }
 
@@ -194,34 +208,46 @@ private fun WhatsNewScreenContent(
             when {
                 loading && !hasLoaded -> androidx.compose.foundation.layout.Box(Modifier.padding(16.dp)) { SkeletonCardList() }
                 error != null -> LoadErrorState(error!!) { scope.launch { load() } }
-                else -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
-                ) {
-                    if (entries.isEmpty()) {
+                else -> Column(Modifier.fillMaxSize()) {
+                    // A failed refresh keeps the rendered entries and shows this fixed,
+                    // always-visible retry banner instead of the full-screen error state
+                    // (issue #163). It sits outside the LazyColumn so the key-anchored list
+                    // can never scroll it above the viewport.
+                    refreshFailed?.let { message ->
+                        RefreshFailedBanner(
+                            message = message,
+                            onRetry = { scope.launch { load() } }
+                        )
+                    }
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp)
+                    ) {
+                        if (entries.isEmpty()) {
+                            item {
+                                EmptyState(
+                                    title = stringResource(R.string.cupthread_whatsnew_empty_title),
+                                    body = stringResource(R.string.cupthread_whatsnew_empty_body)
+                                )
+                            }
+                        }
+                        items(entries, key = { it.id }) { entry ->
+                            ChangelogCard(entry)
+                        }
+                        if (hasMore || loadingMore || loadMoreFailed) {
+                            item(key = "paging-footer") {
+                                PagingFooter(
+                                    loading = loadingMore,
+                                    failed = loadMoreFailed,
+                                    onLoadMore = { scope.launch { loadMore() } }
+                                )
+                            }
+                        }
                         item {
-                            EmptyState(
-                                title = stringResource(R.string.cupthread_whatsnew_empty_title),
-                                body = stringResource(R.string.cupthread_whatsnew_empty_body)
-                            )
+                            SubscribeFooter { subscribeOpen = true }
                         }
-                    }
-                    items(entries, key = { it.id }) { entry ->
-                        ChangelogCard(entry)
-                    }
-                    if (hasMore || loadingMore || loadMoreFailed) {
-                        item(key = "paging-footer") {
-                            PagingFooter(
-                                loading = loadingMore,
-                                failed = loadMoreFailed,
-                                onLoadMore = { scope.launch { loadMore() } }
-                            )
-                        }
-                    }
-                    item {
-                        SubscribeFooter { subscribeOpen = true }
                     }
                 }
             }

@@ -327,6 +327,35 @@ internal fun PagingFooter(loading: Boolean, failed: Boolean, onLoadMore: () -> U
     }
 }
 
+/**
+ * Non-destructive inline banner for a failed refresh of already-rendered content (issue #163):
+ * the rows stay on screen and the banner offers a retry that re-runs the full load.
+ *
+ * @param message Failure description shown inside the banner.
+ * @param onRetry Invoked when the user taps the retry action.
+ */
+@Composable
+internal fun RefreshFailedBanner(message: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(onClick = onRetry) {
+            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.cupthread_common_retry))
+        }
+    }
+}
+
 @Composable
 internal fun ColumnChip(
     name: String,

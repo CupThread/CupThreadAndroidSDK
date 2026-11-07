@@ -144,6 +144,9 @@ private fun FeatureRequestsScreenContent(
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
+    // Non-null while the last refresh of already-rendered rows failed: the rows stay mounted
+    // (issue #163) and the value is the failure message shown by the inline retry banner.
+    var refreshFailed by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var versionId by remember { mutableStateOf<String?>(null) }
@@ -182,6 +185,7 @@ private fun FeatureRequestsScreenContent(
         loading = true
         error = null
         loadMoreFailed = false
+        refreshFailed = null
         try {
             // A pull-to-refresh launch outlives a token rotation (the search collector restarts
             // instead). When the pager discards this page because a newer load superseded it,
@@ -204,7 +208,17 @@ private fun FeatureRequestsScreenContent(
                 error = e.message
             }
         } catch (ex: Exception) {
-            error = ex.message ?: defaultLoadError
+            if (hasLoaded) {
+                // Keep the last successful results on screen: a failed refresh must not wipe
+                // already-rendered content (issue #163), matching the 429 handling above. The
+                // pager already reset its paging position, so paging must not continue into
+                // the retained results.
+                hasMore = false
+                refreshFailed = ex.message ?: defaultLoadError
+                snackbarHostState.showSnackbar(ex.message ?: defaultLoadError)
+            } else {
+                error = ex.message ?: defaultLoadError
+            }
         } finally {
             if (generation == loadGeneration) loading = false
         }
@@ -336,78 +350,90 @@ private fun FeatureRequestsScreenContent(
                         actionLabel = if (search.isBlank()) stringResource(R.string.cupthread_features_request_feature) else null,
                         onAction = if (search.isBlank()) ({ composeOpen = true }) else null
                     )
-                    else -> LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (submittedBanner) {
-                            item {
-                                Text(
-                                    stringResource(R.string.cupthread_features_submitted_banner),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(bottom = 4.dp)
-                                )
-                            }
-                        }
-                        items(items, key = { it.id }) { item ->
-                            FeatureRequestRow(
-                                item = item,
-                                query = search,
-                                voting = votingIds.contains(item.id),
-                                onClick = { selectedItem = item },
-                                onOpenProfile = { selectedProfileUserId = it },
-                                onVote = {
-                                    scope.launch {
-                                        if (item.isOwnRequest || votingIds.contains(item.id)) return@launch
-                                        votingIds = votingIds + item.id
-                                        val previous = item
-                                        items = items.map {
-                                            if (it.id == item.id) {
-                                                it.withVoteState(!it.hasVoted, if (it.hasVoted) it.voteCount - 1 else it.voteCount + 1)
-                                            } else it
-                                        }
-                                        selectedItem = if (selectedItem?.id == item.id) {
-                                            selectedItem?.withVoteState(!item.hasVoted, if (item.hasVoted) item.voteCount - 1 else item.voteCount + 1)
-                                        } else selectedItem
-                                        try {
-                                            val result = if (previous.hasVoted) {
-                                                client.deleteVote(item.id, userToken)
-                                            } else {
-                                                client.vote(item.id, userToken)
-                                            }
-                                            items = items.map {
-                                                if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
-                                            }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
-                                            }
-                                        } catch (e: FeedbackException.RateLimited) {
-                                            items = items.map { if (it.id == item.id) previous else it }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = previous
-                                            }
-                                            snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
-                                        } catch (_: Exception) {
-                                            items = items.map { if (it.id == item.id) previous else it }
-                                            if (selectedItem?.id == item.id) {
-                                                selectedItem = previous
-                                            }
-                                        } finally {
-                                            votingIds = votingIds - item.id
-                                        }
-                                    }
-                                }
+                    else -> Column(Modifier.fillMaxSize()) {
+                        // A failed refresh keeps the rendered rows and shows this fixed,
+                        // always-visible retry banner instead of the full-screen error state
+                        // (issue #163). It sits outside the LazyColumn so the key-anchored list
+                        // can never scroll it above the viewport.
+                        refreshFailed?.let { message ->
+                            RefreshFailedBanner(
+                                message = message,
+                                onRetry = { scope.launch { load() } }
                             )
                         }
-                        if (hasMore || loadingMore || loadMoreFailed) {
-                            item(key = "paging-footer") {
-                                PagingFooter(
-                                    loading = loadingMore,
-                                    failed = loadMoreFailed,
-                                    onLoadMore = { scope.launch { loadMore() } }
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (submittedBanner) {
+                                item {
+                                    Text(
+                                        stringResource(R.string.cupthread_features_submitted_banner),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                }
+                            }
+                            items(items, key = { it.id }) { item ->
+                                FeatureRequestRow(
+                                    item = item,
+                                    query = search,
+                                    voting = votingIds.contains(item.id),
+                                    onClick = { selectedItem = item },
+                                    onOpenProfile = { selectedProfileUserId = it },
+                                    onVote = {
+                                        scope.launch {
+                                            if (item.isOwnRequest || votingIds.contains(item.id)) return@launch
+                                            votingIds = votingIds + item.id
+                                            val previous = item
+                                            items = items.map {
+                                                if (it.id == item.id) {
+                                                    it.withVoteState(!it.hasVoted, if (it.hasVoted) it.voteCount - 1 else it.voteCount + 1)
+                                                } else it
+                                            }
+                                            selectedItem = if (selectedItem?.id == item.id) {
+                                                selectedItem?.withVoteState(!item.hasVoted, if (item.hasVoted) item.voteCount - 1 else item.voteCount + 1)
+                                            } else selectedItem
+                                            try {
+                                                val result = if (previous.hasVoted) {
+                                                    client.deleteVote(item.id, userToken)
+                                                } else {
+                                                    client.vote(item.id, userToken)
+                                                }
+                                                items = items.map {
+                                                    if (it.id == item.id) it.withVoteState(result.voted, result.voteCount) else it
+                                                }
+                                                if (selectedItem?.id == item.id) {
+                                                    selectedItem = selectedItem?.withVoteState(result.voted, result.voteCount)
+                                                }
+                                            } catch (e: FeedbackException.RateLimited) {
+                                                items = items.map { if (it.id == item.id) previous else it }
+                                                if (selectedItem?.id == item.id) {
+                                                    selectedItem = previous
+                                                }
+                                                snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
+                                            } catch (_: Exception) {
+                                                items = items.map { if (it.id == item.id) previous else it }
+                                                if (selectedItem?.id == item.id) {
+                                                    selectedItem = previous
+                                                }
+                                            } finally {
+                                                votingIds = votingIds - item.id
+                                            }
+                                        }
+                                    }
                                 )
+                            }
+                            if (hasMore || loadingMore || loadMoreFailed) {
+                                item(key = "paging-footer") {
+                                    PagingFooter(
+                                        loading = loadingMore,
+                                        failed = loadMoreFailed,
+                                        onLoadMore = { scope.launch { loadMore() } }
+                                    )
+                                }
                             }
                         }
                     }
