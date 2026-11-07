@@ -4933,6 +4933,23 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeatureRequestMapsHttp429ToRateLimited() = runTest {
+        // #191: the submission endpoint sits behind the same per-client rate limiting as
+        // its sibling mutations; the typed RateLimited surface keeps the retryable-429
+        // contract uniform instead of leaking the raw response body as UnexpectedStatus.
+        val client = client {
+            HttpResponse(429, """{"error":"Too many requests"}""")
+        }
+        val draft = FeatureRequestDraft(title = "Idea", description = "More details")
+        try {
+            client.submitFeatureRequest(draft, userToken = "tok")
+            fail("Expected RateLimited exception")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Too many requests", ex.serverMessage)
+        }
+    }
+
+    @Test
     fun submitFeedbackMaps402SubmissionQuotaExceeded() = runTest {
         val client = client {
             HttpResponse(
