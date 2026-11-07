@@ -2603,6 +2603,79 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun unsubscribeFromWeeklyDigestHitsEndpointAndParsesResult() = runTest {
+        var requestedUrl: String? = null
+        var capturedBody: String? = null
+
+        val result = client { req ->
+            requestedUrl = req.url
+            capturedBody = String(req.body ?: ByteArray(0), Charsets.UTF_8)
+            HttpResponse(200, """{"unsubscribed":true}""")
+        }.unsubscribeFromWeeklyDigest("  digest_token_from_email_link  ")
+
+        // #36: the digest endpoint is not app-scoped — the signed token alone identifies the
+        // workspace and the subscriber, so no appKey participates in the request.
+        assertEquals("https://api.example.com/api/v1/public/digest/unsubscribe", requestedUrl)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("digest_token_from_email_link", payload.getString("token"))
+        assertFalse(payload.has("appKey"))
+        assertTrue(result.unsubscribed)
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestIsIdempotentOnReplay() = runTest {
+        // #36: replaying a one-click unsubscribe answers the same uniform 200 — e.g. the mail
+        // gateway and the user both followed the link — and must not surface an error.
+        val result = client {
+            HttpResponse(200, """{"unsubscribed":true}""")
+        }.unsubscribeFromWeeklyDigest("digest_token_from_email_link")
+
+        assertTrue(result.unsubscribed)
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestSurfacesInvalidTokenAsUnexpectedStatus() = runTest {
+        try {
+            client {
+                HttpResponse(400, """{"error":"Invalid or expired unsubscribe token"}""")
+            }.unsubscribeFromWeeklyDigest("bogus-token")
+            fail("Expected FeedbackException.UnexpectedStatus on 400 invalid token")
+        } catch (ex: FeedbackException.UnexpectedStatus) {
+            assertEquals(400, ex.code)
+        }
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestMapsHttp429ToRateLimited() = runTest {
+        // #36: the endpoint is rate limited per client IP; the typed RateLimited surface
+        // keeps the retryable-429 contract uniform with every other SDK call.
+        try {
+            client {
+                HttpResponse(429, """{"error":"Rate limit exceeded"}""")
+            }.unsubscribeFromWeeklyDigest("digest_token_from_email_link")
+            fail("expected RateLimited")
+        } catch (ex: FeedbackException.RateLimited) {
+            assertEquals("Rate limit exceeded", ex.serverMessage)
+        }
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestRejectsHttpDestinationWhenTransmittingToken() = runTest {
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { HttpResponse(200, """{"unsubscribed":true}""") }
+        )
+
+        try {
+            insecureClient.unsubscribeFromWeeklyDigest("digest_token")
+            fail("Expected IllegalArgumentException when transmitting the unsubscribe token over HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting the unsubscribe token"))
+        }
+    }
+
+    @Test
     fun confirmChangelogSubscriptionHitsEndpointWithPostAndParsesResult() = runTest {
         var requestedMethod: String? = null
         var requestedUrl: String? = null

@@ -8,6 +8,7 @@ import dev.cupthread.feedback.PublicAppSummary
 import dev.cupthread.feedback.PublicUserProfile
 import dev.cupthread.feedback.PublicUserProfileResult
 import dev.cupthread.feedback.RecentCommenter
+import dev.cupthread.feedback.WeeklyDigestUnsubscribeResult
 import dev.cupthread.feedback.UserProfileComment
 import dev.cupthread.feedback.BoardColumnKind
 import dev.cupthread.feedback.ChangelogEntry
@@ -334,6 +335,9 @@ internal fun parseChangelogSubscription(json: JSONObject): ChangelogSubscription
 
 internal fun parseChangelogUnsubscribe(json: JSONObject): ChangelogUnsubscribeResult =
     ChangelogUnsubscribeResult(unsubscribed = json.booleanOr("unsubscribed", true))
+
+internal fun parseWeeklyDigestUnsubscribe(json: JSONObject): WeeklyDigestUnsubscribeResult =
+    WeeklyDigestUnsubscribeResult(unsubscribed = json.booleanOr("unsubscribed", true))
 
 internal fun parseChangelogConfirmationResult(json: JSONObject): ChangelogConfirmationResult =
     ChangelogConfirmationResult(confirmed = json.booleanOr("confirmed", true))

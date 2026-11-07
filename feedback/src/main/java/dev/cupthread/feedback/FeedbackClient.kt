@@ -21,6 +21,7 @@ import dev.cupthread.feedback.internal.parseChangelogEntry
 import dev.cupthread.feedback.internal.parseChangelogSubscription
 import dev.cupthread.feedback.internal.parseChangelogConfirmationResult
 import dev.cupthread.feedback.internal.parseChangelogUnsubscribe
+import dev.cupthread.feedback.internal.parseWeeklyDigestUnsubscribe
 import dev.cupthread.feedback.internal.parseCommentList
 import dev.cupthread.feedback.internal.parseListComments
 import dev.cupthread.feedback.internal.parseEndUserEraseResult
@@ -61,7 +62,7 @@ import org.json.JSONObject
  * - Roadmap kanban boards and milestones ([fetchColumns], [fetchVersions])
  * - Feature request submissions, filtering, and voting ([fetchFeatureRequests], [submitFeatureRequest], [vote], [deleteVote])
  * - Threaded feature request comments and replies ([fetchComments], [postComment])
- * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [confirmChangelogSubscription], [unsubscribeFromChangelog])
+ * - What's-New changelog streams and email subscriptions ([fetchChangelog], [subscribeToChangelog], [confirmChangelogSubscription], [unsubscribeFromChangelog], [unsubscribeFromWeeklyDigest])
  * - User telemetry and customer segment attributes ([updateUserAttributes])
  * - Public user profiles ([fetchUserProfile])
  *
@@ -1514,6 +1515,67 @@ class FeedbackClient internal constructor(
                 "/api/v1/public/apps/${config.appKey}/changelog/unsubscribe",
                 payload,
                 accepted = setOf(200)
+            )
+        )
+    }
+
+    /**
+     * Unsubscribes an address from the weekly digest email via
+     * `POST /api/v1/public/digest/unsubscribe` using the signed per-subscriber token carried
+     * by the digest email's `List-Unsubscribe` header and footer link (RFC 8058 one-click).
+     *
+     * This endpoint is not app-scoped: the signed token alone identifies the workspace and
+     * the subscriber, so no [FeedbackClientConfig.appKey] participates in the request. The
+     * SDK surfaces it for hosts that want to drive digest management from the app (an
+     * in-app notification-settings screen, a support flow, etc.); the primary consumer of
+     * the endpoint remains the email footer itself, and the `GET` confirm page is a
+     * non-destructive browser interstitial (HTTP 405 for JSON clients) that the SDK
+     * intentionally does not wrap (API sync, issue #36).
+     *
+     * Behavior (API contract):
+     * - Replay is idempotent: the uniform 200 `{"unsubscribed": true}` is returned whether
+     *   or not the address was still subscribed.
+     * - Unsubscribing clears only the workspace `weekly.digest` **email** event; inbox
+     *   notifications are unchanged.
+     * - A missing, invalid, or expired token fails with HTTP 400.
+     * - The endpoint is rate limited per client IP (HTTP 429), surfaced as
+     *   [FeedbackException.RateLimited] like every other SDK call.
+     *
+     * @param token Signed digest-unsubscribe token from the digest email's unsubscribe link.
+     * @return [WeeklyDigestUnsubscribeResult] indicating whether the request was processed.
+     * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
+     *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
+     * @throws FeedbackException.RateLimited on HTTP 429 (per-client-IP rate limiting).
+     * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope,
+     *   including HTTP 400 for a missing, invalid, or expired token.
+     * @throws FeedbackException.ValidationFailed on HTTP 400 with a usable validation envelope;
+     *   check [FeedbackException.ValidationFailed.fieldErrors] for details.
+     * @throws FeedbackException.InvalidResponse on network or parsing errors.
+     *
+     * Example:
+     * ```kotlin
+     * val result = client.unsubscribeFromWeeklyDigest(token = "digest_token_from_email_link")
+     * println("Unsubscribed: ${result.unsubscribed}")
+     * ```
+     */
+    suspend fun unsubscribeFromWeeklyDigest(token: String): WeeklyDigestUnsubscribeResult {
+        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/digest/unsubscribe")
+        val parsedUri = try {
+            java.net.URI(targetUrl)
+        } catch (_: Exception) {
+            null
+        }
+        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            "unsubscribeFromWeeklyDigest destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
+        }
+        val payload = JSONObject().put("token", token.trim())
+        return parseWeeklyDigestUnsubscribe(
+            sendJson(
+                "POST",
+                "/api/v1/public/digest/unsubscribe",
+                payload,
+                accepted = setOf(200),
+                mapRateLimitErrors = true
             )
         )
     }
