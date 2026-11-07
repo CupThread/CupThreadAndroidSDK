@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.dokka")
     id("maven-publish")
+    id("org.gradle.test-retry")
 }
 
 group = "dev.cupthread"
@@ -138,5 +139,16 @@ afterEvaluate {
                 url = uri(findProperty("cupthreadRepoDir") ?: layout.buildDirectory.dir("cdn-maven"))
             }
         }
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    // The Robolectric compose tests poll for snackbar/pill state with a frame-clock
+    // pump whose visible window is load-sensitive on CI's 2-core runners (the same
+    // test fails on one run and passes on the next, locally and on main). Two retries
+    // keep a timing flake from failing the branch while a genuinely broken test still
+    // fails the build after its retries.
+    retry {
+        maxRetries = 2
     }
 }

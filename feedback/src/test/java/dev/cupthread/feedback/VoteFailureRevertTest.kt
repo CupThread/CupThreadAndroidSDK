@@ -60,6 +60,8 @@ class VoteFailureRevertTest {
     private val ioFailure = AtomicBoolean(false)
     private val refreshed = AtomicBoolean(false)
     private val voteSucceeds = AtomicBoolean(false)
+    private val turnstileRejected = AtomicBoolean(false)
+    private val authRejected = AtomicBoolean(false)
     private val token = mutableStateOf(USER_TOKEN)
     private var voteGate = CountDownLatch(1)
 
@@ -76,15 +78,20 @@ class VoteFailureRevertTest {
                     // Hold the vote in flight until the test releases the gate, so a reload
                     // can complete while the request is still pending.
                     if (holdVote.get()) voteGate.await(HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                    if (ioFailure.get()) throw IOException("transport lost")
-                    if (voteSucceeds.get()) {
-                        // A reconciled server answer: upvote -> voted, unvote -> not voted.
-                        HttpResponse(
-                            200,
-                            """{"voted":${request.method == "POST"},"voteCount":${if (request.method == "POST") 11 else 10}}"""
-                        )
-                    } else {
-                        HttpResponse(429, "")
+                    when {
+                        ioFailure.get() -> throw IOException("transport lost")
+                        // Typed server rejections (issue #184): the turnstile gate and the
+                        // anonymous-voting-disabled answer must reach the UI as their own
+                        // FeedbackException subclasses, not as silent generic failures.
+                        turnstileRejected.get() -> HttpResponse(403, """{"error":"turnstile_required"}""")
+                        authRejected.get() -> HttpResponse(401, """{"error":"authentication_required"}""")
+                        voteSucceeds.get() ->
+                            // A reconciled server answer: upvote -> voted, unvote -> not voted.
+                            HttpResponse(
+                                200,
+                                """{"voted":${request.method == "POST"},"voteCount":${if (request.method == "POST") 11 else 10}}"""
+                            )
+                        else -> HttpResponse(429, "")
                     }
                 }
                 request.method == "GET" && request.url.contains("/api/v1/feature-requests") ->
@@ -101,6 +108,8 @@ class VoteFailureRevertTest {
         ioFailure.set(false)
         refreshed.set(false)
         voteSucceeds.set(false)
+        turnstileRejected.set(false)
+        authRejected.set(false)
         token.value = USER_TOKEN
         voteGate = CountDownLatch(1)
         synchronized(calls) { calls.clear() }
@@ -181,6 +190,64 @@ class VoteFailureRevertTest {
         compose.onNodeWithContentDescription("Remove vote, 10").assertDoesNotExist()
         compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
     }
+
+    @Test
+    fun turnstileRejectedVoteShowsFeedbackAndReverts() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // HTTP 403 turnstile_required (issue #184): the vote gate rejected the tap. The
+        // generic catch used to revert silently — the user could not tell the vote apart
+        // from "recorded" or "rate limited".
+        turnstileRejected.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+
+        awaitNode(VOTE_VERIFICATION_REQUIRED)
+
+        // The optimistic flip is gone: the row shows its pre-tap values again.
+        compose.onNodeWithContentDescription("Vote, 10").assertExists()
+        compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+    }
+
+    @Test
+    fun authenticationRequiredVoteShowsFeedbackAndReverts() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        awaitVotePill("Vote, 10")
+
+        // HTTP 401 (issue #184): the app disabled anonymous voting.
+        authRejected.set(true)
+        compose.onNodeWithContentDescription("Vote, 10").performClick()
+
+        awaitNode(VOTE_SIGN_IN_REQUIRED)
+
+        compose.onNodeWithContentDescription("Vote, 10").assertExists()
+        compose.onNodeWithContentDescription("Vote, 11").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+    }
+
+    @Test
+    fun rejectedSheetVoteShowsFeedbackAndReverts() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // The detail-sheet vote path hits the same turnstile gate: it must surface the
+        // same feedback and revert the sheet's copy instead of failing silently.
+        turnstileRejected.set(true)
+        tapDescriptionInDialog("Vote, 10")
+
+        awaitNode(VOTE_VERIFICATION_REQUIRED)
+        // With the sheet open both the list row and the sheet row carry "Vote, 10"
+        // (onNodeWithContentDescription would be ambiguous), so the revert is asserted
+        // through the dialog descriptions: the sheet is back to its tap-time values and
+        // the optimistic flip is gone.
+        awaitCondition { "Vote, 10" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+    }
+
 
     @Test
     fun staleRefreshDuringFailedUnvoteStillRestoresUpvote() {
@@ -485,6 +552,8 @@ class VoteFailureRevertTest {
         const val USER_TOKEN = "token-voterevert-0000"
         const val USER_TOKEN_2 = "token-voterevert-0001"
         const val VOTE_RATE_LIMITED = "You're voting too fast. Please try again shortly."
+        const val VOTE_VERIFICATION_REQUIRED = "Please complete the human verification step and try again."
+        const val VOTE_SIGN_IN_REQUIRED = "Please sign in to vote."
         const val WAIT_TIMEOUT_MS = 10_000L
         const val HOLD_TIMEOUT_MS = 10_000L
         const val FRAME_MS = 16L
