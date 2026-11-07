@@ -4,6 +4,8 @@ import dev.cupthread.feedback.internal.ChangelogPager
 import dev.cupthread.feedback.internal.HttpRequest
 import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
+import dev.cupthread.feedback.internal.parseChangelogTimestamp
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -221,6 +223,81 @@ class ChangelogPagingTest {
         requireNotNull(second)
         assertFalse(pager.hasMore)
         assertNull(pager.loadNextPage())
+    }
+
+    // Issue #166: the page was re-sorted by raw `publishedAt` strings, which is not
+    // chronological for mixed sub-second precision ('.' sorts before 'Z') or numeric
+    // offsets (local clock text sorts ahead of the true instant).
+
+    @Test
+    fun mixedPrecisionTimestampsSortChronologically() = runTest {
+        val page = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [
+                    {"id":"cl-1","title":"R1","body":"","publishedAt":"2026-01-01T00:00:00Z"},
+                    {"id":"cl-2","title":"R2","body":"","publishedAt":"2026-01-01T00:00:00.500Z"},
+                    {"id":"cl-3","title":"R3","body":"","publishedAt":"2026-01-01T00:00:01Z"}
+                  ],
+                  "hasMore": false,
+                  "nextCursor": null
+                }
+                """.trimIndent()
+            )
+        }.fetchChangelogPage()
+
+        // Newest instant first; lexicographic descending would have put cl-1 above cl-2.
+        assertEquals(listOf("cl-3", "cl-2", "cl-1"), page.entries.map { it.id })
+    }
+
+    @Test
+    fun offsetTimestampsNormalizeToUtcInstant() = runTest {
+        // 23:00+05:00 is 18:00Z — older than 20:00Z despite its larger local clock text.
+        assertEquals(
+            Instant.parse("2026-01-01T18:00:00Z"),
+            parseChangelogTimestamp("2026-01-01T23:00:00+05:00")
+        )
+
+        val page = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [
+                    {"id":"cl-offset","title":"Offset","body":"","publishedAt":"2026-01-01T23:00:00+05:00"},
+                    {"id":"cl-utc","title":"Utc","body":"","publishedAt":"2026-01-01T20:00:00Z"}
+                  ],
+                  "hasMore": false,
+                  "nextCursor": null
+                }
+                """.trimIndent()
+            )
+        }.fetchChangelogPage()
+
+        assertEquals(listOf("cl-utc", "cl-offset"), page.entries.map { it.id })
+    }
+
+    @Test
+    fun unparseableTimestampDoesNotCrashAndSortsLast() = runTest {
+        val page = client {
+            HttpResponse(
+                200,
+                """
+                {
+                  "entries": [
+                    {"id":"cl-bad","title":"Bad","body":"","publishedAt":"not-a-timestamp"},
+                    {"id":"cl-1","title":"Release 1","body":"","publishedAt":"2026-09-18T12:00:00.000Z"}
+                  ],
+                  "hasMore": false,
+                  "nextCursor": null
+                }
+                """.trimIndent()
+            )
+        }.fetchChangelogPage()
+
+        assertEquals(listOf("cl-1", "cl-bad"), page.entries.map { it.id })
     }
 
     /** Legacy deployment payload: `{entries, nextCursor}` without a `hasMore` field. */
