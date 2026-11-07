@@ -156,6 +156,9 @@ private fun RoadmapBoardScreenContent(
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
+    // Non-null while the last refresh of the already-rendered board failed: the board stays
+    // mounted (issue #163) and the value is the failure message shown by the inline retry banner.
+    var refreshFailed by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var selectedItem by remember { mutableStateOf<FeatureRequestItem?>(null) }
@@ -189,6 +192,7 @@ private fun RoadmapBoardScreenContent(
         loading = true
         error = null
         loadMoreFailed = false
+        refreshFailed = null
         try {
             val fetchedColumns = client.fetchColumns()
             // A pull-to-refresh launch outlives a token rotation (the collector restarts
@@ -208,12 +212,25 @@ private fun RoadmapBoardScreenContent(
                 // wipe already-rendered content (issue #23). The pager already reset its
                 // paging position, so paging must not continue into the retained results.
                 hasMore = false
-                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+                refreshFailed = searchRateLimitedMessage
+                // Fire-and-forget: showSnackbar suspends until dismissal, and the load must
+                // finish (clear `loading`) without waiting for the snackbar to go away.
+                scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
             } else {
                 error = e.message
             }
         } catch (ex: Exception) {
-            error = ex.message ?: defaultLoadError
+            if (hasLoaded) {
+                // Keep the last successful board on screen: a failed refresh must not wipe
+                // already-rendered content (issue #163), matching the 429 handling above. The
+                // pager already reset its paging position, so paging must not continue into
+                // the retained results (and the no-match auto-pagination effect must stop).
+                hasMore = false
+                refreshFailed = ex.message ?: defaultLoadError
+                scope.launch { snackbarHostState.showSnackbar(ex.message ?: defaultLoadError) }
+            } else {
+                error = ex.message ?: defaultLoadError
+            }
         } finally {
             if (generation == loadGeneration) loading = false
         }
@@ -288,6 +305,16 @@ private fun RoadmapBoardScreenContent(
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.cupthread_roadmap_search_placeholder)) }
                 )
+                // A failed refresh keeps the rendered board and shows this fixed, always-visible
+                // retry banner instead of the full-screen error state (issue #163). It sits above
+                // every content branch (board, empty state, paging footer); `error` and
+                // `refreshFailed` are mutually exclusive, and a new load clears the banner.
+                refreshFailed?.let { message ->
+                    RefreshFailedBanner(
+                        message = message,
+                        onRetry = { scope.launch { load() } }
+                    )
+                }
                 when {
                     loading && !hasLoaded -> BoxPad { SkeletonCardList() }
                     error != null -> LoadErrorState(error!!) { scope.launch { load() } }

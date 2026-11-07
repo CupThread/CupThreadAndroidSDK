@@ -144,6 +144,9 @@ private fun FeatureRequestsScreenContent(
     var hasMore by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
+    // Non-null while the last refresh of already-rendered rows failed: the rows stay mounted
+    // (issue #163) and the value is the failure message shown by the inline retry banner.
+    var refreshFailed by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var versionId by remember { mutableStateOf<String?>(null) }
@@ -182,6 +185,7 @@ private fun FeatureRequestsScreenContent(
         loading = true
         error = null
         loadMoreFailed = false
+        refreshFailed = null
         try {
             // A pull-to-refresh launch outlives a token rotation (the search collector restarts
             // instead). When the pager discards this page because a newer load superseded it,
@@ -199,12 +203,25 @@ private fun FeatureRequestsScreenContent(
                 // wipe already-rendered content (issue #23). The pager already reset its
                 // paging position, so paging must not continue into the retained results.
                 hasMore = false
-                snackbarHostState.showSnackbar(searchRateLimitedMessage)
+                refreshFailed = searchRateLimitedMessage
+                // Fire-and-forget: showSnackbar suspends until dismissal, and the load must
+                // finish (clear `loading`) without waiting for the snackbar to go away.
+                scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
             } else {
                 error = e.message
             }
         } catch (ex: Exception) {
-            error = ex.message ?: defaultLoadError
+            if (hasLoaded) {
+                // Keep the last successful results on screen: a failed refresh must not wipe
+                // already-rendered content (issue #163), matching the 429 handling above. The
+                // pager already reset its paging position, so paging must not continue into
+                // the retained results.
+                hasMore = false
+                refreshFailed = ex.message ?: defaultLoadError
+                scope.launch { snackbarHostState.showSnackbar(ex.message ?: defaultLoadError) }
+            } else {
+                error = ex.message ?: defaultLoadError
+            }
         } finally {
             if (generation == loadGeneration) loading = false
         }
@@ -326,6 +343,17 @@ private fun FeatureRequestsScreenContent(
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.cupthread_features_search_placeholder)) }
                 )
+                // A failed refresh keeps the rendered rows and shows this fixed, always-visible
+                // retry banner instead of the full-screen error state (issue #163). It sits above
+                // every content branch (rows, empty state, paging footer) and outside the
+                // key-anchored LazyColumn, so it can never be scrolled out of view; `error` and
+                // `refreshFailed` are mutually exclusive, and a new load clears the banner.
+                refreshFailed?.let { message ->
+                    RefreshFailedBanner(
+                        message = message,
+                        onRetry = { scope.launch { load() } }
+                    )
+                }
                 when {
                     loading && !hasLoaded -> Box(Modifier.padding(16.dp)) { SkeletonCardList() }
                     error != null -> LoadErrorState(error!!) { scope.launch { load() } }
@@ -338,7 +366,7 @@ private fun FeatureRequestsScreenContent(
                     )
                     else -> LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (submittedBanner) {
