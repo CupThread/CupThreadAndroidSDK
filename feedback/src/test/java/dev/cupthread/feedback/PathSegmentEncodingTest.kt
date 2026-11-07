@@ -127,6 +127,28 @@ class PathSegmentEncodingTest {
     }
 
     @Test
+    fun dotOnlyIdsAreRejectedBecauseTheyNormalizeToADifferentEndpoint() = runTest {
+        // URLEncoder leaves `.` unreserved, so a dot-only id would survive as a literal dot
+        // path segment and Android's URL parser would normalize it away, retargeting the
+        // request (`/api/v1/feature-requests/../vote` -> `/api/v1/vote`). CodeRabbit finding.
+        val api = client()
+        listOf(".", "..", " .. ").forEach { hostile ->
+            try {
+                api.vote(hostile, userToken = TOKEN)
+                fail("dot-only featureRequestId \"$hostile\" must be rejected")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("dot segment"))
+            }
+        }
+        try {
+            api.fetchFeatureRequest("..")
+            fail("dot-only featureRequestId must be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("dot segment"))
+        }
+    }
+
+    @Test
     fun blankIdsAreRejectedOnMutationPathsLikeOnReadPaths() = runTest {
         val api = client()
         val mutations: List<suspend (String) -> Unit> = listOf(
