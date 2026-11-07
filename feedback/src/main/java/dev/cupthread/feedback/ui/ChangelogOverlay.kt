@@ -33,6 +33,7 @@ import dev.cupthread.feedback.ChangelogStore
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkAppearance
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -191,6 +192,11 @@ fun ChangelogOverlay(
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(client, visible, onlyIfUnseen) {
+        // A fresh attempt must not inherit the previous attempt's failure (or content): the sheet
+        // gives `error` priority over `entries`, so a stale error would keep the error sheet up
+        // even after a later attempt succeeds (issue #165).
+        entries = null
+        error = null
         try {
             val prepared = client.prepareChangelogOverlay(context = context, onlyIfUnseen = onlyIfUnseen)
             if (prepared == null) {
@@ -207,6 +213,8 @@ fun ChangelogOverlay(
                     store.markChangelogSeen(latest.id)
                 }
             }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (ex: Exception) {
             error = ex.message ?: "Failed to load updates"
         }
