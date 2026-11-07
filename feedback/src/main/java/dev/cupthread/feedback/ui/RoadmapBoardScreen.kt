@@ -368,8 +368,13 @@ private fun RoadmapBoardScreenContent(
                     val previous = currentItem
                     val newVoted = !currentItem.hasVoted
                     val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
-                    requests = requests.map { if (it.id == currentItem.id) it.withVoteState(newVoted, newCount) else it }
-                    selectedItem = currentItem.withVoteState(newVoted, newCount)
+                    val listRow = requests.firstOrNull { it.id == currentItem.id }
+                    val optimisticRow = listRow?.withVoteState(newVoted, newCount)
+                    if (listRow != null && optimisticRow != null) {
+                        requests = requests.map { if (it === listRow) optimisticRow else it }
+                    }
+                    val optimisticSelection = currentItem.withVoteState(newVoted, newCount)
+                    selectedItem = optimisticSelection
                     try {
                         val result = if (previous.hasVoted) {
                             client.deleteVote(currentItem.id, userToken)
@@ -381,14 +386,14 @@ private fun RoadmapBoardScreenContent(
                         }
                         selectedItem = currentItem.withVoteState(result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
-                        requests = requests.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = previous
+                        requests = revertedItems(requests, previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
                         showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
-                        requests = requests.map { if (it.id == currentItem.id) previous else it }
-                        selectedItem = previous
+                        requests = revertedItems(requests, previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id
                     }
