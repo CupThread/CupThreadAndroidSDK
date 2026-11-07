@@ -647,11 +647,15 @@ internal fun FeedbackFormBody(
                 scope.launch {
                     submitting = true
                     error = null
+                    // Snapshot the outgoing draft so the request is recorded with what it
+                    // actually sent, not with whatever the user edited (e.g. an attachment
+                    // chip removed) while the request was in flight.
+                    val outgoing = draft
                     try {
-                        val sent = client.submit(draft, userToken)
+                        val sent = client.submit(outgoing, userToken)
                         // The submitted attachments' uploadIds are now finalized on the server;
                         // remember them so "send more" cannot restore them into a fresh report.
-                        onAttachmentsSubmitted(draft.attachments)
+                        onAttachmentsSubmitted(outgoing.attachments)
                         result = sent
                         onSubmit(sent)
                     } catch (ce: CancellationException) {

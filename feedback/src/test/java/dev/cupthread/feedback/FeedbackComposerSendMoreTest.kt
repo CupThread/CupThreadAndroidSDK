@@ -26,6 +26,8 @@ import dev.cupthread.feedback.internal.HttpResponse
 import dev.cupthread.feedback.internal.HttpTransport
 import dev.cupthread.feedback.ui.FeedbackFormBody
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -89,13 +91,16 @@ class FeedbackComposerSendMoreTest {
     // button carries a click action.
     private fun sendButton() = compose.onNode(hasText("Send Feedback") and hasClickAction())
 
-    private fun setContent(initialDraft: FeedbackDraft? = null) {
+    private fun setContent(
+        initialDraft: FeedbackDraft? = null,
+        feedbackClient: FeedbackClient = client
+    ) {
         // Mirrors what FeedbackComposerSheet/FeedbackComposerContent do: own the consumed
         // uploadIds so they outlive the form and can be filtered out of the restored seed.
         val submittedAttachments = mutableStateOf(emptyList<FeedbackAttachment>())
         compose.setContent {
             FeedbackFormBody(
-                client = client,
+                client = feedbackClient,
                 userToken = null,
                 initialDraft = initialDraft,
                 onSubmit = {},
@@ -304,8 +309,74 @@ class FeedbackComposerSendMoreTest {
         )
     }
 
+    @Test
+    fun sendMoreExcludesAttachmentRemovedWhileSubmitIsInFlight() {
+        // The transport runs on Dispatchers.IO, so the first submission can be held in flight
+        // while the main thread keeps serving UI interactions — exactly the window where the
+        // user removes an attachment chip before the response arrives.
+        val releaseResponse = CountDownLatch(1)
+        val slowClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = "app_sendmore1234",
+                defaultPlatform = FeedbackPlatform.ANDROID
+            ),
+            transport = HttpTransport { request ->
+                calls += request
+                if (request.method == "POST" && request.url.contains("/api/v1/feedback") &&
+                    submitRequests().size == 1
+                ) {
+                    releaseResponse.await(RESPONSE_TIMEOUT_S, TimeUnit.SECONDS)
+                }
+                HttpResponse(201, """{"submissionId":"s-1","forwardedToGithub":false}""")
+            }
+        )
+
+        setContent(
+            FeedbackDraft(
+                title = "Seeded title",
+                description = "Seeded description text",
+                platform = FeedbackPlatform.ANDROID,
+                attachments = listOf(
+                    FeedbackAttachment(
+                        kind = FeedbackAttachment.Kind.IMAGE,
+                        filename = "first.png",
+                        uploadId = "upload-first"
+                    ),
+                    FeedbackAttachment(
+                        kind = FeedbackAttachment.Kind.IMAGE,
+                        filename = "second.png",
+                        uploadId = "upload-second"
+                    )
+                )
+            ),
+            feedbackClient = slowClient
+        )
+
+        clickSubmit()
+        awaitCondition { submitRequests().size == 1 }
+        deleteAttachment("second.png")
+        releaseResponse.countDown()
+
+        awaitNode("Send More Feedback")
+        compose.onNodeWithText("Send More Feedback").performClick()
+        awaitNodeGone("Send More Feedback")
+
+        // The in-flight request carried both uploadIds, so neither attachment survives the
+        // reset — even the chip the user removed while the request was in flight.
+        compose.onNodeWithText("first.png").assertDoesNotExist()
+        compose.onNodeWithText("second.png").assertDoesNotExist()
+
+        clickSubmit()
+        awaitCondition { submitRequests().size == 2 }
+        val second = submitBody(1)
+        assertFalse("restored draft must not reuse the finalized uploadIds", second.contains("upload-first"))
+        assertFalse(second.contains("upload-second"))
+    }
+
     private companion object {
         const val WAIT_TIMEOUT_MS = 10_000L
         const val FRAME_MS = 16L
+        const val RESPONSE_TIMEOUT_S = 10L
     }
 }
