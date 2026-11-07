@@ -5,7 +5,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -13,9 +15,11 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import dev.cupthread.feedback.ChangelogEntry
 import dev.cupthread.feedback.FeatureRequestItem
+import dev.cupthread.feedback.internal.WebUrlPolicy
 
 /**
  * Lightweight inline Markdown renderer for Jetpack Compose.
@@ -24,7 +28,10 @@ import dev.cupthread.feedback.FeatureRequestItem
  * - **Bold text**: `**bold**` rendered with [FontWeight.SemiBold]
  * - *Italic text*: `*italic*` rendered with [FontStyle.Italic]
  * - `Monospace code`: `` `code` `` rendered with [FontFamily.Monospace]
- * - [Hyperlinks](https://cupthread.com): `[title](url)` styled with [TextDecoration.Underline] and tinted with primary accent
+ * - [Hyperlinks](https://cupthread.com): `[title](url)` styled with [TextDecoration.Underline] and tinted with primary accent,
+ *   emitted as a [LinkAnnotation.Url] so the label is tappable and opens the system browser.
+ *   Link targets are validated with [WebUrlPolicy.normalizeWebsiteUrl] first; unsafe schemes
+ *   (`javascript:`, `intent:`, embedded credentials, …) render as styled text without a tap target.
  *
  * ### Block Flattening & Line Clamping
  * Headings (`#`), bullet lists (`- `, `* `), and numbered items (`1. `) are flattened onto continuous lines
@@ -103,8 +110,18 @@ internal fun inlineMarkdown(source: String, linkColor: Color) = buildAnnotatedSt
                 val close = flattened.indexOf("](", i)
                 val end = if (close > i) flattened.indexOf(')', close + 2) else -1
                 if (close > i && end > close) {
-                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                        append(flattened.substring(i + 1, close))
+                    val label = flattened.substring(i + 1, close)
+                    val url = flattened.substring(close + 2, end)
+                    val linkStyle = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)
+                    // Gate the target through the shared web-URL policy (issue #158) so unsafe
+                    // schemes render as plain styled text with no tap target.
+                    val normalized = WebUrlPolicy.normalizeWebsiteUrl(url)
+                    if (normalized != null) {
+                        withLink(LinkAnnotation.Url(normalized, TextLinkStyles(style = linkStyle))) {
+                            append(label)
+                        }
+                    } else {
+                        withStyle(linkStyle) { append(label) }
                     }
                     i = end + 1
                 } else {
