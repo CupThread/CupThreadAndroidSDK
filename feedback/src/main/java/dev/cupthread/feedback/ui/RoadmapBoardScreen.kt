@@ -365,14 +365,23 @@ private fun RoadmapBoardScreenContent(
                 scope.launch {
                     if (currentItem.isOwnRequest || votingIds.contains(currentItem.id)) return@launch
                     votingIds = votingIds + currentItem.id
-                    val previous = currentItem
-                    val newVoted = !currentItem.hasVoted
-                    val newCount = if (currentItem.hasVoted) currentItem.voteCount - 1 else currentItem.voteCount + 1
+                    // The fresher list row is the baseline for the shared vote state (issue
+                    // #182): the sheet's own snapshot can be stale once a reload replaced
+                    // the list while the sheet stayed open, and mixing the sheet's values
+                    // onto the refetched row rendered the optimistic count below the
+                    // server's baseline — a vote that looks like the count went down. When
+                    // the row is absent from the list, the sheet's own instance stays the
+                    // baseline.
                     val listRow = requests.firstOrNull { it.id == currentItem.id }
+                    val previous = listRow ?: currentItem
+                    val newVoted = !previous.hasVoted
+                    val newCount = if (previous.hasVoted) previous.voteCount - 1 else previous.voteCount + 1
                     val optimisticRow = listRow?.withVoteState(newVoted, newCount)
                     if (listRow != null && optimisticRow != null) {
                         requests = requests.map { if (it === listRow) optimisticRow else it }
                     }
+                    // The sheet flips on the same baseline so both views agree during the
+                    // optimistic window even though its copy still shows the stale instance.
                     val optimisticSelection = currentItem.withVoteState(newVoted, newCount)
                     selectedItem = optimisticSelection
                     try {
@@ -386,13 +395,13 @@ private fun RoadmapBoardScreenContent(
                         }
                         selectedItem = reconciledSelection(selectedItem, currentItem.id, result.voted, result.voteCount)
                     } catch (e: FeedbackException.RateLimited) {
-                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
+                        requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         // Fire-and-forget: the vote must release `votingIds` (unblocking
                         // the pill) without waiting for the snackbar to go away.
                         showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
-                        requests = revertedItems(requests, listRow ?: previous, optimisticRow)
+                        requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } finally {
                         votingIds = votingIds - currentItem.id

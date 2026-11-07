@@ -233,9 +233,10 @@ class VoteFailureRevertTest {
         awaitVotePill("Vote, 12")
         awaitCondition { "Vote, 10" in dialogDescriptions() }
 
-        // Voting from the sheet optimistically changes the list's refetched row (11) and
-        // the sheet's own copy (11). The 429 must restore the list row it actually changed
-        // — the refetched one — not the sheet's stale snapshot.
+        // Voting from the sheet optimistically flips both views onto the refetched
+        // baseline (13): the list's refetched row and the sheet's own copy agree. The 429
+        // must restore the list row it actually changed — the refetched one — not the
+        // sheet's stale snapshot.
         holdVote.set(true)
         voteGate = CountDownLatch(1)
         tapDescriptionInDialog("Vote, 10")
@@ -244,11 +245,52 @@ class VoteFailureRevertTest {
         voteGate.countDown()
         awaitNode(VOTE_RATE_LIMITED)
 
-        // The list row keeps its refetched count (12); the sheet reverted to its own
-        // tap-time values (10). The optimistic 11 is gone from both.
-        compose.onNodeWithContentDescription("Vote, 12").assertExists()
+        // The optimistic 11 is gone from both views, and both agree on the refetched
+        // baseline (12): the failure paths restore the same instance the optimistic flip
+        // was built on (issue #182). Both windows carry the pill now, so the existence
+        // check goes through the multi-node-safe helper.
+        awaitVotePill("Vote, 12")
         compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
-        awaitCondition { "Vote, 10" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+        awaitCondition { "Vote, 12" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+    }
+
+    @Test
+    fun sheetVoteOptimisticCountUsesFresherListRow() {
+        compose.setContent { FeatureRequestsScreen(client, token.value) }
+        awaitNode("Alpha request")
+        compose.onNodeWithText("Alpha request").performClick()
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // A reload lands while the sheet is open: the list row is refetched to count 12,
+        // but the sheet keeps showing the instance it was opened on (still count 10).
+        refreshed.set(true)
+        token.value = USER_TOKEN_2
+        awaitVotePill("Vote, 12")
+        awaitCondition { "Vote, 10" in dialogDescriptions() }
+
+        // Voting from the sheet must build the optimistic flip on the refetched baseline:
+        // both views show 13 (12 + 1). Deriving the list row's optimistic values from the
+        // sheet's stale snapshot rendered 11 — a vote that made the count go down and
+        // swallowed the other user's vote for the whole optimistic window (issue #182).
+        holdVote.set(true)
+        voteGate = CountDownLatch(1)
+        tapDescriptionInDialog("Vote, 10")
+        awaitCondition { voteCalls() == 1 }
+
+        awaitVotePill("Remove vote, 13")
+        compose.onNodeWithContentDescription("Remove vote, 11").assertDoesNotExist()
+        // The sheet's own copy agrees with the list during the optimistic window.
+        awaitCondition { "Remove vote, 13" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
+
+        // The 429 revert restores the refetched baseline on both views (the #179
+        // contract, with the revert target now the instance the flip was built on).
+        // The revert is asserted through the row state; the snackbar surface for 429s
+        // is already covered by the rate-limited cases above.
+        voteGate.countDown()
+
+        awaitVotePill("Vote, 12")
+        compose.onNodeWithContentDescription("Remove vote, 13").assertDoesNotExist()
+        awaitCondition { "Vote, 12" in dialogDescriptions() && "Remove vote, 13" !in dialogDescriptions() }
     }
 
     @Test
