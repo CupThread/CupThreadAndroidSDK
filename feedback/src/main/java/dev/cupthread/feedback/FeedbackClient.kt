@@ -38,6 +38,7 @@ import dev.cupthread.feedback.internal.parseUploadSession
 import dev.cupthread.feedback.internal.parseUploadedSessionFile
 import dev.cupthread.feedback.internal.parseVoteResult
 import dev.cupthread.feedback.internal.putOptString
+import dev.cupthread.feedback.internal.sanitizeMultipartFilename
 import dev.cupthread.feedback.internal.userAttributesCanonicalString
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -313,7 +314,10 @@ class FeedbackClient internal constructor(
      * [FeedbackClientConfig.turnstileTokenProvider], with the same single fresh-token retry.
      *
      * @param data Binary payload to upload.
-     * @param filename Display file name including extension (e.g. `screenshot.png`).
+     * @param filename Display file name including extension (e.g. `screenshot.png`). Control
+     *   characters — CR/LF in particular — are rewritten to spaces before the name is written into
+     *   a multipart header, an upload-session payload, or echoed back in the resulting
+     *   [FeedbackAttachment], so the name is sanitized, never trusted verbatim.
      * @param mimeType MIME content type (e.g. `image/png`, `application/pdf`).
      * @param preferredKind Optional explicit [FeedbackAttachment.Kind], overriding MIME-based auto-detection.
      * @param userToken Stable user token (from [UserTokenStore]) to attribute the upload; required for non-image uploads.
@@ -369,10 +373,14 @@ class FeedbackClient internal constructor(
             ?: throw FeedbackException.UnsupportedMediaType(
                 "Image metadata could not be removed safely ($mimeType). The upload was not sent."
             )
+        // #162: the filename is caller-controlled, so it is sanitized once here — before it can
+        // reach a multipart header or a session payload — and the clean name is what gets
+        // validated, uploaded, and echoed back.
+        val safeFilename = sanitizeMultipartFilename(filename)
         if (kind == FeedbackAttachment.Kind.IMAGE) {
-            AttachmentLimits.validateImageAttachment(scrubbedData, filename, mimeType)
+            AttachmentLimits.validateImageAttachment(scrubbedData, safeFilename, mimeType)
             val boundary = "Boundary-${UUID.randomUUID()}"
-            val body = multipartBody(boundary, config.appKey, filename, mimeType, scrubbedData)
+            val body = multipartBody(boundary, config.appKey, safeFilename, mimeType, scrubbedData)
             val json = sendMultipart(
                 path = "/api/v1/uploads/images",
                 boundary = boundary,
@@ -389,7 +397,7 @@ class FeedbackClient internal constructor(
                 throw FeedbackException.UnreadableUploadResponse()
             }
         }
-        return uploadViaSession(scrubbedData, filename, mimeType, userToken, turnstileToken)
+        return uploadViaSession(scrubbedData, safeFilename, mimeType, userToken, turnstileToken)
     }
 
     /**
