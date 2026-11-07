@@ -160,6 +160,14 @@ private fun FeatureRequestsScreenContent(
     val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Coalesces repeated rate-limit feedback: SnackbarHostState serializes every
+    // showSnackbar call, so identical messages from repeated failures (vote taps or
+    // retries during a 429) would otherwise queue up and outlast the tapping.
+    fun showRateLimitSnackbar(message: String) {
+        if (snackbarHostState.currentSnackbarData?.visuals?.message == message) return
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+
     // Searches share a strict per-IP budget with every other client (30/min); the throttler
     // keeps ordinary typing inside it (issue #23).
     val searchThrottler = remember { SearchThrottler() }
@@ -204,9 +212,7 @@ private fun FeatureRequestsScreenContent(
                 // paging position, so paging must not continue into the retained results.
                 hasMore = false
                 refreshFailed = searchRateLimitedMessage
-                // Fire-and-forget: showSnackbar suspends until dismissal, and the load must
-                // finish (clear `loading`) without waiting for the snackbar to go away.
-                scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
+                showRateLimitSnackbar(searchRateLimitedMessage)
             } else {
                 error = e.message
             }
@@ -242,10 +248,9 @@ private fun FeatureRequestsScreenContent(
             // and paging can resume where it stopped; cool down before further auto loads.
             searchThrottler.penalize()
             loadMoreFailed = true
-            // Fire-and-forget: showSnackbar suspends until dismissal, and loadMore must
-            // release `loadingMore` (unblocking the retry footer) without waiting for the
-            // snackbar to go away.
-            scope.launch { snackbarHostState.showSnackbar(searchRateLimitedMessage) }
+            // Fire-and-forget: loadMore must release `loadingMore` (unblocking the retry
+            // footer) without waiting for the snackbar to go away.
+            showRateLimitSnackbar(searchRateLimitedMessage)
         } catch (_: Exception) {
             loadMoreFailed = true
         } finally {
@@ -419,13 +424,10 @@ private fun FeatureRequestsScreenContent(
                                             if (selectedItem?.id == item.id) {
                                                 selectedItem = previous
                                             }
-                                            // Fire-and-forget: showSnackbar suspends until
-                                            // dismissal, and the vote must release `votingIds`
-                                            // (unblocking the pill) without waiting for the
-                                            // snackbar to go away.
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
-                                            }
+                                            // Fire-and-forget: the vote must release
+                                            // `votingIds` (unblocking the pill) without
+                                            // waiting for the snackbar to go away.
+                                            showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                                         } catch (_: Exception) {
                                             items = items.map { if (it.id == item.id) previous else it }
                                             if (selectedItem?.id == item.id) {
@@ -494,12 +496,9 @@ private fun FeatureRequestsScreenContent(
                     } catch (e: FeedbackException.RateLimited) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
-                        // Fire-and-forget: showSnackbar suspends until dismissal, and the
-                        // vote must release `votingIds` (unblocking the pill) without waiting
-                        // for the snackbar to go away.
-                        scope.launch {
-                            snackbarHostState.showSnackbar(e.serverMessage ?: rateLimitedMessage)
-                        }
+                        // Fire-and-forget: the vote must release `votingIds` (unblocking
+                        // the pill) without waiting for the snackbar to go away.
+                        showRateLimitSnackbar(e.serverMessage ?: rateLimitedMessage)
                     } catch (_: Exception) {
                         items = items.map { if (it.id == currentItem.id) previous else it }
                         selectedItem = previous
