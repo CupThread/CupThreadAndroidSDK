@@ -251,6 +251,14 @@ class ChangelogPagingTest {
     }
 
     @Test
+    fun legacyPayloadWithBlankCursorDerivesFalse() = runTest {
+        val page = client { HttpResponse(200, legacyChangelogJson("\"   \"")) }
+            .fetchChangelogPage()
+        assertFalse(page.hasMore)
+        assertEquals("   ", page.nextCursor)
+    }
+
+    @Test
     fun explicitHasMoreFalseStaysAuthoritativeOverStaleCursor() = runTest {
         val page = client {
             HttpResponse(
