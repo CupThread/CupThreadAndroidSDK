@@ -60,6 +60,7 @@ import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.FeatureRequestPager
 import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -171,7 +172,12 @@ private fun FeatureRequestsScreenContent(
     fun showFeedbackSnackbar(message: String) {
         if (snackbarHostState.currentSnackbarData?.visuals?.message == message) return
         if (!pendingSnackbarMessages.add(message)) return
-        scope.launch {
+        // Dispatchers.Main.immediate runs the launch inline when already on the main
+        // thread — every caller is — so the snackbar data is published without an extra
+        // dispatcher hop. The plain composition-scope launch queues the coroutine on the
+        // ui dispatcher's frame-driven trampoline, which Robolectric tests observed
+        // starving indefinitely once the tree went quiescent (the CI flake).
+        scope.launch(Dispatchers.Main.immediate) {
             try {
                 snackbarHostState.showSnackbar(message)
             } finally {
