@@ -53,6 +53,7 @@ import dev.cupthread.feedback.internal.SearchThrottler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -440,6 +441,13 @@ private fun RoadmapBoardScreenContent(
                         requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                         showFeedbackSnackbar(signInRequiredMessage)
+                    } catch (e: CancellationException) {
+                        // Propagate only our own cancellation (issue #190); recover a
+                        // provider-local turnstile timeout as a failure (see the
+                        // FeatureRequestsScreen vote handlers for the rationale).
+                        coroutineContext.ensureActive()
+                        requests = revertedItems(requests, previous, optimisticRow)
+                        selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
                     } catch (_: Exception) {
                         requests = revertedItems(requests, previous, optimisticRow)
                         selectedItem = revertedSelection(selectedItem, optimisticSelection, previous)
