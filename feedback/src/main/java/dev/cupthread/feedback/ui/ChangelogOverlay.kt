@@ -28,11 +28,18 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.cupthread.feedback.ChangelogEntry
 import dev.cupthread.feedback.ChangelogStore
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.R
 import dev.cupthread.feedback.SdkAppearance
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -105,8 +112,33 @@ suspend fun FeedbackClient.presentLatestChangelog(
     }
 
     return suspendCancellableCoroutine { continuation ->
+        // Written on the UI thread while the window is set up, read from whichever thread
+        // cancels the coroutine; the reference lets the cancellation handler reach the
+        // dialog even though it is created inside a later `runOnUiThread` block.
+        val shownDialog = AtomicReference<Dialog?>(null)
+        // Cancelling the calling coroutine (a `lifecycleScope` ending with the activity, for
+        // example) must dismiss the window: otherwise the dialog leaks over the destroyed
+        // activity (`WindowLeaked`) and keeps composing against it (issue #177).
+        continuation.invokeOnCancellation {
+            val dialog = shownDialog.get() ?: return@invokeOnCancellation
+            activity.runOnUiThread {
+                if (dialog.isShowing) dialog.dismiss()
+            }
+        }
         activity.runOnUiThread {
+            // The caller may already be gone before this block got to run; attaching the
+            // window now would leak it (nothing will ever dismiss it).
+            if (!continuation.isActive) return@runOnUiThread
             val dialog = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar)
+            // The dialog is its own window, so its decor must propagate the host activity's
+            // owners — without them the ComposeView cannot obtain a Recomposer and every
+            // presentation crashes ("doesn't propagate ViewTreeLifecycleOwner").
+            dialog.window?.decorView?.let { decor ->
+                (activity as? LifecycleOwner)?.let { decor.setViewTreeLifecycleOwner(it) }
+                (activity as? ViewModelStoreOwner)?.let { decor.setViewTreeViewModelStoreOwner(it) }
+                (activity as? SavedStateRegistryOwner)?.let { decor.setViewTreeSavedStateRegistryOwner(it) }
+            }
+            shownDialog.set(dialog)
             val view = ComposeView(activity).apply {
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
                 setContent {
@@ -127,6 +159,9 @@ suspend fun FeedbackClient.presentLatestChangelog(
                 if (continuation.isActive) continuation.resume(true)
             }
             dialog.show()
+            // Cancellation may have raced the window setup above; the handler that was
+            // registered for it ran against a null reference, so drop the window here.
+            if (!continuation.isActive && dialog.isShowing) dialog.dismiss()
         }
     }
 }
