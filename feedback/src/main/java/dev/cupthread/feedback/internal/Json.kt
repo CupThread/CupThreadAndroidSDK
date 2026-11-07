@@ -36,6 +36,9 @@ import dev.cupthread.feedback.VoteResult
 import dev.cupthread.feedback.VoteWarning
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 
 internal fun JSONObject.stringOrNull(name: String): String? =
     if (!has(name) || isNull(name)) null else getString(name)
@@ -279,13 +282,35 @@ internal fun parseChangelogEntry(json: JSONObject): ChangelogEntry {
     )
 }
 
+/**
+ * Parses an ISO-8601 timestamp into the instant it denotes, accepting `Z` and numeric-offset
+ * representations plus any sub-second precision. Lexicographic comparison of the raw strings is
+ * not chronological (issue #166): `'.'` sorts before `'Z'` (mixed fractional precision) and an
+ * offset form sorts by its local clock reading, so entries must be ordered by instant instead.
+ *
+ * Returns `null` for strings no parser accepts; callers sort those deterministically last rather
+ * than failing the whole page.
+ */
+internal fun parseChangelogTimestamp(iso: String): Instant? =
+    try {
+        Instant.parse(iso)
+    } catch (_: DateTimeParseException) {
+        try {
+            // Older runtimes' ISO_INSTANT parsing rejects numeric offsets; OffsetDateTime
+            // accepts them on every java.time implementation since its first release.
+            OffsetDateTime.parse(iso).toInstant()
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
 internal fun parseListChangelog(json: JSONObject): ListChangelogResult {
     val array = json.optJSONArray("entries") ?: JSONArray()
     val entries = buildList {
         for (i in 0 until array.length()) {
             add(parseChangelogEntry(array.getJSONObject(i)))
         }
-    }.sortedByDescending { it.publishedAt }
+    }.sortedByDescending { parseChangelogTimestamp(it.publishedAt) ?: Instant.MIN }
     // Older deployments answer {entries, nextCursor} only; derive hasMore from the cursor then
     // (same defect class as parseListComments, fixed in #153). An explicit hasMore stays authoritative.
     val nextCursor = json.stringOrNull("nextCursor")?.takeIf { it.isNotEmpty() }
