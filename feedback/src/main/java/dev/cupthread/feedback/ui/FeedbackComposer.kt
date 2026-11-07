@@ -64,6 +64,7 @@ import dev.cupthread.feedback.SdkFeature
 import dev.cupthread.feedback.internal.AttachmentLimits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -188,6 +189,9 @@ fun FeedbackComposerSheet(
     onPickAttachment: (() -> Unit)? = null,
     maxAttachmentBytes: Long? = null
 ) {
+    // Attachments already finalized by an earlier submission in this sheet session; "Send
+    // more" restores the seed without them so their uploadIds cannot be resubmitted.
+    var submittedAttachments by remember { mutableStateOf<List<FeedbackAttachment>>(emptyList()) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         FeedbackFormBody(
             client = client,
@@ -197,6 +201,8 @@ fun FeedbackComposerSheet(
             onPickAttachment = onPickAttachment,
             onCloseSheet = onDismiss,
             maxAttachmentBytes = maxAttachmentBytes,
+            submittedAttachments = submittedAttachments,
+            onAttachmentsSubmitted = { submittedAttachments = submittedAttachments + it },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
@@ -218,6 +224,10 @@ private fun FeedbackComposerContent(
     modifier: Modifier = Modifier
 ) {
     var result by remember { mutableStateOf<FeedbackSubmissionResult?>(null) }
+    // Attachments already finalized by an earlier submission in this composer session. The
+    // form leaves composition while the confirmation is showing, so the consumed list must
+    // outlive it: "Send more" re-creates the form from the seed minus these attachments.
+    var submittedAttachments by remember { mutableStateOf<List<FeedbackAttachment>>(emptyList()) }
 
     Scaffold(
         modifier = modifier,
@@ -243,6 +253,8 @@ private fun FeedbackComposerContent(
                 onPickAttachment = onPickAttachment,
                 onCloseSheet = null,
                 maxAttachmentBytes = maxAttachmentBytes,
+                submittedAttachments = submittedAttachments,
+                onAttachmentsSubmitted = { submittedAttachments = submittedAttachments + it },
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
@@ -253,6 +265,14 @@ private fun FeedbackComposerContent(
     }
 }
 
+/**
+ * Shared form state machine behind [FeedbackComposer] and [FeedbackComposerSheet].
+ *
+ * @param submittedAttachments Attachments already sent by an earlier submission in this composer
+ *   session; their uploadIds are finalized, so they are stripped from the seed on "Send more".
+ * @param onAttachmentsSubmitted Called with the attachments of each successful submission so the
+ *   host of this form can track consumed uploadIds across the form leaving composition.
+ */
 @Composable
 internal fun FeedbackFormBody(
     client: FeedbackClient,
@@ -262,29 +282,44 @@ internal fun FeedbackFormBody(
     onPickAttachment: (() -> Unit)?,
     onCloseSheet: (() -> Unit)?,
     maxAttachmentBytes: Long?,
+    submittedAttachments: List<FeedbackAttachment> = emptyList(),
+    onAttachmentsSubmitted: (List<FeedbackAttachment>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Seed used both for the first presentation and for "Send more" resets: the host-provided
     // draft when one was supplied, otherwise an auto-filled draft for the current package.
-    fun freshDraft(): FeedbackDraft = initialDraft ?: run {
-        val info = try {
-            context.packageManager.getPackageInfo(context.packageName, 0)
-        } catch (_: PackageManager.NameNotFoundException) {
-            null
+    // Attachments consumed by an earlier submission are stripped from the restored seed —
+    // resubmitting their finalized uploadIds answers 409 attachment_already_finalized.
+    fun freshDraft(): FeedbackDraft {
+        val seed = initialDraft ?: run {
+            val info = try {
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            }
+            FeedbackDraft.autofilled(
+                platform = client.config.defaultPlatform,
+                versionName = info?.versionName.orEmpty(),
+                versionCode = info?.longVersionCode?.toString().orEmpty()
+            )
         }
-        FeedbackDraft.autofilled(
-            platform = client.config.defaultPlatform,
-            versionName = info?.versionName.orEmpty(),
-            versionCode = info?.longVersionCode?.toString().orEmpty()
-        )
+        return seed.copy(attachments = seed.attachments.filterNot { it in submittedAttachments })
     }
     var draft by remember { mutableStateOf(freshDraft()) }
     var submitting by remember { mutableStateOf(false) }
     var uploadingAttachment by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<FeedbackSubmissionResult?>(null) }
+    // Epoch of the report being composed. "Send more" invalidates attachment work started for
+    // an earlier report: an upload still in flight or a photo-picker result delivered late
+    // must not land in the fresh draft.
+    var reportSession by remember { mutableStateOf(0) }
+    // Report epoch the pending photo-picker result belongs to, captured when the picker is
+    // launched so a result delivered after a reset can be recognized as stale.
+    var pickerSession by remember { mutableStateOf(0) }
+    var uploadJob by remember { mutableStateOf<Job?>(null) }
 
     var effectiveMaxBytes by remember(client, maxAttachmentBytes) {
         val positiveOverride = maxAttachmentBytes?.takeIf { it > 0 }
@@ -328,126 +363,133 @@ internal fun FeedbackFormBody(
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
-        if (uri != null) {
-            if (!AttachmentLimits.canAddAttachment(draft.attachments.size) || !isConfigLoaded) {
-                return@rememberLauncherForActivityResult
-            }
-            scope.launch {
-                uploadingAttachment = true
-                error = null
-                try {
-                    val (bytes, totalSize) = withContext(Dispatchers.IO) {
-                        val declaredSize = try {
-                            val cursor = context.contentResolver.query(
-                                uri,
-                                arrayOf(OpenableColumns.SIZE),
-                                null,
-                                null,
-                                null
-                            )
-                            cursor?.use {
-                                if (it.moveToFirst()) {
-                                    val idx = it.getColumnIndex(OpenableColumns.SIZE)
-                                    if (idx >= 0 && !it.isNull(idx)) it.getLong(idx) else null
-                                } else null
-                            }
-                        } catch (_: Exception) {
+        if (uri == null || reportSession != pickerSession) {
+            // A result for a picker launched before the last "send more" reset belongs to the
+            // submitted report and must not modify the fresh draft.
+            return@rememberLauncherForActivityResult
+        }
+        if (!AttachmentLimits.canAddAttachment(draft.attachments.size) || !isConfigLoaded) {
+            return@rememberLauncherForActivityResult
+        }
+        val session = reportSession
+        uploadJob = scope.launch {
+            uploadingAttachment = true
+            error = null
+            try {
+                val (bytes, totalSize) = withContext(Dispatchers.IO) {
+                    val declaredSize = try {
+                        val cursor = context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.SIZE),
+                            null,
+                            null,
                             null
-                        }
-
-                        if (declaredSize != null && declaredSize > effectiveMaxBytes) {
-                            return@withContext null to declaredSize
-                        }
-
-                        val input = context.contentResolver.openInputStream(uri)
-                            ?: throw IllegalStateException("Could not read image file")
-                        input.use { stream ->
-                            val buffer = ByteArray(8192)
-                            val output = java.io.ByteArrayOutputStream()
-                            var totalRead = 0L
-                            var isOverLimit = false
-                            while (true) {
-                                val read = stream.read(buffer)
-                                if (read == -1) break
-                                totalRead += read
-                                if (totalRead > effectiveMaxBytes) {
-                                    isOverLimit = true
-                                    break
-                                }
-                                output.write(buffer, 0, read)
-                            }
-                            if (isOverLimit) {
-                                null to null
-                            } else {
-                                output.toByteArray() to totalRead
-                            }
-                        }
-                    }
-
-                    if (bytes == null) {
-                        val formattedLimit = AttachmentLimits.formatFileSize(effectiveMaxBytes)
-                        error = if (totalSize != null) {
-                            val formattedSize = AttachmentLimits.formatFileSize(totalSize)
-                            val displaySize = if (formattedSize == formattedLimit && totalSize != effectiveMaxBytes) {
-                                "$formattedSize ($totalSize bytes)"
-                            } else {
-                                formattedSize
-                            }
-                            context.getString(
-                                R.string.cupthread_attachment_oversized,
-                                displaySize,
-                                formattedLimit
-                            )
-                        } else {
-                            context.getString(
-                                R.string.cupthread_attachment_exceeds_limit,
-                                formattedLimit
-                            )
-                        }
-                        return@launch
-                    }
-
-                    val mimeType = context.contentResolver.getType(uri) ?: "image/png"
-                    val filename = withContext(Dispatchers.IO) {
-                        var name: String? = null
-                        val cursor = context.contentResolver.query(uri, null, null, null, null)
+                        )
                         cursor?.use {
                             if (it.moveToFirst()) {
-                                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                if (nameIndex >= 0) name = it.getString(nameIndex)
-                            }
+                                val idx = it.getColumnIndex(OpenableColumns.SIZE)
+                                if (idx >= 0 && !it.isNull(idx)) it.getLong(idx) else null
+                            } else null
                         }
-                        name ?: "screenshot_${System.currentTimeMillis()}.${if (mimeType.contains("jpeg") || mimeType.contains("jpg")) "jpg" else "png"}"
+                    } catch (_: Exception) {
+                        null
                     }
 
-                    if (AttachmentLimits.isSvg(filename, mimeType) || AttachmentLimits.hasSvgContent(bytes)) {
-                        error = unsupportedImageTypeError
-                        return@launch
-                    }
-                    if (!AttachmentLimits.isSupportedImageMime(mimeType)) {
-                        error = unsupportedImageTypeError
-                        return@launch
+                    if (declaredSize != null && declaredSize > effectiveMaxBytes) {
+                        return@withContext null to declaredSize
                     }
 
-                    val uploaded = client.uploadAttachment(
-                        data = bytes,
-                        filename = filename,
-                        mimeType = mimeType,
-                        preferredKind = FeedbackAttachment.Kind.IMAGE,
-                        userToken = userToken
-                    )
-                    draft = draft.copy(attachments = draft.attachments + uploaded)
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (ex: FeedbackException.UnsupportedMediaType) {
-                    error = unsupportedImageTypeError
-                } catch (ex: FeedbackException.ImageUploadFailed) {
-                    error = imageUploadFailedError
-                } catch (ex: Exception) {
-                    error = ex.message ?: defaultUploadError
-                } finally {
-                    uploadingAttachment = false
+                    val input = context.contentResolver.openInputStream(uri)
+                        ?: throw IllegalStateException("Could not read image file")
+                    input.use { stream ->
+                        val buffer = ByteArray(8192)
+                        val output = java.io.ByteArrayOutputStream()
+                        var totalRead = 0L
+                        var isOverLimit = false
+                        while (true) {
+                            val read = stream.read(buffer)
+                            if (read == -1) break
+                            totalRead += read
+                            if (totalRead > effectiveMaxBytes) {
+                                isOverLimit = true
+                                break
+                            }
+                            output.write(buffer, 0, read)
+                        }
+                        if (isOverLimit) {
+                            null to null
+                        } else {
+                            output.toByteArray() to totalRead
+                        }
+                    }
                 }
+
+                if (bytes == null) {
+                    val formattedLimit = AttachmentLimits.formatFileSize(effectiveMaxBytes)
+                    error = if (totalSize != null) {
+                        val formattedSize = AttachmentLimits.formatFileSize(totalSize)
+                        val displaySize = if (formattedSize == formattedLimit && totalSize != effectiveMaxBytes) {
+                            "$formattedSize ($totalSize bytes)"
+                        } else {
+                            formattedSize
+                        }
+                        context.getString(
+                            R.string.cupthread_attachment_oversized,
+                            displaySize,
+                            formattedLimit
+                        )
+                    } else {
+                        context.getString(
+                            R.string.cupthread_attachment_exceeds_limit,
+                            formattedLimit
+                        )
+                    }
+                    return@launch
+                }
+
+                val mimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val filename = withContext(Dispatchers.IO) {
+                    var name: String? = null
+                    val cursor = context.contentResolver.query(uri, null, null, null, null)
+                    cursor?.use {
+                        if (it.moveToFirst()) {
+                            val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex >= 0) name = it.getString(nameIndex)
+                        }
+                    }
+                    name ?: "screenshot_${System.currentTimeMillis()}.${if (mimeType.contains("jpeg") || mimeType.contains("jpg")) "jpg" else "png"}"
+                }
+
+                if (AttachmentLimits.isSvg(filename, mimeType) || AttachmentLimits.hasSvgContent(bytes)) {
+                    error = unsupportedImageTypeError
+                    return@launch
+                }
+                if (!AttachmentLimits.isSupportedImageMime(mimeType)) {
+                    error = unsupportedImageTypeError
+                    return@launch
+                }
+
+                val uploaded = client.uploadAttachment(
+                    data = bytes,
+                    filename = filename,
+                    mimeType = mimeType,
+                    preferredKind = FeedbackAttachment.Kind.IMAGE,
+                    userToken = userToken
+                )
+                // Only the report this upload was started for may receive the attachment.
+                if (reportSession == session) {
+                    draft = draft.copy(attachments = draft.attachments + uploaded)
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (ex: FeedbackException.UnsupportedMediaType) {
+                if (reportSession == session) error = unsupportedImageTypeError
+            } catch (ex: FeedbackException.ImageUploadFailed) {
+                if (reportSession == session) error = imageUploadFailedError
+            } catch (ex: Exception) {
+                if (reportSession == session) error = ex.message ?: defaultUploadError
+            } finally {
+                uploadingAttachment = false
             }
         }
     }
@@ -463,7 +505,11 @@ internal fun FeedbackFormBody(
             onSendMore = {
                 // "Send more" starts a new report: the submitted text and its server-finalized
                 // uploadIds must not survive into the next submission (resubmitting them
-                // answers 409 attachment_already_finalized).
+                // answers 409 attachment_already_finalized), and attachment work still in
+                // flight for the submitted report must not land in the fresh draft.
+                uploadJob?.cancel()
+                uploadJob = null
+                reportSession++
                 result = null
                 error = null
                 draft = freshDraft()
@@ -567,6 +613,7 @@ internal fun FeedbackFormBody(
                     if (onPickAttachment != null) {
                         onPickAttachment()
                     } else {
+                        pickerSession = reportSession
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
@@ -602,6 +649,9 @@ internal fun FeedbackFormBody(
                     error = null
                     try {
                         val sent = client.submit(draft, userToken)
+                        // The submitted attachments' uploadIds are now finalized on the server;
+                        // remember them so "send more" cannot restore them into a fresh report.
+                        onAttachmentsSubmitted(draft.attachments)
                         result = sent
                         onSubmit(sent)
                     } catch (ce: CancellationException) {

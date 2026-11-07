@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
@@ -13,6 +14,7 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEditable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -88,6 +90,9 @@ class FeedbackComposerSendMoreTest {
     private fun sendButton() = compose.onNode(hasText("Send Feedback") and hasClickAction())
 
     private fun setContent(initialDraft: FeedbackDraft? = null) {
+        // Mirrors what FeedbackComposerSheet/FeedbackComposerContent do: own the consumed
+        // uploadIds so they outlive the form and can be filtered out of the restored seed.
+        val submittedAttachments = mutableStateOf(emptyList<FeedbackAttachment>())
         compose.setContent {
             FeedbackFormBody(
                 client = client,
@@ -97,6 +102,10 @@ class FeedbackComposerSendMoreTest {
                 onPickAttachment = null,
                 onCloseSheet = {},
                 maxAttachmentBytes = 1_000_000L,
+                submittedAttachments = submittedAttachments.value,
+                onAttachmentsSubmitted = {
+                    submittedAttachments.value = submittedAttachments.value + it
+                },
                 // Same modifier chain FeedbackComposerSheet applies, so the form lays out
                 // exactly as it does inside the modal bottom sheet.
                 modifier = Modifier
@@ -127,6 +136,21 @@ class FeedbackComposerSendMoreTest {
         compose.waitForIdle()
         awaitCondition { sendButton().fetchSemanticsNode().boundsInRoot.height > 0 }
         sendButton().performClick()
+    }
+
+    /** Scrolls the attachment chip into view and taps its remove button. */
+    private fun deleteAttachment(filename: String) {
+        // Same below-the-fold constraint as [clickSubmit]: the chip must gain real layout
+        // bounds before the injected tap, so the form is scrolled to it first.
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(filename))
+        compose.waitForIdle()
+        awaitCondition {
+            compose.onAllNodesWithContentDescription("Remove attachment")
+                .fetchSemanticsNodes()
+                .any { it.boundsInRoot.height > 0 }
+        }
+        compose.onAllNodesWithContentDescription("Remove attachment")[1].performClick()
+        compose.waitForIdle()
     }
 
     private fun dumpTree(): String = buildString {
@@ -226,6 +250,58 @@ class FeedbackComposerSendMoreTest {
         assertTrue(second.contains("Second description body"))
         assertFalse("second submission must not repeat first submission content", second.contains("First report"))
         assertFalse(second.contains("First description body"))
+    }
+
+    @Test
+    fun sendMoreDropsConsumedUploadIdsFromRestoredSeed() {
+        // The photo-picker cannot be driven from Robolectric, so the attachments ride the
+        // host-supplied initialDraft — the same path a host uses for pre-uploaded diagnostics.
+        setContent(
+            FeedbackDraft(
+                title = "Seeded title",
+                description = "Seeded description text",
+                platform = FeedbackPlatform.ANDROID,
+                attachments = listOf(
+                    FeedbackAttachment(
+                        kind = FeedbackAttachment.Kind.IMAGE,
+                        filename = "first.png",
+                        uploadId = "upload-first"
+                    ),
+                    FeedbackAttachment(
+                        kind = FeedbackAttachment.Kind.IMAGE,
+                        filename = "second.png",
+                        uploadId = "upload-second"
+                    )
+                )
+            )
+        )
+
+        // Delete the second chip so only upload-first goes out with the first report.
+        deleteAttachment("second.png")
+        clickSubmit()
+        awaitCondition { submitRequests().size == 1 }
+
+        val first = submitBody(0)
+        assertTrue("first submission must carry its own uploadId", first.contains("upload-first"))
+        assertFalse("deleted attachment must not be submitted", first.contains("upload-second"))
+
+        awaitNode("Send More Feedback")
+        compose.onNodeWithText("Send More Feedback").performClick()
+
+        // The restored seed keeps the unconsumed attachment but drops the finalized
+        // upload-first, so the second report cannot trip 409 attachment_already_finalized.
+        awaitNodeGone("Send More Feedback")
+        compose.onNodeWithText("first.png").assertDoesNotExist()
+        compose.onNodeWithText("second.png").assertExists()
+        clickSubmit()
+        awaitCondition { submitRequests().size == 2 }
+
+        val second = submitBody(1)
+        assertTrue("second submission must carry the unconsumed uploadId", second.contains("upload-second"))
+        assertFalse(
+            "second submission must not reuse the finalized uploadId",
+            second.contains("upload-first")
+        )
     }
 
     private companion object {
