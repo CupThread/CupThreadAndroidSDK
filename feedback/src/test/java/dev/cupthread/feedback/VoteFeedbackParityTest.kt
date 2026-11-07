@@ -18,6 +18,7 @@ import dev.cupthread.feedback.internal.SdkAppearanceCache
 import dev.cupthread.feedback.ui.FeatureRequestsScreen
 import dev.cupthread.feedback.ui.RoadmapBoardScreen
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertTrue
@@ -50,9 +51,11 @@ class VoteFeedbackParityTest {
     val compose = createComposeRule()
 
     private val calls = Collections.synchronizedList(mutableListOf<HttpRequest>())
+    private val holdVote = AtomicBoolean(false)
     private val rateLimited = AtomicBoolean(false)
     private val turnstileRejected = AtomicBoolean(false)
     private val authRejected = AtomicBoolean(false)
+    private var voteGate = CountDownLatch(1)
 
     private val client = FeedbackClient(
         config = FeedbackClientConfig(baseUrl = "https://api.example.com", appKey = APP_KEY),
@@ -65,13 +68,17 @@ class VoteFeedbackParityTest {
                     HttpResponse(200, """{"versions":[]}""")
                 request.url.contains("/api/v1/public/columns/") ->
                     HttpResponse(200, COLUMNS_JSON)
-                (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") ->
+                (request.method == "POST" || request.method == "DELETE") && request.url.contains("/vote") -> {
+                    // Hold the vote in flight until the test releases the gate, so the
+                    // optimistic flip is observable before the rejection resolves.
+                    if (holdVote.get()) voteGate.await(HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     when {
                         rateLimited.get() -> HttpResponse(429, "")
                         turnstileRejected.get() -> HttpResponse(403, """{"error":"turnstile_required"}""")
                         authRejected.get() -> HttpResponse(401, """{"error":"authentication_required"}""")
                         else -> HttpResponse(404, """{"error":"not_found"}""")
                     }
+                }
                 request.method == "GET" && request.url.contains("/api/v1/feature-requests") ->
                     HttpResponse(200, PAGE1_JSON)
                 else -> HttpResponse(404, """{"error":"not_found"}""")
@@ -82,9 +89,11 @@ class VoteFeedbackParityTest {
     @Before
     fun resetState() {
         SdkAppearanceCache.clear()
+        holdVote.set(false)
         rateLimited.set(false)
         turnstileRejected.set(false)
         authRejected.set(false)
+        voteGate = CountDownLatch(1)
         synchronized(calls) { calls.clear() }
     }
 
@@ -133,14 +142,24 @@ class VoteFeedbackParityTest {
         awaitCondition { "Vote, 10" in dialogDescriptions() && "Remove vote, 11" !in dialogDescriptions() }
     }
 
-    /** Opens the detail sheet on "Alpha request", then votes with the rejection armed. */
+    /**
+     * Opens the detail sheet on "Alpha request", then votes with the rejection armed.
+     *
+     * The vote request is held in flight until the optimistic flip ("Remove vote, 11") is
+     * observed, so the post-rejection rollback checks below cannot pass without an update
+     * actually having been applied — the final state alone proves nothing about the
+     * transition.
+     */
     private fun openSheetAndVoteWithRejection(armRejection: () -> Unit) {
         awaitNode("Alpha request")
         compose.onAllNodesWithText("Alpha request")[0].performClick()
         awaitCondition { "Vote, 10" in dialogDescriptions() }
 
+        holdVote.set(true)
         armRejection()
         tapDescriptionInDialog("Vote, 10")
+        awaitCondition { "Remove vote, 11" in dialogDescriptions() }
+        voteGate.countDown()
     }
 
     /**
@@ -287,6 +306,7 @@ class VoteFeedbackParityTest {
             "Voting requires human verification that isn\u2019t available in this app right now."
         const val VOTE_SIGN_IN_REQUIRED = "Please sign in to vote."
         const val WAIT_TIMEOUT_MS = 30_000L
+        const val HOLD_TIMEOUT_MS = 10_000L
         const val FRAME_MS = 64L
         val PAGE1_JSON = """
             {"requests":[
