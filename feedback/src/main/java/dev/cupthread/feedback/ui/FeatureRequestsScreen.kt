@@ -760,7 +760,7 @@ private fun FeatureRequestRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            relativeOrDate(item.createdAt),
+                            friendlyDate(item.createdAt),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

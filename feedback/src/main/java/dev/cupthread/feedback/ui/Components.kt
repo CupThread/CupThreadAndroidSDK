@@ -81,10 +81,11 @@ import dev.cupthread.feedback.BoardColumn
 import dev.cupthread.feedback.BoardColumnKind
 import dev.cupthread.feedback.FeatureRequestItem
 import dev.cupthread.feedback.R
-import java.time.Instant
+import dev.cupthread.feedback.internal.parseChangelogTimestamp
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Locale
 
 internal data class StageStyle(val tint: Color, val icon: ImageVector)
 
@@ -417,18 +418,21 @@ internal fun ColumnChip(
     }
 }
 
-internal fun friendlyDate(iso: String): String {
-    return try {
-        val instant = Instant.parse(iso)
-        DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-            .withZone(ZoneId.systemDefault())
-            .format(instant)
-    } catch (_: Exception) {
-        iso.take(10)
-    }
+// Renders the same wire-format timestamps the data layer already normalizes through
+// parseChangelogTimestamp (issue #202): bare Instant.parse rejects numeric offsets on older
+// runtimes, which silently degraded every rendered date to the raw `iso.take(10)` prefix —
+// not localized, not in the device timezone, and inconsistent with the parsed sort order.
+internal fun friendlyDate(
+    iso: String,
+    zone: ZoneId = ZoneId.systemDefault(),
+    locale: Locale = Locale.getDefault()
+): String {
+    val instant = parseChangelogTimestamp(iso) ?: return iso.take(10)
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+        .withLocale(locale)
+        .withZone(zone)
+        .format(instant)
 }
-
-internal fun relativeOrDate(iso: String): String = friendlyDate(iso)
 
 // Byte-bounded LRU cache (issue #141): one entry per hinted URL (the width hint is part of the
 // key), sized by decoded bytes, evicting least-recently-used entries past a fraction of the heap.
@@ -886,7 +890,7 @@ fun UserProfileSheet(
                                                 fontWeight = FontWeight.SemiBold
                                             )
                                             Text(
-                                                relativeOrDate(comment.createdAt),
+                                                friendlyDate(comment.createdAt),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
