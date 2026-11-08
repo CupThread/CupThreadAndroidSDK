@@ -4324,6 +4324,109 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun updateUserAttributesRejectsNonFiniteAndNegativeMrrClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        val invalidValues = listOf(
+            Double.NaN,
+            Double.POSITIVE_INFINITY,
+            Double.NEGATIVE_INFINITY,
+            -10.0,
+            -0.01
+        )
+        for (invalid in invalidValues) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", mrr = invalid)
+                fail("Expected IllegalArgumentException for mrr '$invalid'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("mrr must be finite and non-negative"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesRejectsReservedCurrencySentinelsClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        for (reserved in listOf("unset", "null", "  unset  ", "  null  ")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", currency = reserved)
+                fail("Expected IllegalArgumentException for reserved currency '$reserved'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("reserved protocol sentinels"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesRejectsBlankCurrencyClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        for (blank in listOf("", "   ", "\t")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", currency = blank)
+                fail("Expected IllegalArgumentException for blank currency '$blank'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("currency cannot be blank"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesRejectsNewlinesInCurrencyAndPlanClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        for (newlineCurrency in listOf("USD\n", "USD\r", "USD\r\nEUR")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", currency = newlineCurrency)
+                fail("Expected IllegalArgumentException for newline in currency '$newlineCurrency'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("currency cannot contain newline characters"))
+            }
+        }
+        for (newlinePlan in listOf("pro\n", "pro\r", "pro\r\nannual")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", plan = newlinePlan)
+                fail("Expected IllegalArgumentException for newline in plan '$newlinePlan'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("plan cannot contain newline characters"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesAllowsNearMissCurrencyNamesClientSide() = runTest {
+        val nearMisses = listOf("UNSET", "Unset", "NULL", "Null")
+        for (currencyName in nearMisses) {
+            var capturedBody: String? = null
+            val testClient = signingClient { request ->
+                capturedBody = request.body?.toString(Charsets.UTF_8)
+                HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+            }
+            val result = testClient.updateUserAttributes(userToken = "tok-1", currency = currencyName)
+            assertTrue(result.ok)
+            assertNotNull(capturedBody)
+            assertTrue(capturedBody!!.contains("\"currency\":\"$currencyName\""))
+        }
+    }
+
+    @Test
     fun updateUserAttributesMapsHttp400PlanReservedSentinelToDedicatedException() = runTest {
         val errorBody = """
             {
