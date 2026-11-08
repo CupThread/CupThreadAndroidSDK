@@ -56,6 +56,45 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * The typed error surfaces an endpoint's contract maps raw HTTP rejections into.
+ *
+ * Call sites declare exactly the surfaces their endpoint maps (`sendJson`, `sendMultipart`,
+ * `sendBinary` and `send` take one `Set<ErrorSurface>`), replacing the former boolean soup of
+ * `mapXxxErrors` flags whose omission at a single call site shipped a real drift (issue #191:
+ * `submitFeatureRequest` forgot the 429 mapping). A new typed rejection is now one enum entry,
+ * one ladder branch, and call-site sets — no signature churn across the transport helpers.
+ *
+ * The set does not affect precedence: [FeedbackException] mapping order is fixed by the
+ * documented ladder in [send].
+ */
+internal enum class ErrorSurface {
+    /** HTTP 429 → [FeedbackException.RateLimited]. */
+    RateLimit,
+    /** HTTP 403 Turnstile rejection → [FeedbackException.VerificationRequired]. */
+    Verification,
+    /** HTTP 402 `tier_limit_submissions` / `subscription_inactive` → [FeedbackException.SubmissionQuotaExceeded] / [FeedbackException.SubscriptionInactive]. */
+    SubmissionQuota,
+    /** HTTP 404 invisible thread → [FeedbackException.CommentsUnavailable]. */
+    CommentsUnavailable,
+    /** HTTP 403 `email_not_verified` → [FeedbackException.EmailNotVerified]. */
+    EmailNotVerified,
+    /** HTTP 400 uploader identity rejections → [FeedbackException.UploaderIdentityRequired] / [FeedbackException.UploaderMismatch]. */
+    Uploader,
+    /** HTTP 400 `invalid_parent` → [FeedbackException.InvalidParentComment]. */
+    Comment,
+    /** HTTP 400 reserved-plan sentinel → [FeedbackException.ReservedPlanSentinel]. */
+    UserAttributes,
+    /** HTTP 422 `scan_rejected` → [FeedbackException.AttachmentScanRejected]. */
+    AttachmentScan,
+    /** HTTP 409 `already_finalized` → [FeedbackException.AttachmentAlreadyFinalized]. */
+    AttachmentFinalized,
+    /** HTTP 415 unsupported media type → [FeedbackException.UnsupportedMediaType]. */
+    UnsupportedMediaType,
+    /** HTTP 500 `image_upload_failed` → [FeedbackException.ImageUploadFailed]. */
+    ImageUpload
+}
+
+/**
  * Primary HTTP API client for interacting with the CupThread developer platform.
  *
  * Provides asynchronous, coroutine-based access to:
@@ -231,12 +270,14 @@ class FeedbackClient internal constructor(
                         body = feedbackSubmitPayload(draft, token),
                         userToken = userToken,
                         accepted = setOf(200, 201, 202),
-                        mapSubmissionQuotaErrors = true,
-                        mapAttachmentScanErrors = true,
-                        mapAttachmentAlreadyFinalizedErrors = true,
-                        mapVerificationErrors = true,
-                        mapUploaderErrors = true,
-                        mapRateLimitErrors = true
+                        errorSurfaces = setOf(
+                            ErrorSurface.Uploader,
+                            ErrorSurface.Verification,
+                            ErrorSurface.SubmissionQuota,
+                            ErrorSurface.AttachmentFinalized,
+                            ErrorSurface.AttachmentScan,
+                            ErrorSurface.RateLimit
+                        )
                     )
                 )
             }
@@ -396,9 +437,11 @@ class FeedbackClient internal constructor(
                 body = body,
                 userToken = userToken,
                 accepted = setOf(200, 201),
-                mapUnsupportedMediaType = true,
-                mapRateLimitErrors = true,
-                mapImageUploadErrors = true
+                errorSurfaces = setOf(
+                    ErrorSurface.UnsupportedMediaType,
+                    ErrorSurface.RateLimit,
+                    ErrorSurface.ImageUpload
+                )
             )
             return try {
                 val attachment = parseAttachment(json)
@@ -489,9 +532,11 @@ class FeedbackClient internal constructor(
                 body = payload,
                 userToken = token,
                 accepted = setOf(200, 201),
-                mapRateLimitErrors = true,
-                mapVerificationErrors = true,
-                mapUploaderErrors = true
+                errorSurfaces = setOf(
+                    ErrorSurface.Uploader,
+                    ErrorSurface.Verification,
+                    ErrorSurface.RateLimit
+                )
             )
         }
         val reservation = try {
@@ -506,9 +551,11 @@ class FeedbackClient internal constructor(
             body = data,
             bearerToken = reservation.sessionToken,
             accepted = setOf(200, 201),
-            mapUnsupportedMediaType = true,
-            mapRateLimitErrors = true,
-            mapUploaderErrors = true
+            errorSurfaces = setOf(
+                ErrorSurface.Uploader,
+                ErrorSurface.UnsupportedMediaType,
+                ErrorSurface.RateLimit
+            )
         )
         val uploaded = try {
             parseUploadedSessionFile(uploadedJson)
@@ -584,7 +631,10 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchColumns(): List<BoardColumn> {
-        val json = get("/api/v1/public/columns/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
+        val json = get(
+            "/api/v1/public/columns/${encodePathSegment(config.appKey)}",
+            errorSurfaces = setOf(ErrorSurface.RateLimit)
+        )
         val array = json.optJSONArray("columns") ?: JSONArray()
         return parseOrInvalidResponse {
             buildList {
@@ -612,7 +662,10 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun fetchVersions(): List<AppVersion> {
-        val json = get("/api/v1/public/versions/${encodePathSegment(config.appKey)}", mapRateLimitErrors = true)
+        val json = get(
+            "/api/v1/public/versions/${encodePathSegment(config.appKey)}",
+            errorSurfaces = setOf(ErrorSurface.RateLimit)
+        )
         val array = json.optJSONArray("versions") ?: JSONArray()
         return parseOrInvalidResponse {
             buildList {
@@ -684,7 +737,7 @@ class FeedbackClient internal constructor(
                     userToken = userToken,
                     // Search 429s surface as a typed RateLimited error instead of a raw JSON body
                     // inside UnexpectedStatus (issue #23).
-                    mapRateLimitErrors = true
+                    errorSurfaces = setOf(ErrorSurface.RateLimit)
                 ),
                 offset
             )
@@ -757,7 +810,7 @@ class FeedbackClient internal constructor(
         val json = get(
             path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}",
             userToken = trimmedToken,
-            mapRateLimitErrors = true
+            errorSurfaces = setOf(ErrorSurface.RateLimit)
         )
         val requestJson = json.optJSONObject("request")
             ?: throw FeedbackException.InvalidResponse(IllegalStateException("Missing 'request' in response: $json"))
@@ -857,9 +910,11 @@ class FeedbackClient internal constructor(
                         body = payload,
                         userToken = null,
                         accepted = setOf(200, 201),
-                        mapSubmissionQuotaErrors = true,
-                        mapVerificationErrors = true,
-                        mapRateLimitErrors = true
+                        errorSurfaces = setOf(
+                            ErrorSurface.Verification,
+                            ErrorSurface.SubmissionQuota,
+                            ErrorSurface.RateLimit
+                        )
                     )
                 )
             }
@@ -1011,8 +1066,10 @@ class FeedbackClient internal constructor(
                         body = payload,
                         userToken = userToken,
                         accepted = setOf(200),
-                        mapRateLimitErrors = true,
-                        mapVerificationErrors = true
+                        errorSurfaces = setOf(
+                            ErrorSurface.Verification,
+                            ErrorSurface.RateLimit
+                        )
                     )
                 )
             }
@@ -1092,7 +1149,7 @@ class FeedbackClient internal constructor(
                     body = payload,
                     userToken = userToken,
                     accepted = setOf(200),
-                    mapRateLimitErrors = true
+                    errorSurfaces = setOf(ErrorSurface.RateLimit)
                 )
             )
         }
@@ -1155,8 +1212,10 @@ class FeedbackClient internal constructor(
         }
         val json = get(
             path,
-            mapRateLimitErrors = true,
-            mapCommentsUnavailableErrors = true
+            errorSurfaces = setOf(
+                ErrorSurface.CommentsUnavailable,
+                ErrorSurface.RateLimit
+            )
         )
         return parseOrInvalidResponse { parseListComments(json) }
     }
@@ -1273,8 +1332,10 @@ class FeedbackClient internal constructor(
                     body = payload,
                     userToken = userToken,
                     accepted = setOf(200, 201),
-                    mapCommentErrors = true,
-                    mapRateLimitErrors = true
+                    errorSurfaces = setOf(
+                        ErrorSurface.Comment,
+                        ErrorSurface.RateLimit
+                    )
                 )
             )
         }
@@ -1320,7 +1381,7 @@ class FeedbackClient internal constructor(
         }
         val json = get(
             "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog?${encodeQuery(params)}",
-            mapRateLimitErrors = true
+            errorSurfaces = setOf(ErrorSurface.RateLimit)
         )
         return parseOrInvalidResponse { parseListChangelog(json) }
     }
@@ -1502,8 +1563,10 @@ class FeedbackClient internal constructor(
                     payload,
                     userToken = userToken,
                     accepted = setOf(200, 201),
-                    mapRateLimitErrors = true,
-                    mapEmailNotVerifiedErrors = true
+                    errorSurfaces = setOf(
+                        ErrorSurface.EmailNotVerified,
+                        ErrorSurface.RateLimit
+                    )
                 )
             )
         }
@@ -1633,7 +1696,7 @@ class FeedbackClient internal constructor(
                 "/api/v1/public/digest/unsubscribe",
                 payload,
                 accepted = setOf(200),
-                mapRateLimitErrors = true
+                errorSurfaces = setOf(ErrorSurface.RateLimit)
             )
         )
     }
@@ -1788,8 +1851,10 @@ class FeedbackClient internal constructor(
                     payload,
                     userToken = userToken,
                     accepted = setOf(200),
-                    mapRateLimitErrors = true,
-                    mapUserAttributeErrors = true
+                    errorSurfaces = setOf(
+                        ErrorSurface.UserAttributes,
+                        ErrorSurface.RateLimit
+                    )
                 )
             )
         }
@@ -1824,7 +1889,7 @@ class FeedbackClient internal constructor(
             parsePublicUserProfileResult(
                 get(
                     path = "/api/v1/users/${encodePathSegment(trimmedId)}/profile?$query",
-                    mapRateLimitErrors = true
+                    errorSurfaces = setOf(ErrorSurface.RateLimit)
                 )
             )
         }
@@ -1955,16 +2020,14 @@ class FeedbackClient internal constructor(
         path: String,
         userToken: String? = null,
         bearerToken: String? = null,
-        mapRateLimitErrors: Boolean = false,
-        mapCommentsUnavailableErrors: Boolean = false
+        errorSurfaces: Set<ErrorSurface> = emptySet()
     ): JSONObject = sendJson(
         "GET",
         path,
         body = null,
         userToken = userToken,
         bearerToken = bearerToken,
-        mapRateLimitErrors = mapRateLimitErrors,
-        mapCommentsUnavailableErrors = mapCommentsUnavailableErrors
+        errorSurfaces = errorSurfaces
     )
 
     private fun buildHeaders(
@@ -2041,16 +2104,7 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200),
-        mapSubmissionQuotaErrors: Boolean = false,
-        mapAttachmentScanErrors: Boolean = false,
-        mapAttachmentAlreadyFinalizedErrors: Boolean = false,
-        mapRateLimitErrors: Boolean = false,
-        mapVerificationErrors: Boolean = false,
-        mapUserAttributeErrors: Boolean = false,
-        mapUploaderErrors: Boolean = false,
-        mapCommentErrors: Boolean = false,
-        mapEmailNotVerifiedErrors: Boolean = false,
-        mapCommentsUnavailableErrors: Boolean = false
+        errorSurfaces: Set<ErrorSurface> = emptySet()
     ): JSONObject {
         val contentType = if (body != null) "application/json" else null
         return send(
@@ -2062,16 +2116,7 @@ class FeedbackClient internal constructor(
                 body = body?.toString()?.toByteArray(Charsets.UTF_8)
             ),
             accepted,
-            mapSubmissionQuotaErrors = mapSubmissionQuotaErrors,
-            mapAttachmentScanErrors = mapAttachmentScanErrors,
-            mapAttachmentAlreadyFinalizedErrors = mapAttachmentAlreadyFinalizedErrors,
-            mapRateLimitErrors = mapRateLimitErrors,
-            mapVerificationErrors = mapVerificationErrors,
-            mapUserAttributeErrors = mapUserAttributeErrors,
-            mapUploaderErrors = mapUploaderErrors,
-            mapCommentErrors = mapCommentErrors,
-            mapEmailNotVerifiedErrors = mapEmailNotVerifiedErrors,
-            mapCommentsUnavailableErrors = mapCommentsUnavailableErrors
+            errorSurfaces = errorSurfaces
         )
     }
 
@@ -2082,9 +2127,7 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200, 201),
-        mapUnsupportedMediaType: Boolean = false,
-        mapRateLimitErrors: Boolean = false,
-        mapImageUploadErrors: Boolean = false
+        errorSurfaces: Set<ErrorSurface> = emptySet()
     ): JSONObject {
         val contentType = "multipart/form-data; boundary=$boundary"
         return send(
@@ -2096,9 +2139,7 @@ class FeedbackClient internal constructor(
                 body = body
             ),
             accepted,
-            mapUnsupportedMediaType = mapUnsupportedMediaType,
-            mapRateLimitErrors = mapRateLimitErrors,
-            mapImageUploadErrors = mapImageUploadErrors
+            errorSurfaces = errorSurfaces
         )
     }
 
@@ -2109,9 +2150,7 @@ class FeedbackClient internal constructor(
         body: ByteArray,
         bearerToken: String? = null,
         accepted: Set<Int> = setOf(200),
-        mapUnsupportedMediaType: Boolean = false,
-        mapRateLimitErrors: Boolean = false,
-        mapUploaderErrors: Boolean = false
+        errorSurfaces: Set<ErrorSurface> = emptySet()
     ): JSONObject = send(
         HttpRequest(
             method = method,
@@ -2121,9 +2160,7 @@ class FeedbackClient internal constructor(
             body = body
         ),
         accepted,
-        mapUnsupportedMediaType = mapUnsupportedMediaType,
-        mapRateLimitErrors = mapRateLimitErrors,
-        mapUploaderErrors = mapUploaderErrors
+        errorSurfaces = errorSurfaces
     )
 
     /**
@@ -2151,21 +2188,37 @@ class FeedbackClient internal constructor(
         }
     }
 
+    /**
+     * Executes [request] and maps a rejected status into the typed [FeedbackException] surfaces
+     * declared by the caller's `errorSurfaces` set (issues #197/#191).
+     *
+     * The mapping ladder below is ordered, and that statement order **is** the precedence policy:
+     * the first branch whose status code and declared surface match claims the response, so a
+     * response can surface only one typed error. The authoritative order is:
+     *
+     * 1. HTTP 400 [ErrorSurface.Comment] → `InvalidParentComment`
+     * 2. HTTP 400 [ErrorSurface.UserAttributes] → `ReservedPlanSentinel`
+     * 3. HTTP 400 [ErrorSurface.Uploader] → `UploaderIdentityRequired` / `UploaderMismatch`
+     * 4. HTTP 401 (unconditional) → `AuthenticationRequired`
+     * 5. HTTP 403 [ErrorSurface.EmailNotVerified] → `EmailNotVerified` (before the Turnstile check)
+     * 6. HTTP 404 [ErrorSurface.CommentsUnavailable] → `CommentsUnavailable`
+     * 7. HTTP 403 [ErrorSurface.Verification] → `VerificationRequired`
+     * 8. HTTP 402 [ErrorSurface.SubmissionQuota] → `SubmissionQuotaExceeded` / `SubscriptionInactive`
+     * 9. HTTP 409 [ErrorSurface.AttachmentFinalized] → `AttachmentAlreadyFinalized`
+     * 10. HTTP 415 [ErrorSurface.UnsupportedMediaType] → `UnsupportedMediaType`
+     * 11. HTTP 422 [ErrorSurface.AttachmentScan] → `AttachmentScanRejected`
+     * 12. HTTP 429 [ErrorSurface.RateLimit] → `RateLimited`
+     * 13. HTTP 500 [ErrorSurface.ImageUpload] → `ImageUploadFailed`
+     * 14. HTTP 400 fallback → `ValidationFailed` (documented zod envelope), otherwise
+     *     `UnexpectedStatus`.
+     *
+     * Keep new branches inside this documented order; reordering changes which error an
+     * ambiguous body surfaces.
+     */
     private suspend fun send(
         request: HttpRequest,
         accepted: Set<Int>,
-        mapSubmissionQuotaErrors: Boolean = false,
-        mapUnsupportedMediaType: Boolean = false,
-        mapAttachmentScanErrors: Boolean = false,
-        mapAttachmentAlreadyFinalizedErrors: Boolean = false,
-        mapRateLimitErrors: Boolean = false,
-        mapVerificationErrors: Boolean = false,
-        mapUserAttributeErrors: Boolean = false,
-        mapUploaderErrors: Boolean = false,
-        mapCommentErrors: Boolean = false,
-        mapImageUploadErrors: Boolean = false,
-        mapEmailNotVerifiedErrors: Boolean = false,
-        mapCommentsUnavailableErrors: Boolean = false
+        errorSurfaces: Set<ErrorSurface> = emptySet()
     ): JSONObject {
         requireHttpsForCredentials(request)
         return withContext(Dispatchers.IO) {
@@ -2180,7 +2233,7 @@ class FeedbackClient internal constructor(
                 val requestId = response.headers.entries
                     .firstOrNull { (name, _) -> name.equals(REQUEST_ID_HEADER, ignoreCase = true) }
                     ?.value?.trim()?.takeIf { it.isNotEmpty() }
-                if (response.code == 400 && mapCommentErrors) {
+                if (response.code == 400 && ErrorSurface.Comment in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second
@@ -2192,7 +2245,7 @@ class FeedbackClient internal constructor(
                         )
                     }
                 }
-                if (response.code == 400 && mapUserAttributeErrors) {
+                if (response.code == 400 && ErrorSurface.UserAttributes in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second
@@ -2204,7 +2257,7 @@ class FeedbackClient internal constructor(
                         )
                     }
                 }
-                if (response.code == 400 && mapUploaderErrors) {
+                if (response.code == 400 && ErrorSurface.Uploader in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second
@@ -2225,7 +2278,7 @@ class FeedbackClient internal constructor(
                     }
                 }
                 if (response.code == 401) throw FeedbackException.AuthenticationRequired(requestId)
-                if (response.code == 403 && mapEmailNotVerifiedErrors) {
+                if (response.code == 403 && ErrorSurface.EmailNotVerified in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     if (errorPayload?.first == FeedbackException.EmailNotVerified.CODE_EMAIL_NOT_VERIFIED) {
                         throw FeedbackException.EmailNotVerified(
@@ -2235,14 +2288,14 @@ class FeedbackClient internal constructor(
                         )
                     }
                 }
-                if (response.code == 404 && mapCommentsUnavailableErrors) {
+                if (response.code == 404 && ErrorSurface.CommentsUnavailable in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     throw FeedbackException.CommentsUnavailable(
                         serverMessage = errorPayload?.second ?: response.body.ifBlank { null },
                         requestId = requestId
                     )
                 }
-                if (response.code == 403 && mapVerificationErrors) {
+                if (response.code == 403 && ErrorSurface.Verification in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second ?: response.body.ifBlank { null }
@@ -2250,14 +2303,14 @@ class FeedbackClient internal constructor(
                         throw FeedbackException.VerificationRequired(code, message, requestId)
                     }
                 }
-                if (response.code == 402 && mapSubmissionQuotaErrors) {
+                if (response.code == 402 && ErrorSurface.SubmissionQuota in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     when (errorPayload?.first) {
                         "tier_limit_submissions" -> throw FeedbackException.SubmissionQuotaExceeded(errorPayload.second, requestId)
                         "subscription_inactive" -> throw FeedbackException.SubscriptionInactive(errorPayload.second, requestId)
                     }
                 }
-                if (response.code == 409 && mapAttachmentAlreadyFinalizedErrors) {
+                if (response.code == 409 && ErrorSurface.AttachmentFinalized in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second
@@ -2269,23 +2322,23 @@ class FeedbackClient internal constructor(
                         )
                     }
                 }
-                if (response.code == 415 && mapUnsupportedMediaType) {
+                if (response.code == 415 && ErrorSurface.UnsupportedMediaType in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     throw FeedbackException.UnsupportedMediaType(errorPayload?.second ?: response.body.ifBlank { null }, requestId)
                 }
-                if (response.code == 422 && mapAttachmentScanErrors) {
+                if (response.code == 422 && ErrorSurface.AttachmentScan in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     if (errorPayload?.first == "scan_rejected") {
                         val message = errorPayload.second
                         throw FeedbackException.AttachmentScanRejected(message, requestId)
                     }
                 }
-                if (response.code == 429 && mapRateLimitErrors) {
+                if (response.code == 429 && ErrorSurface.RateLimit in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val message = if (errorPayload != null) errorPayload.second else response.body.ifBlank { null }
                     throw FeedbackException.RateLimited(message, requestId)
                 }
-                if (response.code == 500 && mapImageUploadErrors) {
+                if (response.code == 500 && ErrorSurface.ImageUpload in errorSurfaces) {
                     val errorPayload = parseErrorPayload(response.body)
                     val code = errorPayload?.first
                     val message = errorPayload?.second
