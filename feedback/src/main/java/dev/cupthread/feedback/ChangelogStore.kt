@@ -51,7 +51,7 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
     fun markChangelogSeen(versionOrId: String) {
         if (versionOrId.isBlank()) return
         synchronized(lock) {
-            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
+            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()) ?: emptySet())
             current.add(versionOrId.trim())
             prefs.edit().putStringSet(KEY_SEEN, current).apply()
         }
@@ -67,7 +67,7 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
     fun markChangelogUnseen(versionOrId: String) {
         if (versionOrId.isBlank()) return
         synchronized(lock) {
-            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
+            val current = HashSet(prefs.getStringSet(KEY_SEEN, emptySet()) ?: emptySet())
             if (current.remove(versionOrId.trim())) {
                 prefs.edit().putStringSet(KEY_SEEN, current).apply()
             }
@@ -80,7 +80,7 @@ class ChangelogStore internal constructor(private val prefs: SharedPreferences) 
      * The returned set is a defensive copy: mutating it does not affect the store.
      */
     fun getSeenChangelogs(): Set<String> =
-        HashSet(prefs.getStringSet(KEY_SEEN, emptySet()))
+        HashSet(prefs.getStringSet(KEY_SEEN, emptySet()) ?: emptySet())
 
     /**
      * Clears all seen changelog records, causing all versions to be considered unseen again.
