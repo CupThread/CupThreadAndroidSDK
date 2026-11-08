@@ -897,17 +897,19 @@ class FeedbackClient internal constructor(
         userToken: String,
         turnstileToken: String? = null
     ): FeatureRequestSubmissionResult {
+        // #212: the body token is normalized by the same transport-boundary helper as every
+        // header credential, so the identity stored server-side matches the trimmed form.
+        // #214: the signature requires an identity, so a blank value fails fast first — before
+        // the HTTPS guard below (a blank token transmits no credential, so the cleartext error
+        // would only mask the root cause) and before the Turnstile retry wrapper can consult a
+        // provider for a request that cannot succeed.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         // The requester token travels in the JSON body (#64), not the X-User-Token header, so the
         // central send() credential guard (#199) cannot see it — enforce the cleartext policy here.
         requireHttpsDestination("/api/v1/feature-requests") { targetUrl ->
             "submitFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
-        }
-        // #212: the body token is normalized by the same transport-boundary helper as every
-        // header credential, so the identity stored server-side matches the trimmed form.
-        // #214: the signature requires an identity, so a blank value fails fast here — before
-        // the Turnstile retry wrapper can consult a provider for a request that cannot succeed.
-        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
-            "userToken cannot be blank"
         }
         return sendWithTurnstileRetry(
             challenge = TurnstileChallenge.featureRequest(config.appKey),

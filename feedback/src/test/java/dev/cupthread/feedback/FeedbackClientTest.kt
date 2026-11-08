@@ -3419,6 +3419,30 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeatureRequestBlankTokenErrorPrecedesTheHttpsDestinationError() = runTest {
+        // #214: a blank token transmits no credential, so the cleartext-destination guard must
+        // not mask the root cause — an HTTP baseUrl with a blank token reports the token.
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"featureRequestId":"fr_new","pending":false}""")
+            }
+        )
+        try {
+            insecureClient.submitFeatureRequest(
+                FeatureRequestDraft(title = "Blank token", description = "Root cause first"),
+                userToken = "   "
+            )
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
     fun postCommentRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
         var transportCalls = 0
         try {
