@@ -113,6 +113,71 @@ class FeatureRequestPagingTest {
     }
 
     @Test
+    fun fetchFeatureRequestsClampsLimitToSupportedRange() = runTest {
+        val capturedUrls = mutableListOf<String>()
+        val testClient = client { request ->
+            capturedUrls += request.url
+            HttpResponse(200, pageJson(emptyList(), total = 0, hasMore = false, nextCursor = null))
+        }
+
+        // Limit under lower bound (< 1) must be clamped to 1
+        testClient.fetchFeatureRequests(userToken = "token", limit = 0)
+        assertTrue(capturedUrls.last().contains("limit=1"))
+
+        testClient.fetchFeatureRequests(userToken = "token", limit = -25)
+        assertTrue(capturedUrls.last().contains("limit=1"))
+
+        // Limit over upper bound (> 200) must be clamped to 200
+        testClient.fetchFeatureRequests(userToken = "token", limit = 500)
+        assertTrue(capturedUrls.last().contains("limit=200"))
+
+        testClient.fetchFeatureRequests(userToken = "token", limit = 201)
+        assertTrue(capturedUrls.last().contains("limit=200"))
+
+        // Limit within supported range 1..200 is preserved
+        testClient.fetchFeatureRequests(userToken = "token", limit = 1)
+        assertTrue(capturedUrls.last().contains("limit=1"))
+
+        testClient.fetchFeatureRequests(userToken = "token", limit = 200)
+        assertTrue(capturedUrls.last().contains("limit=200"))
+
+        testClient.fetchFeatureRequests(userToken = "token", limit = 75)
+        assertTrue(capturedUrls.last().contains("limit=75"))
+    }
+
+    @Test
+    fun fetchFeatureRequestsGuardsNegativeOffset() = runTest {
+        val capturedUrls = mutableListOf<String>()
+        val testClient = client { request ->
+            capturedUrls += request.url
+            // Legacy server response without hasMore to test offset propagation into parser
+            val legacyJson = """{"requests":[${ids("a", 5).joinToString(",") { itemJson(it) }}],"total":5}"""
+            HttpResponse(200, legacyJson)
+        }
+
+        val result = testClient.fetchFeatureRequests(userToken = "token", offset = -10)
+        assertTrue(capturedUrls.last().contains("offset=0"))
+        // If offset was not guarded, -10 + 5 < 5 would evaluate to true, falsely indicating hasMore
+        assertFalse("Legacy pagination calculation must use non-negative offset baseline", result.hasMore)
+
+        testClient.fetchFeatureRequests(userToken = "token", offset = 20)
+        assertTrue(capturedUrls.last().contains("offset=20"))
+    }
+
+    @Test
+    fun parseListFeatureRequestsCoercesNegativeOffset() {
+        val singleItemJson = JSONObject(
+            """{"requests":[${itemJson("item-1")}],"total":1}"""
+        )
+        // With offset = -10, without coercion: -10 + 1 < 1 evaluates to true (incorrect).
+        // With coercion: 0 + 1 < 1 evaluates to false (correct, as all 1 items are returned).
+        val result = parseListFeatureRequests(singleItemJson, offset = -10)
+        assertEquals(1, result.requests.size)
+        assertEquals(1, result.total)
+        assertFalse("Negative offset must not produce false positive hasMore in legacy response", result.hasMore)
+    }
+
+    @Test
     fun pagerLoadsEveryPageWithoutDuplicates() = runTest {
         val requested = mutableListOf<FeatureRequestPageRequest>()
         val pages = listOf(

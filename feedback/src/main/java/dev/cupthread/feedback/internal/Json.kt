@@ -212,11 +212,12 @@ internal fun parseListFeatureRequests(json: JSONObject, offset: Int = 0): ListFe
         }
     }
     val total = json.intOr("total", requests.size)
+    val clampedOffset = offset.coerceAtLeast(0)
     // Older deployments answer {requests,total} only; derive hasMore from the page offset then.
     val hasMore = if (json.has("hasMore") && !json.isNull("hasMore")) {
         json.getBoolean("hasMore")
     } else {
-        offset + requests.size < total
+        clampedOffset + requests.size < total
     }
     return ListFeatureRequestsResult(
         requests = requests,
