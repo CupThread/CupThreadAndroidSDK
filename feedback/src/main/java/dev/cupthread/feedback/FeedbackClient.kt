@@ -701,8 +701,8 @@ class FeedbackClient internal constructor(
      * scan and discard rows server-side.
      *
      * @param userToken Stable anonymous user token from [UserTokenStore].
-     * @param limit Maximum number of requests to return per page; default is 50.
-     * @param offset Number of requests to skip for pagination; default is 0.
+     * @param limit Maximum number of requests to return per page (clamped between 1 and 200; default is 50).
+     * @param offset Number of requests to skip for pagination (guarded to be non-negative; default is 0).
      * @param versionId Optional [AppVersion.id] to restrict results to a specific release target.
      * @param query Optional free-text search query matching against titles and descriptions.
      * @param cursor Optional opaque keyset cursor from a previous page's
@@ -745,10 +745,12 @@ class FeedbackClient internal constructor(
         val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
             "userToken cannot be blank"
         }
+        val clampedLimit = limit.coerceIn(1, 200)
+        val clampedOffset = offset.coerceAtLeast(0)
         val params = mutableListOf(
             "appKey" to config.appKey,
-            "limit" to limit.toString(),
-            "offset" to offset.toString()
+            "limit" to clampedLimit.toString(),
+            "offset" to clampedOffset.toString()
         )
         if (!versionId.isNullOrBlank()) params += "versionId" to versionId
         if (!query.isNullOrBlank()) params += "q" to query
@@ -762,7 +764,7 @@ class FeedbackClient internal constructor(
                     // inside UnexpectedStatus (issue #23).
                     errorSurfaces = setOf(ErrorSurface.RateLimit)
                 ),
-                offset
+                clampedOffset
             )
         }
     }
