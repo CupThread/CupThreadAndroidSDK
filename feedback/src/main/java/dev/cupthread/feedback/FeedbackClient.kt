@@ -494,13 +494,7 @@ class FeedbackClient internal constructor(
         requireNotNull(token) {
             "userToken is required for non-image uploads: upload sessions are identity-bound (X-User-Token)"
         }
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/uploads/sessions")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/uploads/sessions") { targetUrl ->
             "uploadAttachment destination must use HTTPS when transmitting upload-session credentials: $targetUrl"
         }
         val clientFileId = "client-${UUID.randomUUID()}"
@@ -797,13 +791,7 @@ class FeedbackClient internal constructor(
         val trimmedId = featureRequestId.trim()
         val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
         if (trimmedToken != null) {
-            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${encodePathSegment(trimmedId)}")
-            val parsedUri = try {
-                java.net.URI(targetUrl)
-            } catch (_: Exception) {
-                null
-            }
-            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}") { targetUrl ->
                 "fetchFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
             }
         }
@@ -879,13 +867,7 @@ class FeedbackClient internal constructor(
     ): FeatureRequestSubmissionResult {
         // The requester token travels in the JSON body (#64), not the X-User-Token header, so the
         // central send() credential guard (#199) cannot see it — enforce the cleartext policy here.
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/feature-requests") { targetUrl ->
             "submitFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
         }
         return sendWithTurnstileRetry(
@@ -1030,13 +1012,7 @@ class FeedbackClient internal constructor(
         val trimmedId = featureRequestId.trim()
         val trimmedEmail = shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }
         if (trimmedEmail != null) {
-            val targetUrl = joinUrl(config.baseUrl, "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote")
-            val parsedUri = try {
-                java.net.URI(targetUrl)
-            } catch (_: Exception) {
-                null
-            }
-            require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+            requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote") { targetUrl ->
                 "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
             }
         }
@@ -1616,13 +1592,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromChangelog(token: String): ChangelogUnsubscribeResult {
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe") { targetUrl ->
             "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
         }
         val payload = JSONObject().put("token", token.trim())
@@ -1680,13 +1650,7 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromWeeklyDigest(token: String): WeeklyDigestUnsubscribeResult {
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/digest/unsubscribe")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/public/digest/unsubscribe") { targetUrl ->
             "unsubscribeFromWeeklyDigest destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
         }
         val payload = JSONObject().put("token", token.trim())
@@ -1730,13 +1694,7 @@ class FeedbackClient internal constructor(
     suspend fun confirmChangelogSubscription(token: String): ChangelogConfirmationResult {
         val cleanToken = token.trim()
         require(cleanToken.isNotEmpty()) { "Confirmation token cannot be blank" }
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/confirm")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/confirm") { targetUrl ->
             "confirmChangelogSubscription destination must use HTTPS when transmitting the confirmation token: $targetUrl"
         }
         val payload = JSONObject().put("token", cleanToken)
@@ -1928,13 +1886,7 @@ class FeedbackClient internal constructor(
         require(!userToken.isNullOrBlank() || !sessionToken.isNullOrBlank()) {
             "Either userToken or sessionToken must be non-blank for eraseEndUser"
         }
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/erase")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/me/erase") { targetUrl ->
             "eraseEndUser destination must use HTTPS when transmitting credentials: $targetUrl"
         }
 
@@ -1982,13 +1934,7 @@ class FeedbackClient internal constructor(
         require(sessionToken.isNotBlank()) { "sessionToken cannot be blank" }
         require(userToken.isNotBlank()) { "userToken cannot be blank" }
 
-        val targetUrl = joinUrl(config.baseUrl, "/api/v1/me/link")
-        val parsedUri = try {
-            java.net.URI(targetUrl)
-        } catch (_: Exception) {
-            null
-        }
-        require(parsedUri?.scheme?.equals("https", ignoreCase = true) == true) {
+        requireHttpsDestination("/api/v1/me/link") { targetUrl ->
             "linkEndUser destination must use HTTPS to protect sessionToken: $targetUrl"
         }
 
@@ -2162,6 +2108,23 @@ class FeedbackClient internal constructor(
         accepted,
         errorSurfaces = errorSurfaces
     )
+
+    /**
+     * Enforces the cleartext-credential policy for credentials that travel in the JSON request
+     * body, where [requireHttpsForCredentials] cannot see them (issues #199/#201). Every
+     * body-credential endpoint funnels through this one guard instead of its own copy of the
+     * URI/scheme ladder (issue #207); the failure message stays at the call site because each
+     * endpoint's wording is documented contract, and FeedbackClientTest pins all nine messages.
+     */
+    private fun requireHttpsDestination(path: String, lazyFailureMessage: (targetUrl: String) -> Any) {
+        val targetUrl = joinUrl(config.baseUrl, path)
+        val scheme = try {
+            java.net.URI(targetUrl).scheme
+        } catch (_: Exception) {
+            null
+        }
+        require(scheme.equals("https", ignoreCase = true)) { lazyFailureMessage(targetUrl) }
+    }
 
     /**
      * Enforces the SDK's cleartext-credential policy once for every outgoing request instead of

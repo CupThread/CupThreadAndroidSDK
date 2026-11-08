@@ -2262,6 +2262,57 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun everyBodyCredentialEndpointPinsItsHttpsDestinationMessage() = runTest {
+        // #207: the per-endpoint HTTPS guards share one helper, but each endpoint's
+        // IllegalArgumentException message is documented contract (endpoint KDocs
+        // reference it). This table pins every message for an http:// destination, so
+        // the wording can no longer drift between the nine guards.
+        val insecure = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { error("the HTTPS guard must reject before any transport call") }
+        )
+        val guardedCalls: List<Pair<String, suspend (FeedbackClient) -> Unit>> = listOf(
+            "uploadAttachment" to { c -> c.uploadAttachment(data = byteArrayOf(1), filename = "guard.log", mimeType = "text/plain", userToken = "tok_guard") },
+            "fetchFeatureRequest" to { c -> c.fetchFeatureRequest("fr-guard", userToken = "tok_guard") },
+            "submitFeatureRequest" to { c -> c.submitFeatureRequest(FeatureRequestDraft(title = "Drift", description = "It drifted again"), userToken = "tok_guard") },
+            "vote" to { c -> c.vote("fr-guard", userToken = "tok_guard", shipNotifyEmail = "guard@example.com") },
+            "unsubscribeFromChangelog" to { c -> c.unsubscribeFromChangelog("tok_guard") },
+            "unsubscribeFromWeeklyDigest" to { c -> c.unsubscribeFromWeeklyDigest("tok_guard") },
+            "confirmChangelogSubscription" to { c -> c.confirmChangelogSubscription("tok_guard") },
+            "eraseEndUser" to { c -> c.eraseEndUser(userToken = "tok_guard") },
+            "linkEndUser" to { c -> c.linkEndUser(sessionToken = "sess_guard", userToken = "tok_guard") },
+        )
+        val pinnedMessages: Map<String, String> = mapOf(
+            "uploadAttachment" to
+                "uploadAttachment destination must use HTTPS when transmitting upload-session credentials: http://insecure.example.com/api/v1/uploads/sessions",
+            "fetchFeatureRequest" to
+                "fetchFeatureRequest destination must use HTTPS when transmitting userToken: http://insecure.example.com/api/v1/feature-requests/fr-guard",
+            "submitFeatureRequest" to
+                "submitFeatureRequest destination must use HTTPS when transmitting userToken: http://insecure.example.com/api/v1/feature-requests",
+            "vote" to
+                "vote destination must use HTTPS when transmitting shipNotifyEmail: http://insecure.example.com/api/v1/feature-requests/fr-guard/vote",
+            "unsubscribeFromChangelog" to
+                "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: http://insecure.example.com/api/v1/public/apps/$appKey/changelog/unsubscribe",
+            "unsubscribeFromWeeklyDigest" to
+                "unsubscribeFromWeeklyDigest destination must use HTTPS when transmitting the unsubscribe token: http://insecure.example.com/api/v1/public/digest/unsubscribe",
+            "confirmChangelogSubscription" to
+                "confirmChangelogSubscription destination must use HTTPS when transmitting the confirmation token: http://insecure.example.com/api/v1/public/apps/$appKey/changelog/confirm",
+            "eraseEndUser" to
+                "eraseEndUser destination must use HTTPS when transmitting credentials: http://insecure.example.com/api/v1/me/erase",
+            "linkEndUser" to
+                "linkEndUser destination must use HTTPS to protect sessionToken: http://insecure.example.com/api/v1/me/link",
+        )
+        for ((endpoint, call) in guardedCalls) {
+            try {
+                call(insecure)
+                fail("$endpoint did not reject its http:// destination")
+            } catch (rejected: IllegalArgumentException) {
+                assertEquals("$endpoint message", pinnedMessages.getValue(endpoint), rejected.message)
+            }
+        }
+    }
+
+    @Test
     fun fetchFeatureRequestRequiresHttpsWhenUserTokenProvided() = runTest {
         val insecureClient = FeedbackClient(
             FeedbackClientConfig(
