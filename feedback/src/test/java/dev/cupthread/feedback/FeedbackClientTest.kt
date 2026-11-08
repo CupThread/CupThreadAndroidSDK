@@ -3250,15 +3250,20 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun voteOmitsBlankUserTokenFromHeaderAndBody() = runTest {
+    fun submitOmitsBlankOptionalUserTokenFromHeaderAndBody() = runTest {
+        // #214: submit's userToken is nullable — identity is genuinely optional there, so a
+        // blank value still degrades to an anonymous call by design instead of throwing.
         var header: String? = null
         var requestBody: String? = null
 
         client { request ->
             header = request.headers["X-User-Token"]
             requestBody = request.body?.toString(Charsets.UTF_8)
-            HttpResponse(200, """{"voted":true,"voteCount":1}""")
-        }.vote("fr-213", "   ")
+            HttpResponse(201, """{"submissionId":"s-214","forwardedToGithub":false}""")
+        }.submit(
+            FeedbackDraft(title = "Blank optional token", description = "Anonymous by design", platform = FeedbackPlatform.ANDROID),
+            userToken = "   "
+        )
 
         assertNull(header)
         val payload = requireNotNull(requestBody)
@@ -3330,6 +3335,143 @@ class FeedbackClientTest {
             assertTrue(ex.message.orEmpty().contains("control characters"))
         }
         assertEquals(0, transportCalls)
+    }
+
+    // #214: a blank token on an endpoint whose signature requires an identity is a host bug —
+    // it fails fast with IllegalArgumentException naming the parameter before any transport call
+    // or Turnstile provider consultation, instead of silently degrading the call to anonymous.
+
+    @Test
+    fun voteRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }.vote("fr-215", "   ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun voteBlankUserTokenDoesNotConsultTheTurnstileProvider() = runTest {
+        var transportCalls = 0
+        var providerCalls = 0
+        val underTest = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = TurnstileTokenProvider { _ ->
+                    providerCalls++
+                    "provider_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }
+        )
+
+        try {
+            underTest.vote("fr-216", userToken = "\t \n")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, providerCalls)
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun deleteVoteRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":false,"voteCount":1}""")
+            }.deleteVote("fr-217", userToken = " \t ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun submitFeatureRequestRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(201, """{"featureRequestId":"fr_new","pending":false}""")
+            }.submitFeatureRequest(
+                FeatureRequestDraft(title = "Blank token", description = "Must fail fast"),
+                userToken = "   "
+            )
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun postCommentRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(201, """{"id":"c-215","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+            }.postComment("fr-1", CommentDraft(body = "hi"), userToken = "  ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun subscribeToChangelogRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(201, """{"subscribed":true}""")
+            }.subscribeToChangelog("alice@example.com", userToken = " \n ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun fetchFeatureRequestsRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(200, """{"requests":[],"total":0}""")
+            }.fetchFeatureRequests(userToken = "   ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun fetchFeatureRequestsSendsTrimmedUserTokenHeader() = runTest {
+        var header: String? = null
+        client { request ->
+            header = request.headers["X-User-Token"]
+            HttpResponse(200, """{"requests":[],"total":0}""")
+        }.fetchFeatureRequests(userToken = " tok_123 \n")
+
+        assertEquals("tok_123", header)
     }
 
     @Test

@@ -131,6 +131,20 @@ internal enum class ErrorSurface {
  * - [FeedbackException.InvalidResponse]: Network transport failure or malformed JSON payload.
  * - [FeedbackException.UnreadableUploadResponse]: Upload succeeded but server response descriptor was unreadable.
  *
+ * ### Blank User Token Policy
+ * A `userToken` argument is either **required** or **optional**, and the parameter's nullability
+ * is the contract:
+ * - **Required** (non-null parameter — [vote], [deleteVote], [submitFeatureRequest],
+ *   [postComment], [subscribeToChangelog], [fetchFeatureRequests], [updateUserAttributes],
+ *   [linkEndUser]): a blank or whitespace-only value is a host bug, such as a failed token-store
+ *   migration. It fails fast with an `IllegalArgumentException` naming the parameter, before any
+ *   network request or Turnstile provider call (issue #214). `linkEndUser` additionally requires a
+ *   non-blank `sessionToken`, and [eraseEndUser] requires at least one non-blank credential.
+ * - **Optional** (nullable parameter — [submit], [fetchFeatureRequest], [uploadAttachment]):
+ *   passing `null` is the documented way to make an anonymous call; `null` never throws for being
+ *   anonymous (a blank value normalizes to `null`, and non-image `uploadAttachment` still requires
+ *   an identity because upload sessions are identity-bound).
+ *
  * Every request carries an `X-Request-Id` header (a fresh UUID by default, or the value returned by
  * [FeedbackClientConfig.requestIdProvider]). The server's echoed identifier is available as
  * [FeedbackException.requestId] on thrown errors — quote it in support conversations so CupThread
@@ -694,6 +708,9 @@ class FeedbackClient internal constructor(
      * @param cursor Optional opaque keyset cursor from a previous page's
      *   [ListFeatureRequestsResult.nextCursor]. Malformed cursors are rejected with HTTP 400.
      * @return [ListFeatureRequestsResult] containing the list of requests and total match count.
+     * @throws IllegalArgumentException if [userToken] is blank (issue #214 policy: the signature
+     *   requires an identity that annotates the board with the caller's vote and ownership status;
+     *   a blank value fails fast instead of silently returning an anonymous view).
      * @throws FeedbackException.RateLimited when the per-IP search rate limit is exceeded (HTTP 429) —
      *   queries, unlike unfiltered list reads, share a 30 requests / 60 s budget with every other
      *   client behind the same egress IP.
@@ -723,6 +740,11 @@ class FeedbackClient internal constructor(
         query: String? = null,
         cursor: String? = null
     ): ListFeatureRequestsResult {
+        // #214: the signature requires an identity; a blank value would silently drop the
+        // personalized hasVoted/isOwnRequest annotations, so it fails fast like vote/deleteVote.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         val params = mutableListOf(
             "appKey" to config.appKey,
             "limit" to limit.toString(),
@@ -735,7 +757,7 @@ class FeedbackClient internal constructor(
             parseListFeatureRequests(
                 get(
                     path = "/api/v1/feature-requests?${encodeQuery(params)}",
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     // Search 429s surface as a typed RateLimited error instead of a raw JSON body
                     // inside UnexpectedStatus (issue #23).
                     errorSurfaces = setOf(ErrorSurface.RateLimit)
@@ -842,8 +864,10 @@ class FeedbackClient internal constructor(
      *   [TurnstileAction.FEATURE_REQUEST] action with the app key as `cdata`. When provided, the
      *   configured token provider is not consulted before the first attempt.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
-     * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is transmitted —
-     *   the anonymous identity token is never sent in cleartext.
+     * @throws IllegalArgumentException if [userToken] is blank (issue #214 policy: a required
+     *   identity that normalizes to nothing fails fast instead of creating an unowned request),
+     *   or if the destination is not HTTPS while [userToken] is transmitted — the anonymous
+     *   identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if the app's roadmap requires sign-in (`allowAnonymousRoadmap=false`)
      *   and no end-user session is present (HTTP 401 `authentication_required`).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
@@ -880,7 +904,11 @@ class FeedbackClient internal constructor(
         }
         // #212: the body token is normalized by the same transport-boundary helper as every
         // header credential, so the identity stored server-side matches the trimmed form.
-        val normalizedToken = normalizeUserToken(userToken)
+        // #214: the signature requires an identity, so a blank value fails fast here — before
+        // the Turnstile retry wrapper can consult a provider for a request that cannot succeed.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         return sendWithTurnstileRetry(
             challenge = TurnstileChallenge.featureRequest(config.appKey),
             explicitToken = turnstileToken
@@ -993,9 +1021,11 @@ class FeedbackClient internal constructor(
      * @param shipNotifyEmail Optional email address to opt into ship notifications for this request.
      * @return [VoteResult] containing the updated vote state (`voted`), current total count (`voteCount`),
      *   and an optional [VoteResult.warning] when a secondary action was refused.
-     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
-     *   HTTPS while the vote transmits the user token — the anonymous identity token is never sent
-     *   in cleartext, whether or not [shipNotifyEmail] participates.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, if [userToken] is blank
+     *   (issue #214 policy: a required identity that normalizes to nothing fails fast instead of
+     *   silently casting an anonymous vote), or if the destination is not HTTPS while the vote
+     *   transmits the user token — the anonymous identity token is never sent in cleartext,
+     *   whether or not [shipNotifyEmail] participates.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the vote (HTTP 403 `turnstile_*`).
@@ -1029,7 +1059,11 @@ class FeedbackClient internal constructor(
         }
         // #212: the vote identity travels both in the JSON body and the X-User-Token header;
         // both now carry the same normalized value, so server-side attribution cannot split.
-        val normalizedToken = normalizeUserToken(userToken)
+        // #214: the signature requires an identity, so a blank value fails fast here — before
+        // the Turnstile retry wrapper can consult a provider for a request that cannot succeed.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         return sendWithTurnstileRetry(
             challenge = if (trimmedEmail != null) {
                 TurnstileChallenge.shipNotify(config.appKey)
@@ -1117,8 +1151,10 @@ class FeedbackClient internal constructor(
      * @param featureRequestId Unique ID of the target [FeatureRequestItem].
      * @param userToken Stable anonymous user token from [UserTokenStore].
      * @return [VoteResult] containing the reconciled vote state (`voted = false`) and current total count (`voteCount`).
-     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
-     *   HTTPS while the user token is transmitted — the anonymous identity token is never sent in cleartext.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, if [userToken] is blank
+     *   (issue #214 policy: a required identity that normalizes to nothing fails fast instead of
+     *   silently removing an anonymous vote), or if the destination is not HTTPS while the user
+     *   token is transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.UnexpectedStatus on HTTP rejection.
@@ -1129,7 +1165,11 @@ class FeedbackClient internal constructor(
         val trimmedId = featureRequestId.trim()
         // #212: the vote identity travels both in the JSON body and the X-User-Token header;
         // both now carry the same normalized value, so server-side attribution cannot split.
-        val normalizedToken = normalizeUserToken(userToken)
+        // #214: the signature requires an identity, so a blank value fails fast with the same
+        // documented IllegalArgumentException shape as vote.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
             putOptString("userToken", normalizedToken)
@@ -1281,8 +1321,10 @@ class FeedbackClient internal constructor(
      * @param draft Comment text and optional author/reply metadata ([CommentDraft]).
      * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
-     * @throws IllegalArgumentException if [featureRequestId] is blank, or if the destination is not
-     *   HTTPS while [userToken] is transmitted — the anonymous identity token is never sent in cleartext.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, if [userToken] is blank
+     *   (issue #214 policy: a required identity that normalizes to nothing fails fast instead of
+     *   silently posting an unowned comment), or if the destination is not HTTPS while [userToken]
+     *   is transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
      * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
      * @throws FeedbackException.RateLimited if the per-client comment rate limit is exceeded (HTTP 429).
@@ -1308,6 +1350,11 @@ class FeedbackClient internal constructor(
     ): FeatureRequestComment {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
         val trimmedId = featureRequestId.trim()
+        // #214: the signature requires an identity; a blank value would silently post the
+        // comment unowned, so it fails fast with the same documented shape as vote/deleteVote.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         val payload = JSONObject().apply {
             put("body", draft.body.trim())
             putOptString("authorName", draft.authorName?.trim()?.ifEmpty { null })
@@ -1323,7 +1370,7 @@ class FeedbackClient internal constructor(
                     method = "POST",
                     path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments",
                     body = payload,
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     accepted = setOf(200, 201),
                     errorSurfaces = setOf(
                         ErrorSurface.Comment,
@@ -1511,7 +1558,9 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
      *   (pending confirmation).
-     * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is
+     * @throws IllegalArgumentException if [userToken] is blank (issue #214 policy: a required
+     *   identity that normalizes to nothing fails fast instead of silently subscribing
+     *   anonymously), or if the destination is not HTTPS while [userToken] is
      *   transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.EmailNotVerified if the app requires a signed-in session and
      *   [email] does not match that session's verified address (HTTP 403 `email_not_verified`).
@@ -1542,6 +1591,11 @@ class FeedbackClient internal constructor(
         userToken: String,
         turnstileToken: String?
     ): ChangelogSubscriptionResult {
+        // #214: the signature requires an identity; a blank value would subscribe anonymously
+        // and silently, so it fails fast with the same documented shape as vote/deleteVote.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         val payload = JSONObject().apply {
             put("email", email.trim())
             turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -1554,7 +1608,7 @@ class FeedbackClient internal constructor(
                     "POST",
                     "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/subscribe",
                     payload,
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     accepted = setOf(200, 201),
                     errorSurfaces = setOf(
                         ErrorSurface.EmailNotVerified,
