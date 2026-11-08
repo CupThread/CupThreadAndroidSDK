@@ -1362,8 +1362,11 @@ class FeedbackClient internal constructor(
             putOptString("authorName", draft.authorName?.trim()?.ifEmpty { null })
             putOptString("authorEmail", draft.authorEmail?.trim()?.ifEmpty { null })
             putOptString("authorAvatarUrl", draft.authorAvatarUrl?.trim()?.ifEmpty { null })
-            putOptString("parentId", draft.parentId)
-            putOptString("replyToClerkId", draft.replyToClerkId)
+            // #216: parentId/replyToClerkId receive the same blank-to-null normalization as the
+            // other optional strings — a whitespace-only parent ID would round-trip to the
+            // server as a non-resolvable parent and surface as HTTP 400 `invalid_parent`.
+            putOptString("parentId", draft.parentId?.trim()?.ifEmpty { null })
+            putOptString("replyToClerkId", draft.replyToClerkId?.trim()?.ifEmpty { null })
             putOptString("replyToAuthorName", draft.replyToAuthorName?.trim()?.ifEmpty { null })
         }
         return parseOrInvalidResponse {

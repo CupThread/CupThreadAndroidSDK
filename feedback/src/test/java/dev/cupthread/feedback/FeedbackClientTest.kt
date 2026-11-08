@@ -4665,6 +4665,40 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun postCommentTrimsAndDropsBlankParentIdAndReplyClerk() {
+        // #216: a whitespace-only parentId would round-trip as a non-resolvable parent and come
+        // back as HTTP 400 `invalid_parent`; the transport normalizes it away like the other
+        // optional strings. Legitimate values are trimmed instead of transmitted padded.
+        val bodies = mutableListOf<String>()
+        val responder = client { request ->
+            bodies += request.body?.toString(Charsets.UTF_8).orEmpty()
+            HttpResponse(201, """{"id":"c-3","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+        }
+
+        runTest {
+            responder.postComment(
+                "fr-1",
+                CommentDraft(body = "hi", parentId = "   ", replyToClerkId = "  \n "),
+                userToken = "tok_normalizes_1"
+            )
+            responder.postComment(
+                "fr-1",
+                CommentDraft(body = "hi", parentId = "  c-root-7  ", replyToClerkId = " user_42 "),
+                userToken = "tok_normalizes_2"
+            )
+        }
+
+        assertEquals(2, bodies.size)
+        // Whitespace-only values are omitted entirely, not sent as empty strings.
+        assertFalse(bodies[0].contains("parentId"))
+        assertFalse(bodies[0].contains("replyToClerkId"))
+        assertTrue(bodies[0].contains("\"body\":\"hi\""))
+        // Real values survive, trimmed.
+        assertTrue(bodies[1].contains("\"parentId\":\"c-root-7\""))
+        assertTrue(bodies[1].contains("\"replyToClerkId\":\"user_42\""))
+    }
+
+    @Test
     fun postCommentRejectsHttpDestinationWhenTransmittingUserToken() = runTest {
         // #199: the comment attribution carries the anonymous identity in the X-User-Token header.
         val insecureClient = FeedbackClient(
