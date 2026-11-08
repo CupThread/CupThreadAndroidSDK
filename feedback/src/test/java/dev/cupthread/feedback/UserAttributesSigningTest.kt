@@ -120,4 +120,120 @@ class UserAttributesSigningTest {
         assertEquals(64, signature.length)
         assertEquals(signature, signature.lowercase())
     }
+
+    @Test
+    fun canonicalMrrRejectsNonFiniteAndNegativeValues() {
+        val invalidValues = listOf(
+            Double.NaN,
+            Double.POSITIVE_INFINITY,
+            Double.NEGATIVE_INFINITY,
+            -1.0,
+            -0.01
+        )
+        for (invalid in invalidValues) {
+            try {
+                canonicalMrr(invalid)
+                org.junit.Assert.fail("Expected IllegalArgumentException for canonicalMrr($invalid)")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("mrr must be finite and non-negative"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringRejectsReservedCurrencySentinels() {
+        val reservedSentinels = listOf("unset", "null", "  unset  ", "  null  ")
+        for (reserved in reservedSentinels) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = null,
+                    mrr = null,
+                    currency = reserved,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for reserved currency '$reserved'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("reserved protocol sentinels"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringRejectsBlankCurrency() {
+        for (blank in listOf("", "   ", "\t")) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = null,
+                    mrr = null,
+                    currency = blank,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for blank currency '$blank'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("currency cannot be blank"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringRejectsNewlinesInCurrencyAndPlan() {
+        for (newlineCurrency in listOf("USD\n", "USD\r", "USD\r\nEUR")) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = null,
+                    mrr = null,
+                    currency = newlineCurrency,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for newline in currency '$newlineCurrency'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("currency cannot contain newline characters"))
+            }
+        }
+        for (newlinePlan in listOf("pro\n", "pro\r", "pro\r\nannual")) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = newlinePlan,
+                    mrr = null,
+                    currency = null,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for newline in plan '$newlinePlan'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("plan cannot contain newline characters"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringRejectsNonFiniteAndNegativeMrr() {
+        for (invalidMrr in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -5.0)) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = null,
+                    mrr = invalidMrr,
+                    currency = null,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for mrr '$invalidMrr'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("mrr must be finite and non-negative"))
+            }
+        }
+    }
 }

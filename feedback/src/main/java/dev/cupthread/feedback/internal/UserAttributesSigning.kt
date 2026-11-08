@@ -25,6 +25,9 @@ internal const val USER_ATTRS_SIGNATURE_PREFIX = "cpt-user-attrs-v1"
  * an IEEE 754 double formatter rounds.
  */
 internal fun canonicalMrr(mrr: Double): String {
+    require(mrr.isFinite() && mrr >= 0.0) {
+        "mrr must be finite and non-negative, got $mrr"
+    }
     val scaled = BigDecimal(mrr).setScale(2, RoundingMode.HALF_EVEN).toPlainString()
     return scaled.trimEnd('0').trimEnd('.')
 }
@@ -54,16 +57,38 @@ internal fun userAttributesCanonicalString(
     mrr: Double?,
     currency: String?,
     timestampSeconds: Long
-): String = listOf(
-    USER_ATTRS_SIGNATURE_PREFIX,
-    appKey,
-    userToken,
-    isPaying?.toString() ?: "unset",
-    plan ?: "unset",
-    mrr?.let(::canonicalMrr) ?: "unset",
-    currency ?: "unset",
-    timestampSeconds.toString()
-).joinToString("\n")
+): String {
+    if (plan != null) {
+        require(plan != "unset" && plan != "null") {
+            "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
+        }
+        require(!plan.contains('\n') && !plan.contains('\r')) {
+            "plan cannot contain newline characters"
+        }
+    }
+    if (currency != null) {
+        require(currency.isNotBlank()) {
+            "currency cannot be blank"
+        }
+        val trimmedCurrency = currency.trim()
+        require(trimmedCurrency != "unset" && trimmedCurrency != "null") {
+            "currency cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
+        }
+        require(!currency.contains('\n') && !currency.contains('\r')) {
+            "currency cannot contain newline characters"
+        }
+    }
+    return listOf(
+        USER_ATTRS_SIGNATURE_PREFIX,
+        appKey,
+        userToken,
+        isPaying?.toString() ?: "unset",
+        plan ?: "unset",
+        mrr?.let(::canonicalMrr) ?: "unset",
+        currency ?: "unset",
+        timestampSeconds.toString()
+    ).joinToString("\n")
+}
 
 /**
  * Computes the lowercase hex HMAC-SHA256 of [message] keyed with [secret].
