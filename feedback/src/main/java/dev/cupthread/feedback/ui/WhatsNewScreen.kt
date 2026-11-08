@@ -322,6 +322,23 @@ private fun SubscribeSheet(
     userToken: String,
     onDismiss: () -> Unit
 ) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        SubscribeSheetBody(client = client, userToken = userToken, onDismiss = onDismiss)
+    }
+}
+
+/**
+ * The subscription form the subscribe sheet hosts, split out of the modal window so Robolectric
+ * tests can render it directly (same pattern as `FeatureRequestComposeSheetBody`, which keeps
+ * the form reachable for injected taps and text input).
+ */
+@Composable
+internal fun SubscribeSheetBody(
+    client: FeedbackClient,
+    userToken: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var email by remember { mutableStateOf("") }
     var phase by remember { mutableStateOf("form") }
     var working by remember { mutableStateOf(false) }
@@ -330,69 +347,69 @@ private fun SubscribeSheet(
     val valid = email.contains("@") && email.contains(".") && !email.contains(" ")
     val genericError = stringResource(R.string.cupthread_feedback_generic_error)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(stringResource(R.string.cupthread_whatsnew_updates_by_email), style = MaterialTheme.typography.titleLarge)
-            when (phase) {
-                "form" -> {
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text(stringResource(R.string.cupthread_whatsnew_email_label)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        stringResource(R.string.cupthread_whatsnew_email_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                // Subscription is double opt-in: the address is pending until the emailed
-                // single-use link is confirmed, so no changelog emails flow before that.
-                "subscribed" -> {
-                    Text(stringResource(R.string.cupthread_whatsnew_subscribed))
-                    Text(stringResource(R.string.cupthread_whatsnew_subscribed_sub, email.trim()), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (error != null) {
-                Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(4.dp))
-            TextButton(
-                onClick = {
-                    scope.launch {
-                        working = true
-                        error = null
-                        try {
-                            when (phase) {
-                                "form" -> {
-                                    client.subscribeToChangelog(email, userToken)
-                                    phase = "subscribed"
-                                }
-                                else -> onDismiss()
-                            }
-                        } catch (ex: Exception) {
-                            error = ex.message ?: genericError
-                        } finally {
-                            working = false
-                        }
-                    }
-                },
-                enabled = !working && (phase != "form" || valid),
-                modifier = Modifier.align(Alignment.End)
-            ) {
+    Column(
+        modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(stringResource(R.string.cupthread_whatsnew_updates_by_email), style = MaterialTheme.typography.titleLarge)
+        when (phase) {
+            "form" -> {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text(stringResource(R.string.cupthread_whatsnew_email_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Text(
-                    when {
-                        working && phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribing)
-                        phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribe)
-                        else -> stringResource(R.string.cupthread_whatsnew_done)
-                    }
+                    stringResource(R.string.cupthread_whatsnew_email_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // Subscription is double opt-in: the address is pending until the emailed
+            // single-use link is confirmed, so no changelog emails flow before that.
+            "subscribed" -> {
+                Text(stringResource(R.string.cupthread_whatsnew_subscribed))
+                Text(stringResource(R.string.cupthread_whatsnew_subscribed_sub, email.trim()), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (error != null) {
+            Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(Modifier.height(4.dp))
+        TextButton(
+            onClick = {
+                scope.launch {
+                    working = true
+                    error = null
+                    try {
+                        when (phase) {
+                            "form" -> {
+                                client.subscribeToChangelog(email, userToken)
+                                phase = "subscribed"
+                            }
+                            else -> onDismiss()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (ex: Exception) {
+                        error = ex.message ?: genericError
+                    } finally {
+                        working = false
+                    }
+                }
+            },
+            enabled = !working && (phase != "form" || valid),
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text(
+                when {
+                    working && phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribing)
+                    phase == "form" -> stringResource(R.string.cupthread_whatsnew_subscribe)
+                    else -> stringResource(R.string.cupthread_whatsnew_done)
+                }
+            )
         }
     }
 }
