@@ -76,12 +76,23 @@ data class RoadmapGroup(
     val name: String get() = column?.name ?: "Other"
 }
 
-private fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequestItem>): List<RoadmapGroup> {
+/**
+ * Organizes feature requests into kanban columns for the horizontal roadmap pager (issue #217).
+ *
+ * Each column in [columns] is mapped to a [RoadmapGroup]. Requests whose [FeatureRequestItem.columnId]
+ * matches a column are grouped under it.
+ *
+ * Requests whose [FeatureRequestItem.columnId] is `null` or does not match any ID in [columns] (e.g.
+ * archived, deleted, or unlisted columns, or requests loaded before columns are known) are collected
+ * into a synthetic "Other" fallback group ([RoadmapGroup.column] == `null`) instead of being dropped.
+ */
+internal fun makeGroups(columns: List<BoardColumn>, requests: List<FeatureRequestItem>): List<RoadmapGroup> {
+    val columnIds = columns.map { it.id }.toSet()
     val byColumn = requests.groupBy { it.columnId }
     val groups = columns.map { column ->
         RoadmapGroup(column, byColumn[column.id].orEmpty())
     }
-    val uncategorized = byColumn[null].orEmpty()
+    val uncategorized = requests.filter { it.columnId == null || it.columnId !in columnIds }
     return if (uncategorized.isEmpty()) groups else groups + RoadmapGroup(null, uncategorized)
 }
 
