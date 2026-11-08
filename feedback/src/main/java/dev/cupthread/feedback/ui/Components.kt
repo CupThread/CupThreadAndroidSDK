@@ -564,15 +564,6 @@ fun UserAvatar(
     }
 }
 
-/**
- * Decodes [stream] at the smallest power-of-two sample size that still covers [requestedPixels],
- * so a huge source image never allocates a full-resolution bitmap for a small avatar (issues #141, #220).
- *
- * If [requestedPixels] is non-positive, returns `null` immediately without reading or allocating.
- * The read is capped at [MAX_AVATAR_BODY_BYTES]: a misbehaving avatar server must not exhaust the
- * heap before downsampling starts; oversized responses fall back to initials. The bounds pass
- * consumes the stream, so the bytes are buffered once and redecoded from memory.
- */
 private const val MAX_AVATAR_BODY_BYTES = 4 * 1024 * 1024
 
 /**
@@ -594,6 +585,16 @@ internal fun computeAvatarSampleSize(outWidth: Int, outHeight: Int, requestedPix
     return sampleSize
 }
 
+/**
+ * Decodes [stream] at the smallest power-of-two sample size that still covers [requestedPixels],
+ * so a huge source image never allocates a full-resolution bitmap for a small avatar (issues #141, #220).
+ *
+ * If [requestedPixels] is non-positive, returns `null` immediately without reading or allocating.
+ * The read is capped at [MAX_AVATAR_BODY_BYTES]: a misbehaving avatar server must not exhaust the
+ * heap before downsampling starts; oversized responses fall back to initials. The bounds pass
+ * consumes the stream, so the bytes are buffered once and redecoded from memory.
+ * Catches [OutOfMemoryError] during bitmap allocation so rendering falls back to initials.
+ */
 private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels: Int): android.graphics.Bitmap? {
     if (requestedPixels <= 0) return null
 
@@ -619,14 +620,18 @@ private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels
 
     val sampleSize = computeAvatarSampleSize(bounds.outWidth, bounds.outHeight, requestedPixels)
 
-    return android.graphics.BitmapFactory.decodeByteArray(
-        bytes,
-        0,
-        bytes.size,
-        android.graphics.BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-        }
-    )
+    return try {
+        android.graphics.BitmapFactory.decodeByteArray(
+            bytes,
+            0,
+            bytes.size,
+            android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+        )
+    } catch (_: OutOfMemoryError) {
+        null
+    }
 }
 
 /**
