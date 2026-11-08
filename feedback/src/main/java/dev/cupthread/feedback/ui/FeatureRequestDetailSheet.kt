@@ -383,7 +383,7 @@ fun FeatureRequestDetailSheet(
                                     val draft = CommentDraft(
                                         body = commentBody.trim(),
                                         authorName = authorName.trim().ifEmpty { null },
-                                        parentId = replyTarget?.id ?: replyTarget?.parentId,
+                                        parentId = replyParentId(replyTarget),
                                         replyToClerkId = replyTarget?.authorClerkId,
                                         replyToAuthorName = replyTarget?.authorName
                                     )
@@ -520,3 +520,21 @@ private fun CommentItemRow(
         }
     }
 }
+
+/**
+ * Resolves the `parentId` a new reply must carry when the user tapped "Reply" on [target]
+ * (issue #216).
+ *
+ * The API supports single-level threading: every reply references the top-level root of its
+ * thread, and the server rejects a reply nested under another reply with HTTP 400
+ * `invalid_parent`. Existing replies therefore always carry their thread root in
+ * [FeatureRequestComment.parentId], so:
+ * - replying to a top-level comment (`parentId == null`) targets that comment itself;
+ * - replying to an existing reply targets that reply's `parentId` (the thread root).
+ *
+ * The previous `target?.id ?: target?.parentId` ordering was an inverted Elvis: [FeatureRequestComment.id]
+ * is non-nullable, so the right-hand side was unreachable dead code and every reply to a reply
+ * sent the child's own ID as `parentId`, which the server answered with `invalid_parent`.
+ */
+internal fun replyParentId(target: FeatureRequestComment?): String? =
+    target?.parentId ?: target?.id
