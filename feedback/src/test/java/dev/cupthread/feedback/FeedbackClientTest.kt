@@ -3458,6 +3458,38 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun subscribeToChangelogRejectsBlankEmailBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        val testClient = client { _ ->
+            transportCalls++
+            HttpResponse(201, """{"subscribed":true}""")
+        }
+
+        listOf("", "   ", "\t\n").forEach { blankEmail ->
+            try {
+                testClient.subscribeToChangelog(blankEmail, userToken = "tok_valid")
+                fail("Expected IllegalArgumentException for blank email '$blankEmail'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank email, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("email cannot be blank")
+                )
+            }
+
+            try {
+                testClient.subscribeToChangelog(blankEmail, userToken = "tok_valid", turnstileToken = "turnstile_123")
+                fail("Expected IllegalArgumentException for blank email '$blankEmail' with turnstile")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank email, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("email cannot be blank")
+                )
+            }
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
     fun subscribeToChangelogRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
         var transportCalls = 0
         try {

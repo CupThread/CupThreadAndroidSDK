@@ -1539,6 +1539,7 @@ class FeedbackClient internal constructor(
      * @param userToken Stable anonymous token from [UserTokenStore].
      * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
      *   (pending confirmation).
+     * @throws IllegalArgumentException if [email] is blank or [userToken] is blank.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors.
      * @throws FeedbackException.InvalidResponse on network or parsing errors.
      */
@@ -1565,9 +1566,9 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token for human verification.
      * @return [ChangelogSubscriptionResult] indicating the subscription request was accepted
      *   (pending confirmation).
-     * @throws IllegalArgumentException if [userToken] is blank (issue #214 policy: a required
-     *   identity that normalizes to nothing fails fast instead of silently subscribing
-     *   anonymously), or if the destination is not HTTPS while [userToken] is
+     * @throws IllegalArgumentException if [email] is blank, if [userToken] is blank (issue #214
+     *   policy: a required identity that normalizes to nothing fails fast instead of silently
+     *   subscribing anonymously), or if the destination is not HTTPS while [userToken] is
      *   transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.EmailNotVerified if the app requires a signed-in session and
      *   [email] does not match that session's verified address (HTTP 403 `email_not_verified`).
@@ -1598,13 +1599,17 @@ class FeedbackClient internal constructor(
         userToken: String,
         turnstileToken: String?
     ): ChangelogSubscriptionResult {
+        val cleanEmail = email.trim()
+        require(cleanEmail.isNotEmpty()) {
+            "email cannot be blank"
+        }
         // #214: the signature requires an identity; a blank value would subscribe anonymously
         // and silently, so it fails fast with the same documented shape as vote/deleteVote.
         val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
             "userToken cannot be blank"
         }
         val payload = JSONObject().apply {
-            put("email", email.trim())
+            put("email", cleanEmail)
             turnstileToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 put("turnstileToken", it)
             }
