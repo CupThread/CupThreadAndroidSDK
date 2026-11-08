@@ -3401,6 +3401,92 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitFeatureRequestRejectsBlankTitleBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        var providerCalls = 0
+        val testClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = TurnstileTokenProvider { _ ->
+                    providerCalls++
+                    "provider_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"featureRequestId":"fr_new","pending":false}""")
+            }
+        )
+
+        listOf("", "   ", "\t\n").forEach { blankTitle ->
+            val draft = FeatureRequestDraft(title = blankTitle, description = "Some description")
+
+            try {
+                testClient.submitFeatureRequest(draft, userToken = "tok_valid")
+                fail("Expected IllegalArgumentException for blank title '$blankTitle'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank title, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("feature request title cannot be blank")
+                )
+            }
+
+            try {
+                testClient.submitFeatureRequest(draft, userToken = "tok_valid", turnstileToken = "turnstile_123")
+                fail("Expected IllegalArgumentException for blank title '$blankTitle' with turnstile")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank title, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("feature request title cannot be blank")
+                )
+            }
+        }
+        assertEquals(0, providerCalls)
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun submitFeatureRequestBlankTitleErrorPrecedesTheHttpsDestinationError() = runTest {
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"featureRequestId":"fr_new","pending":false}""")
+            }
+        )
+        try {
+            insecureClient.submitFeatureRequest(
+                FeatureRequestDraft(title = "   ", description = "Root cause first"),
+                userToken = "tok_valid"
+            )
+            fail("Expected IllegalArgumentException for a blank title")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("feature request title cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun submitFeatureRequestSendsTrimmedTitleInPayload() = runTest {
+        var capturedBody: String? = null
+        val testClient = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"featureRequestId":"fr_new_1","pending":false}""")
+        }
+
+        val draft = FeatureRequestDraft(
+            title = "   Padded Title   ",
+            description = "Some description"
+        )
+        testClient.submitFeatureRequest(draft, userToken = "tok_valid")
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("Padded Title", payload.getString("title"))
+    }
+
+    @Test
     fun submitFeatureRequestRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
         var transportCalls = 0
         try {
