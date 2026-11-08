@@ -3490,6 +3490,20 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun subscribeToChangelogSendsTrimmedEmailInPayload() = runTest {
+        var capturedBody: String? = null
+        val testClient = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"subscribed":true}""")
+        }
+
+        testClient.subscribeToChangelog("   padded.user@example.com   ", userToken = "tok_valid")
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("padded.user@example.com", payload.getString("email"))
+    }
+
+    @Test
     fun subscribeToChangelogRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
         var transportCalls = 0
         try {
