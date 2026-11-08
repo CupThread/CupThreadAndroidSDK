@@ -17,6 +17,55 @@ class SearchThrottlerTest {
     }
 
     @Test
+    fun firstSearchFiresImmediatelyWithRealisticDeviceUptimes() {
+        // Issue #223: initializing lastFiredAt to Long.MIN_VALUE + minIntervalMs caused
+        // (lastFiredAt + minIntervalMs - t) to underflow Long.MIN_VALUE when t > 4000 ms,
+        // wrapping around to positive values near Long.MAX_VALUE and hanging searches.
+        val uptimes = listOf(
+            4_001L, // 4.001 seconds (just past the 4000L underflow boundary)
+            5_000L, // 5 seconds
+            10_000L, // 10 seconds
+            100_000L, // 100 seconds
+            3_600_000L, // 1 hour
+            86_400_000L, // 1 day
+            2_592_000_000L // 30 days
+        )
+        for (uptime in uptimes) {
+            val throttler = SearchThrottler(now = { uptime })
+            assertEquals(
+                "Initial search on device with uptime $uptime ms should fire immediately without delay",
+                0L,
+                throttler.delayBeforeNext()
+            )
+        }
+    }
+
+    @Test
+    fun awaitSearchTurnOnHighUptimeDeviceCompletesWithoutWaiting() = runTest {
+        // High uptime device (100 seconds booted) must only wait for debounce on initial query (issue #223).
+        var t = 100_000L
+        val waits = mutableListOf<Long>()
+        val throttler = SearchThrottler(now = { t })
+
+        throttler.awaitSearchTurn("cupthread") { ms -> waits += ms; t += ms }
+        assertEquals(listOf(SearchThrottler.DEBOUNCE_MS), waits)
+        assertEquals(100_000L + SearchThrottler.DEBOUNCE_MS, t)
+    }
+
+    @Test
+    fun penalizeBeforeFirstSearchBlocksUntilPenaltyExpires() {
+        var t = 50_000L
+        val throttler = SearchThrottler(now = { t })
+        throttler.penalize()
+
+        assertEquals(30_000L, throttler.delayBeforeNext())
+        t += 29_999L
+        assertEquals(1L, throttler.delayBeforeNext())
+        t += 1L
+        assertEquals(0L, throttler.delayBeforeNext())
+    }
+
+    @Test
     fun rapidSearchesWaitForTheMinimumInterval() {
         var t = 1_000L
         val throttler = SearchThrottler(now = { t })

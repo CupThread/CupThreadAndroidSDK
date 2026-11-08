@@ -27,14 +27,16 @@ internal class SearchThrottler(
     private val penaltyMs: Long = DEFAULT_PENALTY_MS,
     private val now: () -> Long = { SystemClock.elapsedRealtime() }
 ) {
-    private var lastFiredAt = Long.MIN_VALUE + minIntervalMs
-    private var penalizedUntil = Long.MIN_VALUE
+    private var lastFiredAt: Long? = null
+    private var penalizedUntil: Long? = null
 
     /** Milliseconds to wait before the next automatic search may fire; `0` when it may fire now. */
     fun delayBeforeNext(): Long {
         val t = now()
-        if (t < penalizedUntil) return penalizedUntil - t
-        return (lastFiredAt + minIntervalMs - t).coerceAtLeast(0L)
+        val until = penalizedUntil
+        if (until != null && t < until) return until - t
+        val last = lastFiredAt ?: return 0L
+        return (last + minIntervalMs - t).coerceAtLeast(0L)
     }
 
     /** Records that a search request is being issued now. */
