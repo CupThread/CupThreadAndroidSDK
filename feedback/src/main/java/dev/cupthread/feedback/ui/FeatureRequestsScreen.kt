@@ -288,7 +288,17 @@ private fun FeatureRequestsScreenContent(
     }
 
     LaunchedEffect(client) {
-        versions = runCatching { client.fetchVersions() }.getOrDefault(emptyList())
+        // Versions only power the filter menu: a failed fetch leaves the board usable with the
+        // filter disabled. A cancelled fetch (the client was swapped, or the screen left the
+        // composition) must still propagate — swallowing it here would clobber versions a
+        // completed fetch already rendered (issue #206).
+        try {
+            versions = client.fetchVersions()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            versions = emptyList()
+        }
     }
 
     LaunchedEffect(versionId, userToken) {
@@ -849,6 +859,8 @@ internal fun FeatureRequestComposeSheetBody(
                         // limiting as the vote paths (issue #191): show the localized
                         // text instead of the raw 429 response body.
                         error = submitRateLimitedError
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (ex: Exception) {
                         error = ex.message ?: defaultSubmitError
                     } finally {

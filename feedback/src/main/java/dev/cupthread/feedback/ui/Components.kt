@@ -68,6 +68,7 @@ import dev.cupthread.feedback.RecentCommenter
 import dev.cupthread.feedback.FeedbackClient
 import dev.cupthread.feedback.PublicImageUrls
 import dev.cupthread.feedback.internal.WebUrlPolicy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -726,6 +727,8 @@ fun UserProfileSheet(
         error = null
         try {
             profileResult = client.fetchUserProfile(userId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (ex: Exception) {
             error = ex.message ?: defaultLoadError
         } finally {
