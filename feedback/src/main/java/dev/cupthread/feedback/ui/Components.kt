@@ -477,9 +477,9 @@ fun UserAvatar(
     }
     var bitmap by remember(imageUrl) { mutableStateOf(imageUrl?.let { avatarCache.get(it) }) }
 
-    LaunchedEffect(imageUrl) {
+    LaunchedEffect(imageUrl, requestedPixels) {
         val secureUrl = imageUrl
-        if (secureUrl == null) {
+        if (secureUrl == null || requestedPixels <= 0) {
             bitmap = null
             return@LaunchedEffect
         }
@@ -566,15 +566,37 @@ fun UserAvatar(
 
 /**
  * Decodes [stream] at the smallest power-of-two sample size that still covers [requestedPixels],
- * so a huge source image never allocates a full-resolution bitmap for a small avatar (issue #141).
+ * so a huge source image never allocates a full-resolution bitmap for a small avatar (issues #141, #220).
  *
+ * If [requestedPixels] is non-positive, returns `null` immediately without reading or allocating.
  * The read is capped at [MAX_AVATAR_BODY_BYTES]: a misbehaving avatar server must not exhaust the
  * heap before downsampling starts; oversized responses fall back to initials. The bounds pass
  * consumes the stream, so the bytes are buffered once and redecoded from memory.
  */
 private const val MAX_AVATAR_BODY_BYTES = 4 * 1024 * 1024
 
+/**
+ * Calculates the largest power-of-two [android.graphics.BitmapFactory.Options.inSampleSize] that
+ * ensures both dimensions of the decoded bitmap remain at least [requestedPixels] (issues #141, #220).
+ *
+ * If [requestedPixels], [outWidth], or [outHeight] is non-positive, returns `1` safely without
+ * entering an infinite loop or risking integer overflow.
+ */
+internal fun computeAvatarSampleSize(outWidth: Int, outHeight: Int, requestedPixels: Int): Int {
+    if (requestedPixels <= 0 || outWidth <= 0 || outHeight <= 0) return 1
+    var sampleSize = 1
+    while (sampleSize <= Int.MAX_VALUE / 2 &&
+        outWidth / (sampleSize * 2) >= requestedPixels &&
+        outHeight / (sampleSize * 2) >= requestedPixels
+    ) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
+
 private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels: Int): android.graphics.Bitmap? {
+    if (requestedPixels <= 0) return null
+
     val bytes = try {
         val buffer = java.io.ByteArrayOutputStream()
         val chunk = ByteArray(8 * 1024)
@@ -595,12 +617,7 @@ private fun decodeDownsampledAvatar(stream: java.io.InputStream, requestedPixels
     android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= requestedPixels &&
-        bounds.outHeight / (sampleSize * 2) >= requestedPixels
-    ) {
-        sampleSize *= 2
-    }
+    val sampleSize = computeAvatarSampleSize(bounds.outWidth, bounds.outHeight, requestedPixels)
 
     return android.graphics.BitmapFactory.decodeByteArray(
         bytes,
