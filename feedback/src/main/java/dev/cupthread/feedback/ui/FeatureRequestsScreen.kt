@@ -62,7 +62,6 @@ import dev.cupthread.feedback.internal.FeatureRequestPager
 import dev.cupthread.feedback.internal.SearchThrottler
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
@@ -164,29 +163,13 @@ private fun FeatureRequestsScreenContent(
     val searchRateLimitedMessage = stringResource(R.string.cupthread_search_rate_limited)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Coalesces repeated feedback: SnackbarHostState serializes every showSnackbar
-    // call, so identical messages from repeated failures (vote taps or retries during
-    // a 429) would otherwise queue up and outlast the tapping. Both the currently
-    // displayed message and the messages already queued behind it are suppressed; a
-    // queued entry leaves `pendingSnackbarMessages` when its snackbar finishes, so a
-    // later identical failure can surface again. All callers run on the main
-    // dispatcher, so the plain set needs no synchronization.
+    // Coalesces repeated feedback: the shared helper suppresses a message equal to the
+    // snackbar on display and identical messages already pending behind it, so repeated
+    // failures (vote taps, 429s, retry taps during an offline refresh) cannot queue
+    // duplicates that outlast the tapping (issue #203).
     val pendingSnackbarMessages = remember { mutableSetOf<String>() }
     fun showFeedbackSnackbar(message: String) {
-        if (snackbarHostState.currentSnackbarData?.visuals?.message == message) return
-        if (!pendingSnackbarMessages.add(message)) return
-        // Dispatchers.Main.immediate runs the launch inline when already on the main
-        // thread — every caller is — so the snackbar data is published without an extra
-        // dispatcher hop. The plain composition-scope launch queues the coroutine on the
-        // ui dispatcher's frame-driven trampoline, which Robolectric tests observed
-        // starving indefinitely once the tree went quiescent (the CI flake).
-        scope.launch(Dispatchers.Main.immediate) {
-            try {
-                snackbarHostState.showSnackbar(message)
-            } finally {
-                pendingSnackbarMessages.remove(message)
-            }
-        }
+        showCoalescedFeedbackSnackbar(snackbarHostState, pendingSnackbarMessages, scope, message)
     }
 
     // Searches share a strict per-IP budget with every other client (30/min); the throttler
@@ -245,7 +228,10 @@ private fun FeatureRequestsScreenContent(
                 // the retained results.
                 hasMore = false
                 refreshFailed = ex.message ?: defaultLoadError
-                scope.launch { snackbarHostState.showSnackbar(ex.message ?: defaultLoadError) }
+                // Route through the coalescing helper like the 429 branch above: repeated
+                // retry taps while offline must not queue an identical snackbar behind the
+                // one already showing (issue #203).
+                showFeedbackSnackbar(ex.message ?: defaultLoadError)
             } else {
                 error = ex.message ?: defaultLoadError
             }
