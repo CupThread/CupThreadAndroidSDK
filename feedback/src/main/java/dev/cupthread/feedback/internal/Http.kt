@@ -114,6 +114,31 @@ internal fun encodePathSegment(value: String): String {
     return encoded
 }
 
+// A caller-supplied credential becomes an HTTP header value (`X-User-Token` / `Authorization`)
+// and, on several endpoints, a JSON body field the server stores for ownership comparisons.
+// CR/LF or any other C0 control character written verbatim into a header would terminate the
+// header line early — turning a host-side storage bug into a request-splitting primitive —
+// and a raw value in the body beside a trimmed value in the header would attribute one caller
+// to two identities (issue #212).
+private val CREDENTIAL_CONTROL_CHARS = Regex("[\\x00-\\x1F\\x7F]")
+
+/**
+ * Normalizes a caller-supplied credential once at the transport boundary (issue #212): trims
+ * surrounding whitespace, maps a blank value to `null`, and rejects CR/LF or any other C0
+ * control character that survives the trim with an `IllegalArgumentException` naming
+ * [parameterName]. `buildHeaders` routes `X-User-Token` and `Authorization` through this
+ * helper, and every JSON body writer applies it before writing `userToken`/`requesterToken`,
+ * so the header identity and the body identity of one request can never diverge.
+ */
+internal fun normalizeUserToken(value: String?, parameterName: String = "userToken"): String? {
+    val trimmed = value?.trim()
+    if (trimmed.isNullOrEmpty()) return null
+    require(!CREDENTIAL_CONTROL_CHARS.containsMatchIn(trimmed)) {
+        "$parameterName cannot contain CR/LF or other control characters"
+    }
+    return trimmed
+}
+
 // A caller-supplied filename is interpolated into the raw multipart header block. CR/LF (and any
 // other C0 control character) written verbatim would let a crafted name terminate the header
 // section early and smuggle additional header lines or multipart parts into the request (#162).

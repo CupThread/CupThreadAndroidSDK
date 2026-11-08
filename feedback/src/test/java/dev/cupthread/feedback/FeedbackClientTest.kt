@@ -3107,6 +3107,231 @@ class FeedbackClientTest {
         assertTrue(threeParamResult.voted)
     }
 
+    // #212: one padded caller-supplied token must produce one identity on the wire. The header
+    // value and the JSON-body field of the same request carry the same trimmed token, control
+    // characters are rejected before any transport call, and the updateUserAttributes signature
+    // covers the same normalized token the header transmits.
+
+    @Test
+    fun voteNormalizesPaddedUserTokenInHeaderAndBody() = runTest {
+        var header: String? = null
+        var requestBody: String? = null
+
+        client { request ->
+            header = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":4}""")
+        }.vote("fr-210", " tok_123 \n")
+
+        assertEquals("tok_123", header)
+        assertEquals("tok_123", JSONObject(requireNotNull(requestBody)).getString("userToken"))
+    }
+
+    @Test
+    fun deleteVoteNormalizesPaddedUserTokenInHeaderAndBody() = runTest {
+        var header: String? = null
+        var requestBody: String? = null
+
+        client { request ->
+            header = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":false,"voteCount":9}""")
+        }.deleteVote("fr-211", " tok_123 \n")
+
+        assertEquals("tok_123", header)
+        assertEquals("tok_123", JSONObject(requireNotNull(requestBody)).getString("userToken"))
+    }
+
+    @Test
+    fun submitFeatureRequestNormalizesRequesterToken() = runTest {
+        var header: String? = null
+        var requestBody: String? = null
+
+        client { request ->
+            header = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"featureRequestId":"fr_new_2","pending":false}""")
+        }.submitFeatureRequest(
+            FeatureRequestDraft(title = "Padded token", description = "Body identity must match"),
+            userToken = " tok_123 \n"
+        )
+
+        assertEquals("tok_123", JSONObject(requireNotNull(requestBody)).getString("requesterToken"))
+    }
+
+    @Test
+    fun submitAndPostCommentSendTrimmedUserTokenHeader() = runTest {
+        var submitHeader: String? = null
+        client { request ->
+            submitHeader = request.headers["X-User-Token"]
+            HttpResponse(201, """{"submissionId":"s-212","forwardedToGithub":false}""")
+        }.submit(
+            FeedbackDraft(title = "Trim", description = "Header identity is the trimmed token", platform = FeedbackPlatform.ANDROID),
+            userToken = " tok_123 \n"
+        )
+        assertEquals("tok_123", submitHeader)
+
+        var commentHeader: String? = null
+        client { request ->
+            commentHeader = request.headers["X-User-Token"]
+            HttpResponse(201, """{"id":"c-212","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+        }.postComment("fr-1", CommentDraft(body = "hi"), userToken = " tok_123 \n")
+        assertEquals("tok_123", commentHeader)
+    }
+
+    @Test
+    fun fetchFeatureRequestSendsTrimmedUserTokenHeader() = runTest {
+        var header: String? = null
+        val json = """
+            {
+              "request": {
+                "id": "fr-212",
+                "appId": "app_testkey123456",
+                "title": "Trim",
+                "description": "Trimmed identity",
+                "status": "pending_review",
+                "voteCount": 0,
+                "hasVoted": false,
+                "isOwnRequest": false,
+                "recentCommenters": [],
+                "hasMoreCommenters": false,
+                "createdAt": "2026-03-01T12:00:00.000Z",
+                "updatedAt": "2026-03-02T15:30:00.000Z"
+              }
+            }
+        """.trimIndent()
+
+        client { request ->
+            header = request.headers["X-User-Token"]
+            HttpResponse(200, json)
+        }.fetchFeatureRequest("fr-212", userToken = " tok_123 \n")
+
+        assertEquals("tok_123", header)
+    }
+
+    @Test
+    fun uploadAttachmentNormalizesPaddedUserTokenInHeaderAndReturnedAttachment() = runTest {
+        var header: String? = null
+        val json = """{"kind":"image","key":"k212","url":"https://cdn.example.com/k212"}"""
+
+        val attachment = client { request ->
+            header = request.headers["X-User-Token"]
+            HttpResponse(200, json)
+        }.uploadAttachment(
+            data = validPngBytes,
+            filename = "padded.png",
+            mimeType = "image/png",
+            userToken = " tok_123 \n"
+        )
+
+        assertEquals("tok_123", header)
+        assertEquals("tok_123", attachment.userToken)
+    }
+
+    @Test
+    fun eraseAndLinkNormalizeCredentialHeaders() = runTest {
+        var eraseRequest: HttpRequest? = null
+        client { request ->
+            eraseRequest = request
+            HttpResponse(200, """{"erased":true,"endUserId":"enduser-212"}""")
+        }.eraseEndUser(userToken = " tok_123 \n", sessionToken = " sess_abc \n")
+        val erased = requireNotNull(eraseRequest)
+        assertEquals("tok_123", erased.headers["X-User-Token"])
+        assertEquals("Bearer sess_abc", erased.headers["Authorization"])
+
+        var linkRequest: HttpRequest? = null
+        client { request ->
+            linkRequest = request
+            HttpResponse(200, """{"linked":true,"endUserId":"enduser-212","clerkUserId":"user_212"}""")
+        }.linkEndUser(sessionToken = " sess_abc \n", userToken = " tok_123 \n")
+        val linked = requireNotNull(linkRequest)
+        assertEquals("tok_123", linked.headers["X-User-Token"])
+        assertEquals("Bearer sess_abc", linked.headers["Authorization"])
+    }
+
+    @Test
+    fun voteOmitsBlankUserTokenFromHeaderAndBody() = runTest {
+        var header: String? = null
+        var requestBody: String? = null
+
+        client { request ->
+            header = request.headers["X-User-Token"]
+            requestBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":1}""")
+        }.vote("fr-213", "   ")
+
+        assertNull(header)
+        val payload = requireNotNull(requestBody)
+        assertFalse(JSONObject(payload).has("userToken"))
+    }
+
+    @Test
+    fun voteRejectsControlCharacterUserTokenBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        try {
+            client { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }.vote("fr-214", "tok\r\nEvil: injected")
+            fail("Expected IllegalArgumentException for a token carrying CR/LF")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken"))
+            assertTrue(ex.message.orEmpty().contains("control characters"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun updateUserAttributesSignsTheNormalizedUserToken() = runTest {
+        var header: String? = null
+        var body: String? = null
+        signingClient { request ->
+            header = request.headers["X-User-Token"]
+            body = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }.updateUserAttributes(userToken = " tok_123 \n", isPaying = true, plan = "pro", mrr = 9.99, currency = "USD")
+
+        assertEquals("tok_123", header)
+        val json = JSONObject(requireNotNull(body))
+        val expected = hmacSha256Hex(
+            secret = signingSecret,
+            message = userAttributesCanonicalString(
+                appKey = appKey,
+                userToken = "tok_123",
+                isPaying = true,
+                plan = "pro",
+                mrr = 9.99,
+                currency = "USD",
+                timestampSeconds = json.getLong("timestamp")
+            )
+        )
+        assertEquals(expected, json.getString("signature"))
+    }
+
+    @Test
+    fun updateUserAttributesRejectsBlankAndControlCharacterTokensBeforeSigning() = runTest {
+        var transportCalls = 0
+        val underTest = client { _ ->
+            transportCalls++
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+
+        try {
+            underTest.updateUserAttributes(userToken = "   ")
+            fail("Expected IllegalArgumentException for a blank userToken")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("userToken cannot be blank"))
+        }
+
+        try {
+            underTest.updateUserAttributes(userToken = "tok\u0000x")
+            fail("Expected IllegalArgumentException for a token carrying control characters")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("control characters"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
     @Test
     fun voteMapsHttp429ToRateLimited() = runTest {
         try {

@@ -16,6 +16,7 @@ import dev.cupthread.feedback.internal.hmacSha256Hex
 import dev.cupthread.feedback.internal.joinUrl
 import dev.cupthread.feedback.internal.multipartBody
 import dev.cupthread.feedback.internal.MetadataSanitizer
+import dev.cupthread.feedback.internal.normalizeUserToken
 import dev.cupthread.feedback.internal.parseAppVersion
 import dev.cupthread.feedback.internal.parseAttachment
 import dev.cupthread.feedback.internal.parseBoardColumn
@@ -242,16 +243,18 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         turnstileToken: String? = null
     ): FeedbackSubmissionResult {
-        val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+        // #212: one normalization serves the attachment-identity comparison and the outgoing
+        // header; sendJson receives the already-normalized token so both can never diverge.
+        val normalizedToken = normalizeUserToken(userToken)
         for (attachment in draft.attachments) {
             if (attachment.uploadId != null) {
                 val attachmentToken = attachment.userToken?.trim()?.takeIf { it.isNotEmpty() }
-                if (attachmentToken != null && trimmedToken != null && attachmentToken != trimmedToken) {
+                if (attachmentToken != null && normalizedToken != null && attachmentToken != normalizedToken) {
                     throw FeedbackException.UploaderMismatch(
                         serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was uploaded with a userToken that does not match submission userToken."
                     )
                 }
-                if (attachmentToken != null && trimmedToken == null) {
+                if (attachmentToken != null && normalizedToken == null) {
                     throw FeedbackException.UploaderIdentityRequired(
                         serverMessage = "Attachment '${attachment.filename ?: attachment.uploadId}' was created with an anonymous userToken, but submission has no userToken."
                     )
@@ -268,7 +271,7 @@ class FeedbackClient internal constructor(
                         method = "POST",
                         path = "/api/v1/feedback",
                         body = feedbackSubmitPayload(draft, token),
-                        userToken = userToken,
+                        userToken = normalizedToken,
                         accepted = setOf(200, 201, 202),
                         errorSurfaces = setOf(
                             ErrorSurface.Uploader,
@@ -427,6 +430,9 @@ class FeedbackClient internal constructor(
         // reach a multipart header or a session payload — and the clean name is what gets
         // validated, uploaded, and echoed back.
         val safeFilename = sanitizeMultipartFilename(filename)
+        // #212: one normalization serves the upload header, the session path, and the token
+        // echoed back on the returned attachment — they can no longer diverge within one call.
+        val normalizedToken = normalizeUserToken(userToken)
         if (kind == FeedbackAttachment.Kind.IMAGE) {
             AttachmentLimits.validateImageAttachment(scrubbedData, safeFilename, mimeType)
             val boundary = "Boundary-${UUID.randomUUID()}"
@@ -435,7 +441,7 @@ class FeedbackClient internal constructor(
                 path = "/api/v1/uploads/images",
                 boundary = boundary,
                 body = body,
-                userToken = userToken,
+                userToken = normalizedToken,
                 accepted = setOf(200, 201),
                 errorSurfaces = setOf(
                     ErrorSurface.UnsupportedMediaType,
@@ -449,13 +455,13 @@ class FeedbackClient internal constructor(
                 // #162 sanitizer before it can reach the caller or the composer UI.
                 attachment.copy(
                     filename = attachment.filename?.let(::sanitizeMultipartFilename),
-                    userToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+                    userToken = normalizedToken
                 )
             } catch (_: Exception) {
                 throw FeedbackException.UnreadableUploadResponse()
             }
         }
-        return uploadViaSession(scrubbedData, safeFilename, mimeType, userToken, turnstileToken)
+        return uploadViaSession(scrubbedData, safeFilename, mimeType, normalizedToken, turnstileToken)
     }
 
     /**
@@ -490,8 +496,9 @@ class FeedbackClient internal constructor(
         userToken: String?,
         turnstileToken: String?
     ): FeedbackAttachment {
-        val token = userToken?.trim()?.takeIf { it.isNotEmpty() }
-        requireNotNull(token) {
+        // uploadAttachment has already normalized this token (#212); a blank caller value
+        // arrives as `null` and fails the identity requirement exactly as before.
+        val token = requireNotNull(userToken) {
             "userToken is required for non-image uploads: upload sessions are identity-bound (X-User-Token)"
         }
         requireHttpsDestination("/api/v1/uploads/sessions") { targetUrl ->
@@ -789,7 +796,8 @@ class FeedbackClient internal constructor(
     ): FeatureRequestItem {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
         val trimmedId = featureRequestId.trim()
-        val trimmedToken = userToken?.trim()?.takeIf { it.isNotEmpty() }
+        // #212: the shared transport-boundary normalization replaces this endpoint's local trim.
+        val trimmedToken = normalizeUserToken(userToken)
         if (trimmedToken != null) {
             requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}") { targetUrl ->
                 "fetchFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
@@ -870,6 +878,9 @@ class FeedbackClient internal constructor(
         requireHttpsDestination("/api/v1/feature-requests") { targetUrl ->
             "submitFeatureRequest destination must use HTTPS when transmitting userToken: $targetUrl"
         }
+        // #212: the body token is normalized by the same transport-boundary helper as every
+        // header credential, so the identity stored server-side matches the trimmed form.
+        val normalizedToken = normalizeUserToken(userToken)
         return sendWithTurnstileRetry(
             challenge = TurnstileChallenge.featureRequest(config.appKey),
             explicitToken = turnstileToken
@@ -879,7 +890,7 @@ class FeedbackClient internal constructor(
                 put("title", draft.title.trim())
                 put("description", draft.description.trim())
                 putOptString("requesterName", draft.requesterName.trim().ifEmpty { null })
-                put("requesterToken", userToken)
+                putOptString("requesterToken", normalizedToken)
                 if (token != null) {
                     put("turnstileToken", token)
                 }
@@ -1016,6 +1027,9 @@ class FeedbackClient internal constructor(
                 "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
             }
         }
+        // #212: the vote identity travels both in the JSON body and the X-User-Token header;
+        // both now carry the same normalized value, so server-side attribution cannot split.
+        val normalizedToken = normalizeUserToken(userToken)
         return sendWithTurnstileRetry(
             challenge = if (trimmedEmail != null) {
                 TurnstileChallenge.shipNotify(config.appKey)
@@ -1026,7 +1040,7 @@ class FeedbackClient internal constructor(
         ) { verificationToken ->
             val payload = JSONObject().apply {
                 put("appKey", config.appKey)
-                put("userToken", userToken)
+                putOptString("userToken", normalizedToken)
                 verificationToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
                     put("turnstileToken", it)
                 }
@@ -1040,7 +1054,7 @@ class FeedbackClient internal constructor(
                         method = "POST",
                         path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
                         body = payload,
-                        userToken = userToken,
+                        userToken = normalizedToken,
                         accepted = setOf(200),
                         errorSurfaces = setOf(
                             ErrorSurface.Verification,
@@ -1113,9 +1127,12 @@ class FeedbackClient internal constructor(
     suspend fun deleteVote(featureRequestId: String, userToken: String): VoteResult {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
         val trimmedId = featureRequestId.trim()
+        // #212: the vote identity travels both in the JSON body and the X-User-Token header;
+        // both now carry the same normalized value, so server-side attribution cannot split.
+        val normalizedToken = normalizeUserToken(userToken)
         val payload = JSONObject().apply {
             put("appKey", config.appKey)
-            put("userToken", userToken)
+            putOptString("userToken", normalizedToken)
         }
         return parseOrInvalidResponse {
             parseVoteResult(
@@ -1123,7 +1140,7 @@ class FeedbackClient internal constructor(
                     method = "DELETE",
                     path = "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote",
                     body = payload,
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     accepted = setOf(200),
                     errorSurfaces = setOf(ErrorSurface.RateLimit)
                 )
@@ -1733,10 +1750,12 @@ class FeedbackClient internal constructor(
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
-     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, if a payment attribute
-     *   or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret] is configured, or if
-     *   the destination is not HTTPS while [userToken] is transmitted — the anonymous identity
-     *   token (and any HMAC-signed payment attributes) is never sent in cleartext.
+     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, if [userToken] is blank
+     *   or carries CR/LF or other control characters (issue #212 policy: tokens are trimmed once
+     *   at the transport boundary and the signed token must equal the transmitted one), if a
+     *   payment attribute or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret]
+     *   is configured, or if the destination is not HTTPS while [userToken] is transmitted — the
+     *   anonymous identity token (and any HMAC-signed payment attributes) is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired on HTTP 401 (`invalid_signature` /
      *   `stale_signature` when the configured secret does not match the app's).
      * @throws FeedbackException.ReservedPlanSentinel on HTTP 400 when the server rejects a reserved
@@ -1770,6 +1789,13 @@ class FeedbackClient internal constructor(
                 "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
             }
         }
+        // #212: the token is signed exactly as it is transmitted — the canonical string and the
+        // X-User-Token header both carry the normalized value, so server-side reconciliation of
+        // a signed request cannot fail against the header identity. A blank token has nothing
+        // to sign and no identity to send, so it fails fast with the linkEndUser precedent.
+        val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
+            "userToken cannot be blank"
+        }
         val payload = JSONObject().apply {
             if (isPaying != null) put("isPaying", isPaying)
             putOptString("plan", plan)
@@ -1790,7 +1816,7 @@ class FeedbackClient internal constructor(
                 secret = secret,
                 message = userAttributesCanonicalString(
                     appKey = config.appKey,
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     isPaying = isPaying,
                     plan = plan,
                     mrr = mrr,
@@ -1807,7 +1833,7 @@ class FeedbackClient internal constructor(
                     "PUT",
                     "/api/v1/public/apps/${encodePathSegment(config.appKey)}/user",
                     payload,
-                    userToken = userToken,
+                    userToken = normalizedToken,
                     accepted = setOf(200),
                     errorSurfaces = setOf(
                         ErrorSurface.UserAttributes,
@@ -1897,8 +1923,9 @@ class FeedbackClient internal constructor(
             method = "POST",
             path = "/api/v1/me/erase",
             body = payload,
-            userToken = userToken?.trim()?.takeIf { it.isNotEmpty() },
-            bearerToken = sessionToken?.trim()?.takeIf { it.isNotEmpty() },
+            // #212: the shared transport-boundary normalization replaces this endpoint's local trims.
+            userToken = normalizeUserToken(userToken),
+            bearerToken = normalizeUserToken(sessionToken, "sessionToken"),
             accepted = setOf(200)
         )
         return parseOrInvalidResponse { parseEndUserEraseResult(response) }
@@ -1945,8 +1972,9 @@ class FeedbackClient internal constructor(
             method = "POST",
             path = "/api/v1/me/link",
             body = payload,
-            userToken = userToken.trim(),
-            bearerToken = sessionToken.trim(),
+            // #212: the shared transport-boundary normalization replaces this endpoint's local trims.
+            userToken = normalizeUserToken(userToken),
+            bearerToken = normalizeUserToken(sessionToken, "sessionToken"),
             accepted = setOf(200)
         )
         return parseOrInvalidResponse { parseEndUserLinkResult(response) }
@@ -1976,6 +2004,10 @@ class FeedbackClient internal constructor(
         errorSurfaces = errorSurfaces
     )
 
+    // #212: `buildHeaders` is the single point where a caller-supplied credential becomes an
+    // HTTP header value, so it is the one place that trims and rejects control characters. A
+    // value carrying CR/LF would otherwise be handed to `HttpURLConnection.setRequestProperty`
+    // verbatim — injecting attacker-shaped headers or surfacing an undocumented raw exception.
     private fun buildHeaders(
         contentType: String?,
         userToken: String?,
@@ -1983,8 +2015,10 @@ class FeedbackClient internal constructor(
         requestId: String? = null
     ): Map<String, String> = buildMap {
         if (contentType != null) put("Content-Type", contentType)
-        if (!userToken.isNullOrBlank()) put("X-User-Token", userToken)
-        if (!bearerToken.isNullOrBlank()) put("Authorization", "Bearer $bearerToken")
+        val normalizedUserToken = normalizeUserToken(userToken)
+        if (normalizedUserToken != null) put("X-User-Token", normalizedUserToken)
+        val normalizedBearerToken = normalizeUserToken(bearerToken, "sessionToken")
+        if (normalizedBearerToken != null) put("Authorization", "Bearer $normalizedBearerToken")
         if (!requestId.isNullOrBlank()) put(REQUEST_ID_HEADER, requestId)
     }
 
