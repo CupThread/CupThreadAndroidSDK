@@ -99,4 +99,56 @@ class MarkdownTextTest {
         assertEquals("[not a link]", text.text)
         assertEquals(0, urlLinks(text).size)
     }
+
+    @Test
+    fun precedingBracketedTagDoesNotSwallowSubsequentLink() {
+        // Issue #225: [Tag] should not be swallowed into a following [Link](url)
+        val text = linkAnnotations("[Android] Added support for [CupThread](https://cupthread.com)")
+        assertEquals("[Android] Added support for CupThread", text.text)
+
+        val links = urlLinks(text)
+        assertEquals(1, links.size)
+        val link = links.single()
+        assertEquals("https://cupthread.com", link.url)
+
+        val range = text.getLinkAnnotations(0, text.length).single()
+        assertEquals("[Android] Added support for ".length, range.start)
+        assertEquals("[Android] Added support for CupThread".length, range.end)
+    }
+
+    @Test
+    fun multiLineBracketedPrefixDoesNotBridgeAcrossNewlines() {
+        // Issue #225: Non-link bracket on line 1 must not bridge into link on line 2
+        val source = "[Fixed] Resolved authentication issue\n[New] Check out [Docs](https://docs.cupthread.com)"
+        val text = linkAnnotations(source)
+        assertEquals("[Fixed] Resolved authentication issue\n[New] Check out Docs", text.text)
+
+        val links = urlLinks(text)
+        assertEquals(1, links.size)
+        assertEquals("https://docs.cupthread.com", links.single().url)
+    }
+
+    @Test
+    fun unclosedBracketFollowedByLinkDoesNotCorruptLink() {
+        val text = linkAnnotations("[not closed [Docs](https://docs.cupthread.com)")
+        assertEquals("[not closed Docs", text.text)
+
+        val links = urlLinks(text)
+        assertEquals(1, links.size)
+        assertEquals("https://docs.cupthread.com", links.single().url)
+    }
+
+    @Test
+    fun urlWithWhitespaceStaysLiteral() {
+        val text = linkAnnotations("[Invalid](https://cupthread.com/a b)")
+        assertEquals("[Invalid](https://cupthread.com/a b)", text.text)
+        assertEquals(0, urlLinks(text).size)
+    }
+
+    @Test
+    fun bracketWithEmptyUrlStaysLiteral() {
+        val text = linkAnnotations("[Empty]()")
+        assertEquals("[Empty]()", text.text)
+        assertEquals(0, urlLinks(text).size)
+    }
 }

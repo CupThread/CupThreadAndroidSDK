@@ -107,23 +107,31 @@ internal fun inlineMarkdown(source: String, linkColor: Color) = buildAnnotatedSt
                 }
             }
             flattened.startsWith("[", i) -> {
-                val close = flattened.indexOf("](", i)
-                val end = if (close > i) flattened.indexOf(')', close + 2) else -1
-                if (close > i && end > close) {
-                    val label = flattened.substring(i + 1, close)
-                    val url = flattened.substring(close + 2, end)
-                    val linkStyle = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)
-                    // Gate the target through the shared web-URL policy (issue #158) so unsafe
-                    // schemes render as plain styled text with no tap target.
-                    val normalized = WebUrlPolicy.normalizeWebsiteUrl(url)
-                    if (normalized != null) {
-                        withLink(LinkAnnotation.Url(normalized, TextLinkStyles(style = linkStyle))) {
-                            append(label)
+                val closeBracket = flattened.indexOf(']', i + 1)
+                val closeParen = if (closeBracket > i && flattened.startsWith("](", closeBracket)) {
+                    flattened.indexOf(')', closeBracket + 2)
+                } else {
+                    -1
+                }
+                if (closeBracket > i && closeParen > closeBracket + 2) {
+                    val label = flattened.substring(i + 1, closeBracket)
+                    val url = flattened.substring(closeBracket + 2, closeParen)
+                    if (!label.contains('[') && !label.contains('\n') && !url.any { it.isWhitespace() }) {
+                        val linkStyle = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)
+                        // Gate the target through the shared web-URL policy (issue #158) so unsafe
+                        // schemes render as plain styled text with no tap target.
+                        val normalized = WebUrlPolicy.normalizeWebsiteUrl(url)
+                        if (normalized != null) {
+                            withLink(LinkAnnotation.Url(normalized, TextLinkStyles(style = linkStyle))) {
+                                append(label)
+                            }
+                        } else {
+                            withStyle(linkStyle) { append(label) }
                         }
+                        i = closeParen + 1
                     } else {
-                        withStyle(linkStyle) { append(label) }
+                        append(flattened[i]); i++
                     }
-                    i = end + 1
                 } else {
                     append(flattened[i]); i++
                 }
