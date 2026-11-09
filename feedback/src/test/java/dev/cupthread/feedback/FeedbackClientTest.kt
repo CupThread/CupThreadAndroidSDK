@@ -4735,7 +4735,7 @@ class FeedbackClientTest {
             networkRequests += 1
             HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
         }
-        for (reserved in listOf("unset", "null")) {
+        for (reserved in listOf("unset", "null", "  unset  ", "  null  ")) {
             try {
                 testClient.updateUserAttributes(userToken = "tok-1", plan = reserved)
                 fail("Expected IllegalArgumentException for reserved plan '$reserved'")
@@ -4744,6 +4744,58 @@ class FeedbackClientTest {
             }
         }
         assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesRejectsBlankPlanClientSide() = runTest {
+        var networkRequests = 0
+        val testClient = signingClient {
+            networkRequests += 1
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        for (blank in listOf("", "   ", "\t")) {
+            try {
+                testClient.updateUserAttributes(userToken = "tok-1", plan = blank)
+                fail("Expected IllegalArgumentException for blank plan '$blank'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("plan cannot be blank"))
+            }
+        }
+        assertEquals(0, networkRequests)
+    }
+
+    @Test
+    fun updateUserAttributesSerializesAndSignsTrimmedPlan() = runTest {
+        var capturedBody: String? = null
+        val testClient = signingClient { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"ok":true,"updatedAt":"2026-02-01T00:00:00.000Z"}""")
+        }
+        val result = testClient.updateUserAttributes(
+            userToken = "tok-1",
+            isPaying = true,
+            plan = "   pro   ",
+            mrr = 9.99,
+            currency = "USD"
+        )
+        assertTrue(result.ok)
+        assertNotNull(capturedBody)
+        val json = JSONObject(capturedBody!!)
+        assertEquals("pro", json.getString("plan"))
+        val timestamp = json.getLong("timestamp")
+        val expectedSig = hmacSha256Hex(
+            secret = signingSecret,
+            message = userAttributesCanonicalString(
+                appKey = appKey,
+                userToken = "tok-1",
+                isPaying = true,
+                plan = "pro",
+                mrr = 9.99,
+                currency = "USD",
+                timestampSeconds = timestamp
+            )
+        )
+        assertEquals(expectedSig, json.getString("signature"))
     }
 
     @Test

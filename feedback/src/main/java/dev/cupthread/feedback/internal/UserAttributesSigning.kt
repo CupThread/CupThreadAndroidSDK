@@ -58,8 +58,12 @@ internal fun userAttributesCanonicalString(
     currency: String?,
     timestampSeconds: Long
 ): String {
+    val cleanPlan = plan?.trim()
     if (plan != null) {
-        require(plan != "unset" && plan != "null") {
+        require(plan.isNotBlank()) {
+            "plan cannot be blank"
+        }
+        require(cleanPlan != "unset" && cleanPlan != "null") {
             "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
         }
         require(!plan.contains('\n') && !plan.contains('\r')) {
@@ -83,7 +87,7 @@ internal fun userAttributesCanonicalString(
         appKey,
         userToken,
         isPaying?.toString() ?: "unset",
-        plan ?: "unset",
+        cleanPlan ?: "unset",
         mrr?.let(::canonicalMrr) ?: "unset",
         currency ?: "unset",
         timestampSeconds.toString()

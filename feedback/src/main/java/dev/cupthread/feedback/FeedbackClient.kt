@@ -1848,7 +1848,8 @@ class FeedbackClient internal constructor(
      * @param currency ISO 4217 currency code for [mrr] (e.g., `"USD"`, `"EUR"`). Treated as a
      *   payment attribute: sending it requires a signing secret.
      * @return [UserAttributesUpdateResult] indicating whether the update was saved.
-     * @throws IllegalArgumentException if [plan] is `"unset"` or `"null"`, if [userToken] is blank
+     * @throws IllegalArgumentException if [plan] is blank, contains newlines, or matches reserved protocol
+     *   sentinels ("unset", "null"), if [userToken] is blank
      *   or carries CR/LF or other control characters (issue #212 policy: tokens are trimmed once
      *   at the transport boundary and the signed token must equal the transmitted one), if a
      *   payment attribute or currency is supplied but no [FeedbackClientConfig.sdkSigningSecret]
@@ -1882,8 +1883,12 @@ class FeedbackClient internal constructor(
         mrr: Double? = null,
         currency: String? = null
     ): UserAttributesUpdateResult {
+        val cleanPlan = plan?.trim()
         if (plan != null) {
-            require(plan != "unset" && plan != "null") {
+            require(plan.isNotBlank()) {
+                "plan cannot be blank"
+            }
+            require(cleanPlan != "unset" && cleanPlan != "null") {
                 "plan cannot be 'unset' or 'null' ('unset' and 'null' are reserved protocol sentinels)"
             }
             require(!plan.contains('\n') && !plan.contains('\r')) {
@@ -1916,11 +1921,11 @@ class FeedbackClient internal constructor(
         }
         val payload = JSONObject().apply {
             if (isPaying != null) put("isPaying", isPaying)
-            putOptString("plan", plan)
+            putOptString("plan", cleanPlan)
             if (mrr != null) put("mrr", mrr)
             putOptString("currency", currency)
         }
-        val carriesSignedAttributes = isPaying != null || plan != null || mrr != null || currency != null
+        val carriesSignedAttributes = isPaying != null || cleanPlan != null || mrr != null || currency != null
         if (carriesSignedAttributes) {
             val secret = config.sdkSigningSecret?.trim()?.takeIf { it.isNotEmpty() }
             require(secret != null) {
@@ -1936,7 +1941,7 @@ class FeedbackClient internal constructor(
                     appKey = config.appKey,
                     userToken = normalizedToken,
                     isPaying = isPaying,
-                    plan = plan,
+                    plan = cleanPlan,
                     mrr = mrr,
                     currency = currency,
                     timestampSeconds = timestampSeconds
