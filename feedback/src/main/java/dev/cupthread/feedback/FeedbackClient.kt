@@ -842,6 +842,8 @@ class FeedbackClient internal constructor(
      *
      * Preserved for binary backward compatibility with callers compiled against the
      * two-parameter signature; delegates to [submitFeatureRequest] with a `null` `turnstileToken`.
+     *
+     * @throws IllegalArgumentException if [draft.title] is blank or [userToken] is blank.
      */
     suspend fun submitFeatureRequest(
         draft: FeatureRequestDraft,
@@ -866,10 +868,10 @@ class FeedbackClient internal constructor(
      *   [TurnstileAction.FEATURE_REQUEST] action with the app key as `cdata`. When provided, the
      *   configured token provider is not consulted before the first attempt.
      * @return [FeatureRequestSubmissionResult] with the assigned ID and moderation state.
-     * @throws IllegalArgumentException if [userToken] is blank (issue #214 policy: a required
-     *   identity that normalizes to nothing fails fast instead of creating an unowned request),
-     *   or if the destination is not HTTPS while [userToken] is transmitted — the anonymous
-     *   identity token is never sent in cleartext.
+     * @throws IllegalArgumentException if [draft.title] is blank, if [userToken] is blank (issue #214
+     *   policy: a required identity that normalizes to nothing fails fast instead of creating an
+     *   unowned request), or if the destination is not HTTPS while [userToken] is transmitted — the
+     *   anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if the app's roadmap requires sign-in (`allowAnonymousRoadmap=false`)
      *   and no end-user session is present (HTTP 401 `authentication_required`).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
@@ -899,6 +901,10 @@ class FeedbackClient internal constructor(
         userToken: String,
         turnstileToken: String? = null
     ): FeatureRequestSubmissionResult {
+        val cleanTitle = draft.title.trim()
+        require(cleanTitle.isNotEmpty()) {
+            "feature request title cannot be blank"
+        }
         // #212: the body token is normalized by the same transport-boundary helper as every
         // header credential, so the identity stored server-side matches the trimmed form.
         // #214: the signature requires an identity, so a blank value fails fast first — before
@@ -919,7 +925,7 @@ class FeedbackClient internal constructor(
         ) { token ->
             val payload = JSONObject().apply {
                 put("appKey", config.appKey)
-                put("title", draft.title.trim())
+                put("title", cleanTitle)
                 put("description", draft.description.trim())
                 putOptString("requesterName", draft.requesterName.trim().ifEmpty { null })
                 putOptString("requesterToken", normalizedToken)
