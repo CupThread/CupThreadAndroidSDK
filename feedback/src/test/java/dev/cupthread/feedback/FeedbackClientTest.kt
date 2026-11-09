@@ -3979,7 +3979,7 @@ class FeedbackClientTest {
     }
 
     @Test
-    fun toggleVoteOmitsShipNotifyEmailWhenNullOrBlank() = runTest {
+    fun toggleVoteOmitsShipNotifyEmailWhenNull() = runTest {
         var capturedBody: String? = null
         val userToken = UUID.randomUUID().toString()
 
@@ -3992,10 +3992,6 @@ class FeedbackClientTest {
         c.toggleVote("fr-202", userToken, turnstileToken = "tok", shipNotifyEmail = null)
         assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
 
-        // blank shipNotifyEmail (4-arg)
-        c.toggleVote("fr-202", userToken, turnstileToken = "tok", shipNotifyEmail = "   ")
-        assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
-
         // 3-argument overload
         c.toggleVote("fr-202", userToken, turnstileToken = "tok")
         assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
@@ -4003,6 +3999,157 @@ class FeedbackClientTest {
         // 2-argument overload
         c.toggleVote("fr-202", userToken)
         assertFalse(org.json.JSONObject(capturedBody!!).has("shipNotifyEmail"))
+    }
+
+    @Test
+    fun voteRejectsBlankShipNotifyEmailBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        var turnstileCalls = 0
+        val clientWithProvider = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = {
+                    turnstileCalls++
+                    "provider_turnstile_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }
+        )
+
+        listOf("", "   ", "\t\n").forEach { blankEmail ->
+            try {
+                clientWithProvider.vote("fr-1", "tok_valid", shipNotifyEmail = blankEmail)
+                fail("Expected IllegalArgumentException for blank shipNotifyEmail '$blankEmail'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank shipNotifyEmail, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("shipNotifyEmail cannot be blank")
+                )
+            }
+        }
+        assertEquals(0, transportCalls)
+        assertEquals(0, turnstileCalls)
+    }
+
+    @Test
+    fun toggleVoteRejectsBlankShipNotifyEmailBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        val testClient = client { _ ->
+            transportCalls++
+            HttpResponse(200, """{"voted":true,"voteCount":1}""")
+        }
+
+        listOf("", "   ", "\t\n").forEach { blankEmail ->
+            try {
+                testClient.toggleVote("fr-1", "tok_valid", shipNotifyEmail = blankEmail)
+                fail("Expected IllegalArgumentException for blank shipNotifyEmail '$blankEmail' in toggleVote")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message.orEmpty().contains("shipNotifyEmail cannot be blank"))
+            }
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun voteBlankUserTokenPrecedesCleartextShipNotifyEmailCheck() = runTest {
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }
+        )
+
+        listOf("", "   ", "\t\n").forEach { blankToken ->
+            try {
+                insecureClient.vote("fr-1", blankToken, shipNotifyEmail = "valid@example.com")
+                fail("Expected IllegalArgumentException for blank userToken")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Expected 'userToken cannot be blank', but was: ${ex.message}",
+                    ex.message.orEmpty().contains("userToken cannot be blank")
+                )
+            }
+        }
+
+        // On an HTTP destination a valid token with a blank email must still surface the
+        // blank-email error, not the cleartext shipNotifyEmail error — the input checks keep
+        // their order regardless of the destination scheme.
+        try {
+            insecureClient.vote("fr-1", "tok_valid", shipNotifyEmail = "   ")
+            fail("Expected IllegalArgumentException for blank shipNotifyEmail")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(
+                "Expected 'shipNotifyEmail cannot be blank', but was: ${ex.message}",
+                ex.message.orEmpty().contains("shipNotifyEmail cannot be blank")
+            )
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun voteRejectsHttpDestinationBeforeConsultingTheTurnstileProvider() = runTest {
+        // #199: the vote request always carries the X-User-Token credential, so an HTTP
+        // destination must be rejected before the Turnstile retry wrapper can consult a
+        // provider (surfacing a challenge or minting an unused token) for a request that
+        // can never be sent — with or without a participating ship-notify email.
+        var transportCalls = 0
+        var providerCalls = 0
+        val underTest = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = { _ ->
+                    providerCalls++
+                    "provider_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }
+        )
+
+        try {
+            underTest.vote("fr-1", "tok_valid")
+            fail("Expected IllegalArgumentException when the vote destination is HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
+
+        try {
+            underTest.vote("fr-1", "tok_valid", shipNotifyEmail = "voter@example.com")
+            fail("Expected IllegalArgumentException when the vote destination is HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
+        }
+
+        assertEquals(0, transportCalls)
+        assertEquals(0, providerCalls)
+    }
+
+    @Test
+    fun voteSendsTrimmedShipNotifyEmailInPayload() = runTest {
+        var capturedBody: String? = null
+        val testClient = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(200, """{"voted":true,"voteCount":1}""")
+        }
+
+        val result = testClient.vote(
+            featureRequestId = "fr-1",
+            userToken = "tok_valid",
+            shipNotifyEmail = "   voter@example.com   "
+        )
+        assertTrue(result.voted)
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("voter@example.com", payload.getString("shipNotifyEmail"))
     }
 
     @Test
@@ -4058,10 +4205,10 @@ class FeedbackClientTest {
         }
 
         try {
-            insecureClient.vote("fr-205", userToken, shipNotifyEmail = "   ")
-            fail("Expected IllegalArgumentException when userToken is transmitted over HTTP")
+            insecureClient.vote("fr-205", userToken, shipNotifyEmail = "voter@example.com")
+            fail("Expected IllegalArgumentException when shipNotifyEmail is transmitted over HTTP")
         } catch (ex: IllegalArgumentException) {
-            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
         }
     }
 
