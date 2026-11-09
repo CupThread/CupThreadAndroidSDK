@@ -1033,9 +1033,9 @@ class FeedbackClient internal constructor(
      *   and an optional [VoteResult.warning] when a secondary action was refused.
      * @throws IllegalArgumentException if [featureRequestId] is blank, if [userToken] is blank
      *   (issue #214 policy: a required identity that normalizes to nothing fails fast instead of
-     *   silently casting an anonymous vote), or if the destination is not HTTPS while the vote
-     *   transmits the user token — the anonymous identity token is never sent in cleartext,
-     *   whether or not [shipNotifyEmail] participates.
+     *   silently casting an anonymous vote), if [shipNotifyEmail] is non-null but blank, or if the
+     *   destination is not HTTPS while the vote transmits the user token or ship notify email —
+     *   credentials and contact addresses are never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if anonymous voting is disallowed (HTTP 401).
      * @throws FeedbackException.RateLimited if the per-IP vote rate limit is exceeded (HTTP 429).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the vote (HTTP 403 `turnstile_*`).
@@ -1061,21 +1061,26 @@ class FeedbackClient internal constructor(
     ): VoteResult {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
         val trimmedId = featureRequestId.trim()
-        val trimmedEmail = shipNotifyEmail?.trim()?.takeIf { it.isNotEmpty() }
-        if (trimmedEmail != null) {
-            requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote") { targetUrl ->
-                "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
-            }
+        val cleanEmail = shipNotifyEmail?.trim()
+        if (cleanEmail != null) {
+            require(cleanEmail.isNotEmpty()) { "shipNotifyEmail cannot be blank" }
         }
         // #212: the vote identity travels both in the JSON body and the X-User-Token header;
         // both now carry the same normalized value, so server-side attribution cannot split.
         // #214: the signature requires an identity, so a blank value fails fast here — before
-        // the Turnstile retry wrapper can consult a provider for a request that cannot succeed.
+        // the HTTPS guard below (a blank token transmits no credential, so the cleartext error
+        // would only mask the root cause) and before the Turnstile retry wrapper can consult
+        // a provider for a request that cannot succeed.
         val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
             "userToken cannot be blank"
         }
+        if (cleanEmail != null) {
+            requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote") { targetUrl ->
+                "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
+            }
+        }
         return sendWithTurnstileRetry(
-            challenge = if (trimmedEmail != null) {
+            challenge = if (cleanEmail != null) {
                 TurnstileChallenge.shipNotify(config.appKey)
             } else {
                 TurnstileChallenge.vote(config.appKey)
@@ -1088,7 +1093,7 @@ class FeedbackClient internal constructor(
                 verificationToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
                     put("turnstileToken", it)
                 }
-                trimmedEmail?.let {
+                cleanEmail?.let {
                     put("shipNotifyEmail", it)
                 }
             }
