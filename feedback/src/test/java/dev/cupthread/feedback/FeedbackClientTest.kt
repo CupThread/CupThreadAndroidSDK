@@ -413,6 +413,107 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun submitRejectsBlankTitleBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        var providerCalls = 0
+        val testClient = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "https://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = TurnstileTokenProvider { _ ->
+                    providerCalls++
+                    "provider_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"submissionId":"s_new","forwardedToGithub":false}""")
+            }
+        )
+
+        listOf("", "   ", "\t\n").forEach { blankTitle ->
+            val draft = FeedbackDraft(
+                title = blankTitle,
+                description = "Some description",
+                platform = FeedbackPlatform.ANDROID
+            )
+
+            try {
+                testClient.submit(draft)
+                fail("Expected IllegalArgumentException for blank title '$blankTitle'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank title, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("feedback title cannot be blank")
+                )
+            }
+
+            try {
+                testClient.submit(draft, userToken = "tok_valid")
+                fail("Expected IllegalArgumentException for blank title '$blankTitle' with userToken")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank title, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("feedback title cannot be blank")
+                )
+            }
+
+            try {
+                testClient.submit(draft, userToken = "tok_valid", turnstileToken = "turnstile_123")
+                fail("Expected IllegalArgumentException for blank title '$blankTitle' with turnstile")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank title, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("feedback title cannot be blank")
+                )
+            }
+        }
+        assertEquals(0, providerCalls)
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun submitBlankTitleErrorPrecedesTheHttpsDestinationError() = runTest {
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"submissionId":"s_new","forwardedToGithub":false}""")
+            }
+        )
+        try {
+            insecureClient.submit(
+                FeedbackDraft(title = "   ", description = "Root cause first", platform = FeedbackPlatform.ANDROID),
+                userToken = "tok_valid"
+            )
+            fail("Expected IllegalArgumentException for a blank title")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("feedback title cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun submitSendsTrimmedTitleInPayload() = runTest {
+        var capturedBody: String? = null
+        val testClient = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"submissionId":"s_new_1","forwardedToGithub":false}""")
+        }
+
+        val draft = FeedbackDraft(
+            title = "   Padded Feedback Title   ",
+            description = "Some description",
+            platform = FeedbackPlatform.ANDROID
+        )
+        testClient.submit(draft, userToken = "tok_valid")
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("Padded Feedback Title", payload.getString("title"))
+    }
+
+    @Test
     fun submitDecodesWarningCode() = runTest {
         val result = client {
             HttpResponse(
