@@ -4076,7 +4076,61 @@ class FeedbackClientTest {
                 )
             }
         }
+
+        // On an HTTP destination a valid token with a blank email must still surface the
+        // blank-email error, not the cleartext shipNotifyEmail error — the input checks keep
+        // their order regardless of the destination scheme.
+        try {
+            insecureClient.vote("fr-1", "tok_valid", shipNotifyEmail = "   ")
+            fail("Expected IllegalArgumentException for blank shipNotifyEmail")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(
+                "Expected 'shipNotifyEmail cannot be blank', but was: ${ex.message}",
+                ex.message.orEmpty().contains("shipNotifyEmail cannot be blank")
+            )
+        }
         assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun voteRejectsHttpDestinationBeforeConsultingTheTurnstileProvider() = runTest {
+        // #199: the vote request always carries the X-User-Token credential, so an HTTP
+        // destination must be rejected before the Turnstile retry wrapper can consult a
+        // provider (surfacing a challenge or minting an unused token) for a request that
+        // can never be sent — with or without a participating ship-notify email.
+        var transportCalls = 0
+        var providerCalls = 0
+        val underTest = FeedbackClient(
+            config = FeedbackClientConfig(
+                baseUrl = "http://api.example.com",
+                appKey = appKey,
+                turnstileTokenProvider = { _ ->
+                    providerCalls++
+                    "provider_token"
+                }
+            ),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"voted":true,"voteCount":1}""")
+            }
+        )
+
+        try {
+            underTest.vote("fr-1", "tok_valid")
+            fail("Expected IllegalArgumentException when the vote destination is HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting credentials"))
+        }
+
+        try {
+            underTest.vote("fr-1", "tok_valid", shipNotifyEmail = "voter@example.com")
+            fail("Expected IllegalArgumentException when the vote destination is HTTP")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting shipNotifyEmail"))
+        }
+
+        assertEquals(0, transportCalls)
+        assertEquals(0, providerCalls)
     }
 
     @Test

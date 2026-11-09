@@ -1074,9 +1074,17 @@ class FeedbackClient internal constructor(
         val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
             "userToken cannot be blank"
         }
-        if (cleanEmail != null) {
-            requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote") { targetUrl ->
+        // #199: the vote request always carries the X-User-Token credential, so the cleartext
+        // policy applies whether or not a ship-notify email participates. The guard runs here —
+        // before the Turnstile retry wrapper can consult a provider (surfacing a challenge or
+        // minting an unused token) for a request that can never be sent. The email path keeps
+        // its documented shipNotifyEmail wording; the no-email path matches the wording of the
+        // central send() guard it front-runs.
+        requireHttpsDestination("/api/v1/feature-requests/${encodePathSegment(trimmedId)}/vote") { targetUrl ->
+            if (cleanEmail != null) {
                 "vote destination must use HTTPS when transmitting shipNotifyEmail: $targetUrl"
+            } else {
+                "vote destination must use HTTPS when transmitting credentials: $targetUrl"
             }
         }
         return sendWithTurnstileRetry(
