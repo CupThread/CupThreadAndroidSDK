@@ -222,10 +222,10 @@ class FeedbackClient internal constructor(
      * @param turnstileToken Optional Cloudflare Turnstile token minted for the
      *   [TurnstileAction.FEEDBACK] action with the app key as `cdata`. When provided, the configured
      *   token provider is not consulted before the first attempt.
- * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
- * @throws IllegalArgumentException if the destination is not HTTPS while [userToken] is transmitted —
- *   the anonymous identity token is never sent in cleartext.
- * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
+     * @return [FeedbackSubmissionResult] containing the server-assigned submission ID and optional GitHub discussion URL.
+     * @throws IllegalArgumentException if [draft.title] is blank, or if the destination is not HTTPS while [userToken] is transmitted —
+     *   the anonymous identity token is never sent in cleartext.
+     * @throws FeedbackException.AuthenticationRequired if anonymous feedback is disabled and token is missing (HTTP 401).
      * @throws FeedbackException.SubmissionQuotaExceeded if the workspace has reached its monthly submission limit (HTTP 402 `tier_limit_submissions`).
      * @throws FeedbackException.SubscriptionInactive if the workspace subscription is inactive (HTTP 402 `subscription_inactive`).
      * @throws FeedbackException.VerificationRequired if the human-verification gate rejects the submission (HTTP 403 `turnstile_*`).
@@ -257,6 +257,10 @@ class FeedbackClient internal constructor(
         userToken: String? = null,
         turnstileToken: String? = null
     ): FeedbackSubmissionResult {
+        val cleanTitle = draft.title.trim()
+        require(cleanTitle.isNotEmpty()) {
+            "feedback title cannot be blank"
+        }
         // #212: one normalization serves the attachment-identity comparison and the outgoing
         // header; sendJson receives the already-normalized token so both can never diverge.
         val normalizedToken = normalizeUserToken(userToken)
@@ -284,7 +288,7 @@ class FeedbackClient internal constructor(
                     sendJson(
                         method = "POST",
                         path = "/api/v1/feedback",
-                        body = feedbackSubmitPayload(draft, token),
+                        body = feedbackSubmitPayload(draft, cleanTitle, token),
                         userToken = normalizedToken,
                         accepted = setOf(200, 201, 202),
                         errorSurfaces = setOf(
@@ -306,14 +310,20 @@ class FeedbackClient internal constructor(
      *
      * Preserved for binary backward compatibility with callers compiled against the
      * two-parameter signature; delegates to [submit] with a `null` `turnstileToken`.
+     *
+     * @throws IllegalArgumentException if [draft.title] is blank, or if the destination is not HTTPS while [userToken] is transmitted.
      */
     suspend fun submit(draft: FeedbackDraft, userToken: String?): FeedbackSubmissionResult =
         submit(draft, userToken, turnstileToken = null)
 
-    private fun feedbackSubmitPayload(draft: FeedbackDraft, turnstileToken: String?): JSONObject =
+    private fun feedbackSubmitPayload(
+        draft: FeedbackDraft,
+        cleanTitle: String,
+        turnstileToken: String?
+    ): JSONObject =
         JSONObject().apply {
             put("appKey", config.appKey)
-            put("title", draft.title.trim())
+            put("title", cleanTitle)
             put("description", draft.description.trim())
             putOptString("reporterName", draft.reporterName.trim().ifEmpty { null })
             putOptString("reporterEmail", draft.reporterEmail.trim().ifEmpty { null })
