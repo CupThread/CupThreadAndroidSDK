@@ -3529,6 +3529,65 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun postCommentRejectsBlankBodyBeforeAnyTransportCall() = runTest {
+        var transportCalls = 0
+        val testClient = client { _ ->
+            transportCalls++
+            HttpResponse(201, """{"id":"c-215","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+        }
+
+        listOf("", "   ", "\t\n").forEach { blankBody ->
+            try {
+                testClient.postComment("fr-1", CommentDraft(body = blankBody), userToken = "tok_valid")
+                fail("Expected IllegalArgumentException for blank comment body '$blankBody'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention blank comment body, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("comment body cannot be blank")
+                )
+            }
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun postCommentBlankBodyErrorPrecedesBlankUserTokenAndCleartextChecks() = runTest {
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://api.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(201, """{"id":"c-215","featureRequestId":"fr-1","body":"hi","createdAt":"2026-02-01T12:00:00.000Z"}""")
+            }
+        )
+        try {
+            insecureClient.postComment("fr-1", CommentDraft(body = "   "), userToken = "   ")
+            fail("Expected IllegalArgumentException for blank comment body")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("comment body cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
+    fun postCommentSendsTrimmedBodyInPayload() = runTest {
+        var capturedBody: String? = null
+        val testClient = client { request ->
+            capturedBody = request.body?.toString(Charsets.UTF_8)
+            HttpResponse(201, """{"id":"c-215","featureRequestId":"fr-1","body":"Padded comment body","createdAt":"2026-02-01T12:00:00.000Z"}""")
+        }
+
+        val draft = CommentDraft(
+            body = "   Padded comment body   ",
+            authorName = "Jordan"
+        )
+        testClient.postComment("fr-1", draft, userToken = "tok_valid")
+        assertNotNull(capturedBody)
+        val payload = org.json.JSONObject(capturedBody!!)
+        assertEquals("Padded comment body", payload.getString("body"))
+    }
+
+    @Test
     fun postCommentRejectsBlankUserTokenBeforeAnyTransportCall() = runTest {
         var transportCalls = 0
         try {
