@@ -1331,10 +1331,10 @@ class FeedbackClient internal constructor(
      * @param draft Comment text and optional author/reply metadata ([CommentDraft]).
      * @param userToken Stable anonymous token from [UserTokenStore], sent as the `X-User-Token` header.
      * @return The created [FeatureRequestComment] with server-assigned ID and timestamp.
-     * @throws IllegalArgumentException if [featureRequestId] is blank, if [userToken] is blank
-     *   (issue #214 policy: a required identity that normalizes to nothing fails fast instead of
-     *   silently posting an unowned comment), or if the destination is not HTTPS while [userToken]
-     *   is transmitted — the anonymous identity token is never sent in cleartext.
+     * @throws IllegalArgumentException if [featureRequestId] is blank, if [draft.body] is blank,
+     *   if [userToken] is blank (issue #214 policy: a required identity that normalizes to nothing
+     *   fails fast instead of silently posting an unowned comment), or if the destination is not
+     *   HTTPS while [userToken] is transmitted — the anonymous identity token is never sent in cleartext.
      * @throws FeedbackException.AuthenticationRequired if commenting requires sign-in (HTTP 401).
      * @throws FeedbackException.InvalidParentComment if [CommentDraft.parentId] does not resolve to a visible comment on the target request (HTTP 400 `invalid_parent`).
      * @throws FeedbackException.RateLimited if the per-client comment rate limit is exceeded (HTTP 429).
@@ -1360,13 +1360,15 @@ class FeedbackClient internal constructor(
     ): FeatureRequestComment {
         require(featureRequestId.isNotBlank()) { "featureRequestId cannot be blank" }
         val trimmedId = featureRequestId.trim()
+        val cleanBody = draft.body.trim()
+        require(cleanBody.isNotEmpty()) { "comment body cannot be blank" }
         // #214: the signature requires an identity; a blank value would silently post the
         // comment unowned, so it fails fast with the same documented shape as vote/deleteVote.
         val normalizedToken = requireNotNull(normalizeUserToken(userToken)) {
             "userToken cannot be blank"
         }
         val payload = JSONObject().apply {
-            put("body", draft.body.trim())
+            put("body", cleanBody)
             putOptString("authorName", draft.authorName?.trim()?.ifEmpty { null })
             putOptString("authorEmail", draft.authorEmail?.trim()?.ifEmpty { null })
             putOptString("authorAvatarUrl", draft.authorAvatarUrl?.trim()?.ifEmpty { null })
