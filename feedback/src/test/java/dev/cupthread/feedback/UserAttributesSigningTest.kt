@@ -141,6 +141,71 @@ class UserAttributesSigningTest {
     }
 
     @Test
+    fun userAttributesCanonicalStringRejectsReservedPlanSentinels() {
+        val reservedSentinels = listOf("unset", "null", "  unset  ", "  null  ")
+        for (reserved in reservedSentinels) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = reserved,
+                    mrr = null,
+                    currency = null,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for reserved plan '$reserved'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("reserved protocol sentinels"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringRejectsBlankPlan() {
+        for (blank in listOf("", "   ", "\t")) {
+            try {
+                userAttributesCanonicalString(
+                    appKey = "app_key",
+                    userToken = "tok",
+                    isPaying = null,
+                    plan = blank,
+                    mrr = null,
+                    currency = null,
+                    timestampSeconds = 1000L
+                )
+                org.junit.Assert.fail("Expected IllegalArgumentException for blank plan '$blank'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(ex.message!!.contains("plan cannot be blank"))
+            }
+        }
+    }
+
+    @Test
+    fun userAttributesCanonicalStringSignsTrimmedPlan() {
+        val canonical = userAttributesCanonicalString(
+            appKey = "app_key",
+            userToken = "tok",
+            isPaying = true,
+            plan = "  pro  ",
+            mrr = 9.99,
+            currency = "USD",
+            timestampSeconds = 1000L
+        )
+        val expected = listOf(
+            "cpt-user-attrs-v1",
+            "app_key",
+            "tok",
+            "true",
+            "pro",
+            "9.99",
+            "USD",
+            "1000"
+        ).joinToString("\n")
+        assertEquals(expected, canonical)
+    }
+
+    @Test
     fun userAttributesCanonicalStringRejectsReservedCurrencySentinels() {
         val reservedSentinels = listOf("unset", "null", "  unset  ", "  null  ")
         for (reserved in reservedSentinels) {
