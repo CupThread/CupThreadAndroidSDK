@@ -2000,6 +2000,60 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun fetchFeatureRequestsTrimsPaddedQueryParameters() = runTest {
+        var url: String? = null
+        client { request ->
+            url = request.url
+            HttpResponse(200, """{"requests":[],"total":0}""")
+        }.fetchFeatureRequests(
+            userToken = UUID.randomUUID().toString(),
+            versionId = "  v1.0  ",
+            query = "  dark mode\t",
+            cursor = "   cur_123   "
+        )
+        val u = url!!
+        assertTrue(u.contains("versionId=v1.0&") || u.endsWith("versionId=v1.0"))
+        assertTrue(u.contains("q=dark%20mode"))
+        assertFalse(u.contains("q=%20"))
+        assertTrue(u.contains("cursor=cur_123"))
+        assertFalse(u.contains("%20%20"))
+        assertFalse(u.contains("%09"))
+    }
+
+    @Test
+    fun fetchCommentsPageTrimsPaddedCursor() = runTest {
+        var url: String? = null
+        client { request ->
+            url = request.url
+            HttpResponse(200, """{"comments":[],"total":0,"hasMore":false}""")
+        }.fetchCommentsPage("fr-1", cursor = "   cur_123   ")
+        assertTrue(url!!.contains("cursor=cur_123"))
+        assertFalse(url!!.contains("%20"))
+    }
+
+    @Test
+    fun fetchCommentsPageOmitsWhitespaceOnlyCursor() = runTest {
+        var url: String? = null
+        client { request ->
+            url = request.url
+            HttpResponse(200, """{"comments":[],"total":0,"hasMore":false}""")
+        }.fetchCommentsPage("fr-1", cursor = "   ")
+        assertFalse(url!!.contains("cursor="))
+        assertFalse(url!!.contains("limit="))
+    }
+
+    @Test
+    fun fetchChangelogPageTrimsPaddedCursor() = runTest {
+        var url: String? = null
+        client { request ->
+            url = request.url
+            HttpResponse(200, """{"entries":[],"hasMore":false,"nextCursor":null}""")
+        }.fetchChangelogPage(cursor = "   cur_9   ")
+        assertTrue(url!!.contains("cursor=cur_9"))
+        assertFalse(url!!.contains("%20"))
+    }
+
+    @Test
     fun fetchFeatureRequestsTransmitsUserTokenInHeaderNotQuery() = runTest {
         var capturedRequest: HttpRequest? = null
         val token = "anon_user_token_12345"

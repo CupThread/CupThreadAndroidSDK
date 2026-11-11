@@ -762,9 +762,9 @@ class FeedbackClient internal constructor(
             "limit" to clampedLimit.toString(),
             "offset" to clampedOffset.toString()
         )
-        if (!versionId.isNullOrBlank()) params += "versionId" to versionId
-        if (!query.isNullOrBlank()) params += "q" to query
-        if (!cursor.isNullOrBlank()) params += "cursor" to cursor
+        versionId?.trim()?.takeIf { it.isNotEmpty() }?.let { params += "versionId" to it }
+        query?.trim()?.takeIf { it.isNotEmpty() }?.let { params += "q" to it }
+        cursor?.trim()?.takeIf { it.isNotEmpty() }?.let { params += "cursor" to it }
         return parseOrInvalidResponse {
             parseListFeatureRequests(
                 get(
@@ -1265,11 +1265,12 @@ class FeedbackClient internal constructor(
         val trimmedId = featureRequestId.trim()
         val clampedLimit = limit.coerceIn(1, 200)
         val params = mutableListOf<Pair<String, String>>()
-        if (clampedLimit != 200 || !cursor.isNullOrBlank()) {
+        val cleanCursor = cursor?.trim()?.takeIf { it.isNotEmpty() }
+        if (clampedLimit != 200 || cleanCursor != null) {
             params += "limit" to clampedLimit.toString()
         }
-        if (!cursor.isNullOrBlank()) {
-            params += "cursor" to cursor
+        if (cleanCursor != null) {
+            params += "cursor" to cleanCursor
         }
         val path = if (params.isNotEmpty()) {
             "/api/v1/feature-requests/${encodePathSegment(trimmedId)}/comments?${encodeQuery(params)}"
@@ -1454,9 +1455,7 @@ class FeedbackClient internal constructor(
         val params = mutableListOf(
             "limit" to clampedLimit.toString()
         )
-        if (!cursor.isNullOrBlank()) {
-            params += "cursor" to cursor
-        }
+        cursor?.trim()?.takeIf { it.isNotEmpty() }?.let { params += "cursor" to it }
         val json = get(
             "/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog?${encodeQuery(params)}",
             errorSurfaces = setOf(ErrorSurface.RateLimit)
