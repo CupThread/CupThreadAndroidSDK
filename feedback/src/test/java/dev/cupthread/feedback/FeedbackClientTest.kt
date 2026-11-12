@@ -3011,6 +3011,49 @@ class FeedbackClientTest {
     }
 
     @Test
+    fun unsubscribeFromChangelogRejectsBlankTokenBeforeAnyTransportCall() = runTest {
+        // #229: a blank unsubscribe token carries no credential — fail fast client-side
+        // instead of sending `{"token":""}` and deferring to a server-side 400.
+        listOf("", "   ", "\t\n").forEach { blankToken ->
+            var transportCalls = 0
+            try {
+                client { _ ->
+                    transportCalls++
+                    HttpResponse(200, """{"unsubscribed":true}""")
+                }.unsubscribeFromChangelog(blankToken)
+                fail("Expected IllegalArgumentException for blank unsubscribe token '$blankToken'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention the blank unsubscribe token, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("Unsubscribe token cannot be blank")
+                )
+            }
+            assertEquals(0, transportCalls)
+        }
+    }
+
+    @Test
+    fun unsubscribeFromChangelogBlankTokenErrorPrecedesTheHttpsDestinationError() = runTest {
+        // #229: with a cleartext HTTP destination, the blank-token check must fire first —
+        // a blank token transmits no credential, so the HTTPS guard's claim would be false.
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"unsubscribed":true}""")
+            }
+        )
+        try {
+            insecureClient.unsubscribeFromChangelog("   ")
+            fail("Expected IllegalArgumentException for a blank unsubscribe token")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("Unsubscribe token cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
+    }
+
+    @Test
     fun unsubscribeFromWeeklyDigestHitsEndpointAndParsesResult() = runTest {
         var requestedUrl: String? = null
         var capturedBody: String? = null
@@ -3107,6 +3150,49 @@ class FeedbackClientTest {
         } catch (ex: IllegalArgumentException) {
             assertTrue(ex.message.orEmpty().contains("must use HTTPS when transmitting the unsubscribe token"))
         }
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestRejectsBlankTokenBeforeAnyTransportCall() = runTest {
+        // #229: a blank digest-unsubscribe token carries no credential — fail fast
+        // client-side instead of sending `{"token":""}` and deferring to a server 400.
+        listOf("", "   ", "\t\n").forEach { blankToken ->
+            var transportCalls = 0
+            try {
+                client { _ ->
+                    transportCalls++
+                    HttpResponse(200, """{"unsubscribed":true}""")
+                }.unsubscribeFromWeeklyDigest(blankToken)
+                fail("Expected IllegalArgumentException for blank digest unsubscribe token '$blankToken'")
+            } catch (ex: IllegalArgumentException) {
+                assertTrue(
+                    "Exception message should mention the blank digest unsubscribe token, but was: ${ex.message}",
+                    ex.message.orEmpty().contains("Digest unsubscribe token cannot be blank")
+                )
+            }
+            assertEquals(0, transportCalls)
+        }
+    }
+
+    @Test
+    fun unsubscribeFromWeeklyDigestBlankTokenErrorPrecedesTheHttpsDestinationError() = runTest {
+        // #229: with a cleartext HTTP destination, the blank-token check must fire first —
+        // a blank token transmits no credential, so the HTTPS guard's claim would be false.
+        var transportCalls = 0
+        val insecureClient = FeedbackClient(
+            config = FeedbackClientConfig(baseUrl = "http://insecure.example.com", appKey = appKey),
+            transport = HttpTransport { _ ->
+                transportCalls++
+                HttpResponse(200, """{"unsubscribed":true}""")
+            }
+        )
+        try {
+            insecureClient.unsubscribeFromWeeklyDigest("   ")
+            fail("Expected IllegalArgumentException for a blank digest unsubscribe token")
+        } catch (ex: IllegalArgumentException) {
+            assertTrue(ex.message.orEmpty().contains("Digest unsubscribe token cannot be blank"))
+        }
+        assertEquals(0, transportCalls)
     }
 
     @Test
@@ -5149,7 +5235,9 @@ class FeedbackClientTest {
             }
         """.trimIndent()
         try {
-            client { _ -> HttpResponse(400, errorBody) }.unsubscribeFromChangelog(token = "")
+            // #229: a blank token now fails fast client-side, so the send()-path fallback
+            // is exercised with a non-blank token against the mocked 400 envelope.
+            client { _ -> HttpResponse(400, errorBody) }.unsubscribeFromChangelog(token = "bogus-token")
             fail("Expected FeedbackException.ValidationFailed on a mapper-free endpoint")
         } catch (ex: FeedbackException.ValidationFailed) {
             assertEquals(mapOf("token" to listOf("Required")), ex.fieldErrors)

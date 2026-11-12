@@ -1689,8 +1689,9 @@ class FeedbackClient internal constructor(
      *
      * @param token Per-subscriber signed unsubscribe token from the changelog/confirmation email link.
      * @return [ChangelogUnsubscribeResult] indicating whether the address was removed.
-     * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
-     *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
+     * @throws IllegalArgumentException if [token] is blank or when the configured
+     *   [FeedbackClientConfig.baseUrl] is not HTTPS — the token is a bearer credential for the
+     *   subscription and is never sent in cleartext.
      * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope,
      *   including HTTP 403 when public surfaces are disabled for the app (token missing or not
      *   valid for this app) and HTTP 400 for an unauthentic token or a missing token without a
@@ -1706,10 +1707,12 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromChangelog(token: String): ChangelogUnsubscribeResult {
+        val cleanToken = token.trim()
+        require(cleanToken.isNotEmpty()) { "Unsubscribe token cannot be blank" }
         requireHttpsDestination("/api/v1/public/apps/${encodePathSegment(config.appKey)}/changelog/unsubscribe") { targetUrl ->
             "unsubscribeFromChangelog destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
         }
-        val payload = JSONObject().put("token", token.trim())
+        val payload = JSONObject().put("token", cleanToken)
         return parseOrInvalidResponse {
             parseChangelogUnsubscribe(
                 sendJson(
@@ -1748,8 +1751,9 @@ class FeedbackClient internal constructor(
      *
      * @param token Signed digest-unsubscribe token from the digest email's unsubscribe link.
      * @return [WeeklyDigestUnsubscribeResult] indicating whether the request was processed.
-     * @throws IllegalArgumentException when the configured [FeedbackClientConfig.baseUrl] is not
-     *   HTTPS — the token is a bearer credential for the subscription and is never sent in cleartext.
+     * @throws IllegalArgumentException if [token] is blank or when the configured
+     *   [FeedbackClientConfig.baseUrl] is not HTTPS — the token is a bearer credential for the
+     *   subscription and is never sent in cleartext.
      * @throws FeedbackException.RateLimited on HTTP 429 (per-client-IP rate limiting).
      * @throws FeedbackException.UnexpectedStatus on HTTP errors without a validation envelope,
      *   including HTTP 400 for a missing, invalid, or expired token.
@@ -1764,10 +1768,12 @@ class FeedbackClient internal constructor(
      * ```
      */
     suspend fun unsubscribeFromWeeklyDigest(token: String): WeeklyDigestUnsubscribeResult {
+        val cleanToken = token.trim()
+        require(cleanToken.isNotEmpty()) { "Digest unsubscribe token cannot be blank" }
         requireHttpsDestination("/api/v1/public/digest/unsubscribe") { targetUrl ->
             "unsubscribeFromWeeklyDigest destination must use HTTPS when transmitting the unsubscribe token: $targetUrl"
         }
-        val payload = JSONObject().put("token", token.trim())
+        val payload = JSONObject().put("token", cleanToken)
         return parseWeeklyDigestUnsubscribe(
             sendJson(
                 "POST",
